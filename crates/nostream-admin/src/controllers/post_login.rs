@@ -35,7 +35,14 @@ pub async fn handle(
     };
 
     let auth = auth_settings(&state, &settings);
-    if !auth.verify_password(&password) {
+    // The override wins over the hash, and it is a byte compare; the hash is scrypt work, so
+    // it runs on the blocking pool under the state's permit cap.
+    let verified = match (auth.password_override(), auth.password_hash()) {
+        (Some(_), _) => auth.verify_password(&password),
+        (None, Some(hash)) => state.verify_admin_password(password, hash.to_owned()).await,
+        (None, None) => false,
+    };
+    if !verified {
         return Ok(error_message(StatusCode::UNAUTHORIZED, "Unauthorized"));
     }
 

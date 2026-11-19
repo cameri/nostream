@@ -194,6 +194,66 @@ processes … Nothing else may take those features") needs no amendment, and the
 without one: a library that bound a port would make the rule false. Test targets bind
 `127.0.0.1:0` themselves, which is a test's business and no library's.
 
+### D14 — The admin limiter is the tree's limiter, not a third store
+
+`utils::rate_limit` calls `AdminState::hit_rate_limit`, which runs
+`nostream_relay::limits::RateLimiter` — the port of the capture's
+`src/utils/ewma-rate-limiter.ts`, `sliding-window-rate-limiter.ts` and `rate-limiter-factory.ts` —
+behind the `Limiter` trait. `limits.rateLimiter.strategy` selects EWMA (the factory's default) or
+the sliding window per request, and a change to that setting swaps the store, so the switch is
+live rather than a dead branch.
+
+The first cut kept a private `HashMap<key, VecDeque<instant>>` in `AdminState`. It was wrong in
+three ways the shared type cannot be: it recorded refused hits (EWMA stores the new rate before
+the verdict, the sliding window records only allowed ones), it never evicted a key (the shared
+store caps at `MAX_STORE_KEYS` = 65,536 and sweeps on admit), and it hard-coded one strategy while
+the capture selects one from settings. **The lesson is the trait**: had the admin path taken the
+`Limiter` trait from the start, the store's own refusal rule would have been the only reachable
+one, and the wrong rule could not have been written.
+
+The architecture review's remedy was to delete the private store and port the sliding window
+under it; the operator ruled for the shared EWMA instead ("I don't think we need to port the
+sliding-window, the EWMA is superior"), and both strategies are what the factory offers. This is
+his decision, recorded as his.
+
+The refusal rule follows the capture's limiter, not the sliding window's: a refused hit **does**
+advance the rate, and a key past `ceil(period / 1000)` s starts fresh. `tests/rate_limit.rs`
+proves both (`a_refused_hit_advances_the_rate_and_a_stale_key_starts_fresh`) and proves the
+strategy switch (`the_settings_select_the_strategy`: at 59 s the EWMA rate has decayed below the
+limit while the sliding window still holds its hits).
+
+### D15 — Login verification runs on the blocking pool, capped
+
+`POST /admin/login` is the one admin route that does heavy CPU work: scrypt, measured at 1.77 s
+per attempt in the dev profile. `AdminState::verify_admin_password` moves it to
+`spawn_blocking` behind a `Semaphore` of `MAX_CONCURRENT_LOGIN_VERIFICATIONS` (4), so a burst of
+logins queues instead of taking the runtime workers that also serve the wire. The `ADMIN_PASSWORD`
+override stays a byte compare on the request path — it is what the capture checks first, and it
+is cheap.
+
+`crates/nostreamd/tests/admin_http.rs` proves the point on the real binary: a `GET /admin/session`
+answers while a login verification is still in flight.
+
+### D16 — The admin audit log appends, and compacts over the cap
+
+`append_audit` is `OpenOptions::append` and one `write` per request; the 2,000-entry cap is kept
+by a compaction that runs once per `AUDIT_COMPACT_EVERY` (2,000) appends, reading once and
+renaming a fresh file into place.
+
+The first cut read, parsed and rewrote the whole file under a mutex on every call — and an
+unauthenticated `POST /logout` reaches it, so any caller could drive a full-file read and rewrite.
+Measured on the `audit` target's cap case (2,000 appends at a full file): **34.5 s** before,
+**0.29 s** after under strace; per append one `openat` and one `write` instead of a whole-file
+read and write.
+
+### D17 — The storage-count route keeps the capture's one deadline over concurrent queries
+
+`GET /ops/storage/counts` issues its ≤20 per-kind queries as futures and gathers them under one
+5,000 ms `timeout`, which is the capture's `Promise.all` shape and keeps the single `504` the
+route states. The LMDB backend's `count_by_filters` may complete synchronously inside its future,
+in which case the gather buys nothing on that backend and costs nothing; it is the Postgres
+backend, whose query is a real await, that the shape is for.
+
 ## Evidence
 
 Measured in this job's worktree at `factory/032-admin-console-parity`:
@@ -211,6 +271,9 @@ Measured in this job's worktree at `factory/032-admin-console-parity`:
 | the page and assets | `cargo test -p nostream-admin --test dashboard` | `7 passed` |
 | one port, in the binary | `cargo test -p nostreamd --test admin_http` | `1 passed`: HTML page, `401` session, NIP-42 challenge on the same port |
 | the wire is unchanged | `cargo test -p nostreamd --test wire --test acceptor` | every case passing |
+| one limiter, live switch | `cargo test -p nostream-admin --test rate_limit` | `6 passed`: 31st admin / 11th login refused under EWMA; `the_settings_select_the_strategy` splits EWMA and the sliding window at 59 s |
+| the audit append is O(1) | `cargo test -p nostream-admin --test audit`, `strace -c` on the cap case | 2,000 appends at a full file: 34.5 s → 0.29 s; `3,477 reads`/`1,730 writes` → `29 reads`/`2,014 writes`; cap still 2,000 |
+| a login does not stall the listener | `cargo test -p nostreamd --test admin_http` | `2 passed`: `/admin/session` answers while the verification is in flight |
 
 ## Assumptions
 

@@ -17,6 +17,7 @@ use nostream_config::{
 use nostream_core::Clock;
 use nostream_core::nip05::Nip05Fetch;
 use nostream_core::random::{RandomSource, SystemRandom};
+use nostream_relay::limits::{RateLimitConfig, RateLimiter, strategy_from_settings};
 use nostream_services::{HttpClient, ServiceStores};
 use serde::Serialize;
 use serde_json::Value;
@@ -33,6 +34,15 @@ pub const HEARTBEAT_INTERVAL: Duration = Duration::from_millis(45_000);
 
 /// The stored admin audit entries (`MAX_ADMIN_AUDIT_ENTRIES`).
 pub const MAX_AUDIT_ENTRIES: usize = 2_000;
+
+/// How many appends run between compactions, so the file holds at most
+/// `MAX_AUDIT_ENTRIES + AUDIT_COMPACT_EVERY` lines. One append is one `write`; the read and
+/// rewrite that keep the cap happen once per this many appends, not once per request.
+pub const AUDIT_COMPACT_EVERY: usize = 2_000;
+
+/// How many logins may hold a scrypt verification at once. The work runs on the blocking
+/// pool, so a burst queues here rather than taking every runtime worker.
+pub const MAX_CONCURRENT_LOGIN_VERIFICATIONS: usize = 4;
 
 /// The outbox event type a settings write enqueues (`OperatorNotificationEventType.SETTINGS_CHANGED`).
 pub const SETTINGS_CHANGED: &str = "settings.changed";
@@ -84,13 +94,37 @@ struct ProbeState {
 }
 
 /// What one `AdminState` keeps in process, replacing the capture's Redis keys (D2).
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct AdminRuntime {
     heartbeats: Mutex<HashMap<String, WorkerHeartbeat>>,
     probe: Mutex<ProbeState>,
-    audit: Mutex<()>,
-    /// `<key>:admin-<scope>:<period>` → the hit timestamps inside the window, in ms.
-    limiter: Mutex<HashMap<String, VecDeque<u64>>>,
+    /// Appends since the last compaction.
+    audit: Mutex<usize>,
+    /// The login verification permits (D15).
+    login_verifications: Arc<tokio::sync::Semaphore>,
+    /// The shared limiter (`nostream_relay::limits`), chosen by
+    /// `limits.rateLimiter.strategy` and rebuilt when that setting changes (D14).
+    limiter: Mutex<LimiterSlot>,
+}
+
+impl Default for AdminRuntime {
+    fn default() -> Self {
+        Self {
+            heartbeats: Mutex::new(HashMap::new()),
+            probe: Mutex::new(ProbeState::default()),
+            audit: Mutex::new(0),
+            login_verifications: Arc::new(tokio::sync::Semaphore::new(
+                MAX_CONCURRENT_LOGIN_VERIFICATIONS,
+            )),
+            limiter: Mutex::new(LimiterSlot::default()),
+        }
+    }
+}
+
+/// The shared limiter and the strategy it was built for, so a settings change swaps it.
+#[derive(Debug, Default)]
+struct LimiterSlot {
+    limiter: Option<RateLimiter>,
 }
 
 impl std::fmt::Debug for AdminState {
@@ -409,35 +443,52 @@ impl AdminState {
         state.trim(retention, now);
     }
 
-    /// Counts one hit against a rate-limit key and reports whether the window is over its
-    /// rate. `period_ms` is the capture's window length; the window slides.
-    pub fn hit_rate_limit(&self, key: &str, rate: u64, period_ms: u64) -> bool {
-        let now = self.clock.now_ms();
-        let mut limiter = self
+    /// Counts one hit against a rate-limit key and reports whether it is **limited**.
+    ///
+    /// The store is the tree's one limiter (`nostream_relay::limits`), and
+    /// `limits.rateLimiter.strategy` selects it exactly as `rateLimiterFactory` does — EWMA by
+    /// default, the sliding window when the settings say so (D14). The two strategies refuse
+    /// differently: EWMA writes the new rate before the verdict, so a refused hit still
+    /// advances it; the sliding window records only allowed hits.
+    pub fn hit_rate_limit(&self, settings: &Settings, key: &str, config: &RateLimitConfig) -> bool {
+        let wanted = strategy_from_settings(settings);
+        let mut slot = self
             .runtime
             .limiter
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let window = limiter.entry(key.to_owned()).or_default();
-        while let Some(front) = window.front() {
-            if now.saturating_sub(*front) >= period_ms {
-                window.pop_front();
-            } else {
-                break;
+        if slot.limiter.as_ref().map(|limiter| limiter.strategy()) != Some(wanted) {
+            *slot = LimiterSlot {
+                limiter: Some(RateLimiter::from_settings(
+                    settings,
+                    Arc::clone(&self.clock),
+                )),
+            };
+        }
+        let Some(limiter) = slot.limiter.as_ref() else {
+            return false;
+        };
+        match limiter.hit(key, 1, config) {
+            Ok(limited) => limited,
+            Err(error) => {
+                tracing::warn!(%error, "admin rate limiter unavailable");
+                false
             }
         }
-        window.push_back(now);
-        window.len() as u64 > rate
     }
 
-    /// Appends one admin audit entry and trims the file to its cap (D9).
+    /// Appends one admin audit entry: one `write` to the file, and a compaction once every
+    /// [`AUDIT_COMPACT_EVERY`] appends to keep [`MAX_AUDIT_ENTRIES`] (D9).
+    ///
+    /// The read-parse-rewrite the first cut did on every call was O(file) per request, and an
+    /// unauthenticated `POST /logout` reaches it.
     pub fn append_audit(
         &self,
         action: &str,
         remote_address: Option<&str>,
         detail: Option<Value>,
     ) -> Result<Value, AdminError> {
-        let _guard = self
+        let mut appends = self
             .runtime
             .audit
             .lock()
@@ -462,13 +513,32 @@ impl AdminState {
         }
 
         let path = self.audit_log_path();
-        let mut lines = read_audit_lines(&path)?;
-        lines.push(entry.clone());
-        if lines.len() > MAX_AUDIT_ENTRIES {
-            let excess = lines.len() - MAX_AUDIT_ENTRIES;
-            lines.drain(..excess);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|source| AdminError::Io {
+                path: parent.to_path_buf(),
+                source,
+            })?;
         }
-        write_audit_lines(&path, &lines)?;
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .map_err(|source| AdminError::Io {
+                path: path.clone(),
+                source,
+            })?;
+        let line = format!("{entry}\n");
+        std::io::Write::write_all(&mut file, line.as_bytes()).map_err(|source| AdminError::Io {
+            path: path.clone(),
+            source,
+        })?;
+        drop(file);
+
+        *appends += 1;
+        if *appends >= AUDIT_COMPACT_EVERY {
+            *appends = 0;
+            compact_audit(&path)?;
+        }
         Ok(entry)
     }
 
@@ -528,8 +598,31 @@ impl AdminState {
     /// The newest audit entries, newest first, clamped to `[1, 500]`.
     pub fn audit_entries(&self, limit: u64) -> Result<Vec<Value>, AdminError> {
         let clamped = limit.clamp(1, 500) as usize;
-        let lines = read_audit_lines(&self.audit_log_path())?;
+        let mut lines = read_audit_lines(&self.audit_log_path())?;
+        if lines.len() > MAX_AUDIT_ENTRIES {
+            lines.drain(..lines.len() - MAX_AUDIT_ENTRIES);
+        }
         Ok(lines.into_iter().rev().take(clamped).collect())
+    }
+
+    /// Verifies one scrypt hash on the blocking pool, capped by
+    /// [`MAX_CONCURRENT_LOGIN_VERIFICATIONS`] so a burst of logins queues instead of stalling
+    /// the runtime that also serves the wire (D15).
+    pub async fn verify_admin_password(&self, password: String, stored: String) -> bool {
+        let Ok(_permit) = self
+            .runtime
+            .login_verifications
+            .clone()
+            .acquire_owned()
+            .await
+        else {
+            return false;
+        };
+        tokio::task::spawn_blocking(move || {
+            crate::utils::password::verify_admin_password_hash(&password, &stored)
+        })
+        .await
+        .unwrap_or(false)
     }
 }
 
@@ -594,6 +687,23 @@ fn read_audit_lines(path: &Path) -> Result<Vec<Value>, AdminError> {
         .filter(|line| !line.trim().is_empty())
         .filter_map(|line| serde_json::from_str::<Value>(line).ok())
         .collect())
+}
+
+/// Trims the file to its newest `MAX_AUDIT_ENTRIES` lines: read once, write a fresh file,
+/// rename it into place.
+fn compact_audit(path: &Path) -> Result<(), AdminError> {
+    let mut lines = read_audit_lines(path)?;
+    if lines.len() <= MAX_AUDIT_ENTRIES {
+        return Ok(());
+    }
+    let excess = lines.len() - MAX_AUDIT_ENTRIES;
+    lines.drain(..excess);
+    let staging = path.with_extension("jsonl.compact");
+    write_audit_lines(&staging, &lines)?;
+    std::fs::rename(&staging, path).map_err(|source| AdminError::Io {
+        path: path.to_path_buf(),
+        source,
+    })
 }
 
 fn write_audit_lines(path: &Path, lines: &[Value]) -> Result<(), AdminError> {

@@ -16,6 +16,7 @@ hex.workspace = true
 hmac.workspace = true
 nostream-config.workspace = true
 nostream-core.workspace = true
+nostream-relay.workspace = true
 nostream-services.workspace = true
 nostream-storage.workspace = true
 scrypt.workspace = true

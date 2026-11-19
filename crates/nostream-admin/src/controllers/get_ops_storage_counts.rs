@@ -40,31 +40,46 @@ pub async fn handle(
         Err(message) => return Ok(error_message(StatusCode::BAD_REQUEST, &message)),
     };
 
-    let mut counts = Vec::new();
-    for filter in build_filters(&parsed) {
-        let kinds: Vec<u64> = filter
-            .kinds
-            .as_ref()
-            .map(|kinds| kinds.iter().map(|kind| kind.0).collect())
-            .unwrap_or_default();
-        let query = state
-            .stores()
-            .events
-            .count_by_filters(std::slice::from_ref(&filter));
+    // The capture issues these with `Promise.all` under one 5,000 ms deadline; the queries are
+    // futures, so issuing them together costs a gather and keeps the deadline the test proves.
+    let events = Arc::clone(&state.stores().events);
+    let pending = build_filters(&parsed).into_iter().map(|filter| {
+        let events = Arc::clone(&events);
+        async move {
+            let kinds: Vec<u64> = filter
+                .kinds
+                .as_ref()
+                .map(|kinds| kinds.iter().map(|kind| kind.0).collect())
+                .unwrap_or_default();
+            let count = events.count_by_filters(std::slice::from_ref(&filter)).await;
+            (kinds, count)
+        }
+    });
 
-        match tokio::time::timeout(Duration::from_millis(QUERY_TIMEOUT_MS), query).await {
-            Ok(Ok(count)) => counts.push(json!({ "kinds": kinds, "count": count })),
-            Ok(Err(error)) => {
+    let results = match tokio::time::timeout(
+        Duration::from_millis(QUERY_TIMEOUT_MS),
+        futures_util::future::join_all(pending),
+    )
+    .await
+    {
+        Ok(results) => results,
+        Err(_) => {
+            return Ok(error_message(
+                StatusCode::GATEWAY_TIMEOUT,
+                "Storage count query timed out",
+            ));
+        }
+    };
+
+    let mut counts = Vec::with_capacity(results.len());
+    for (kinds, count) in results {
+        match count {
+            Ok(count) => counts.push(json!({ "kinds": kinds, "count": count })),
+            Err(error) => {
                 tracing::error!(error = %error, "the storage count query failed");
                 return Ok(error_message(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Storage count query failed",
-                ));
-            }
-            Err(_) => {
-                return Ok(error_message(
-                    StatusCode::GATEWAY_TIMEOUT,
-                    "Storage count query timed out",
                 ));
             }
         }

@@ -88,6 +88,31 @@ async fn request(port: u16, path: &str) -> (u16, String) {
     (status, body)
 }
 
+/// One `POST` with a JSON body, returning the status and the body.
+async fn post_json(port: u16, path: &str, body: &str) -> (u16, String) {
+    let mut stream = TcpStream::connect(("127.0.0.1", port))
+        .await
+        .expect("connect");
+    let head = format!(
+        "POST {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(head.as_bytes()).await.expect("write");
+    let mut response = Vec::new();
+    let _ = tokio::time::timeout(Duration::from_secs(30), stream.read_to_end(&mut response)).await;
+    let text = String::from_utf8_lossy(&response).into_owned();
+    let status = text
+        .split_whitespace()
+        .nth(1)
+        .and_then(|code| code.parse().ok())
+        .unwrap_or(0);
+    let body = text
+        .split_once("\r\n\r\n")
+        .map(|(_, body)| body.to_owned())
+        .unwrap_or_default();
+    (status, body)
+}
+
 /// Polls `GET /admin/session` until the daemon answers, or ten seconds pass.
 async fn wait_for_daemon(port: u16) -> u16 {
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -152,4 +177,45 @@ async fn the_daemon_serves_the_admin_page_and_the_wire_on_one_port() {
     let (status, body) = request(port, "/healthz").await;
     assert_eq!(status, 404, "the daemon is an HTTP server with one mount");
     assert_eq!(body, "Not Found");
+}
+
+/// D15 — scrypt runs on the blocking pool, so a login does not stall the listener that also
+/// serves the wire: a `GET /admin/session` answers while the verification is still running.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_login_verification_does_not_stall_the_listener() {
+    let (daemon, _temp) = start_daemon();
+    let port = daemon.port;
+    assert_eq!(wait_for_daemon(port).await, 401);
+
+    // The WebSocket upgrade is answered first, so the wire is live before the login starts.
+    let (mut client, _response) =
+        tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/"))
+            .await
+            .expect("the WebSocket handshake");
+    use futures_util::StreamExt;
+    let challenge = tokio::time::timeout(Duration::from_secs(2), client.next())
+        .await
+        .expect("the NIP-42 challenge")
+        .expect("a frame")
+        .expect("a text frame");
+    assert!(challenge.to_string().starts_with("[\"AUTH\",\""));
+
+    let login =
+        tokio::spawn(
+            async move { post_json(port, "/admin/login", "{\"password\":\"hunter2\"}").await },
+        );
+
+    // While the scrypt verification is in flight the listener still answers.
+    let (status, _body) = request(port, "/admin/session").await;
+    assert_eq!(status, 401, "the listener answered during the verification");
+    assert!(
+        !login.is_finished(),
+        "the login was still verifying when the session request came back"
+    );
+
+    let (status, _body) = login.await.expect("the login task");
+    assert_eq!(
+        status, 200,
+        "the login completes after the listener answered"
+    );
 }

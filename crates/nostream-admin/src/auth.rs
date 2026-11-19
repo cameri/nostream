@@ -55,6 +55,16 @@ impl AuthSettings {
         }
     }
 
+    /// The `ADMIN_PASSWORD` override, which wins over the hash (`verifyPassword`).
+    pub fn password_override(&self) -> Option<&str> {
+        self.password_override.as_deref()
+    }
+
+    /// The scrypt hash when one is configured, so the caller can run the work off-thread.
+    pub fn password_hash(&self) -> Option<&str> {
+        self.password_hash.as_deref()
+    }
+
     /// The resolved session lifetime in whole seconds (Value 2).
     pub fn session_ttl(&self) -> u64 {
         session::resolve_ttl(self.session_ttl_seconds)

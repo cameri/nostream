@@ -1,10 +1,12 @@
-//! The admin's two sliding-window limiters. Mirrors `src/utils/admin-rate-limit.ts`.
+//! The admin's two limiters. Mirrors `src/utils/admin-rate-limit.ts`, over the tree's shared
+//! limiter (`nostream_relay::limits`) rather than a third store of its own (D14).
 //!
 //! Each window is counted per `<remote address>:admin-<scope>:<period>` — the capture's key —
 //! so the admin and login scopes never share a counter, and each configured window is its own
 //! counter. An address in `limits.admin.ipWhitelist` trips neither.
 
 use nostream_config::Settings;
+use nostream_relay::limits::RateLimitConfig;
 
 use crate::state::AdminState;
 
@@ -68,7 +70,11 @@ pub fn is_rate_limited(
         );
         // Every window is counted even once one trips, so the capture's per-window counters
         // advance together.
-        if state.hit_rate_limit(&key, window.rate, window.period) {
+        let config = RateLimitConfig {
+            period_ms: window.period,
+            rate: window.rate,
+        };
+        if state.hit_rate_limit(settings, &key, &config) {
             tracing::debug!(
                 address = remote_address,
                 rate = window.rate,
