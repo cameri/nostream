@@ -106,7 +106,7 @@ export class PeeringBuyerService implements IPeeringBuyerService {
     const invoice = stored.invoice
 
     if (!stored.inserted) {
-      return invoice
+      return invoice.status === PeeringInvoiceStatus.PAYING ? this.recoverInvoice(invoice, now) : invoice
     }
 
     if (event.pubkey.toLowerCase() !== peerPubkey || !configured) {
@@ -151,9 +151,16 @@ export class PeeringBuyerService implements IPeeringBuyerService {
   }
 
   public async approve(paymentHash: string, now = new Date()): Promise<PeeringInvoice> {
-    const invoice = await this.invoiceRepository.findByHash(paymentHash)
+    let invoice = await this.invoiceRepository.findByHash(paymentHash)
     if (!invoice) {
       throw new Error(`peering invoice ${paymentHash} not found`)
+    }
+
+    if (invoice.status === PeeringInvoiceStatus.PAYING) {
+      invoice = await this.recoverInvoice(invoice, now)
+    }
+    if (invoice.status === PeeringInvoiceStatus.PAID) {
+      return invoice
     }
 
     const claimed = await this.invoiceRepository.claim(
@@ -172,6 +179,11 @@ export class PeeringBuyerService implements IPeeringBuyerService {
   }
 
   public async reject(paymentHash: string): Promise<PeeringInvoice> {
+    const invoice = await this.invoiceRepository.findByHash(paymentHash)
+    if (invoice?.status === PeeringInvoiceStatus.PAYING) {
+      await this.recoverInvoice(invoice, new Date())
+    }
+
     const claimed = await this.invoiceRepository.claim(
       paymentHash,
       [PeeringInvoiceStatus.HELD, PeeringInvoiceStatus.FAILED],
@@ -189,78 +201,98 @@ export class PeeringBuyerService implements IPeeringBuyerService {
     let changed = 0
 
     for (const invoice of paying) {
-      try {
-        const result = await this.paymentsService.getInvoiceFromPaymentsProcessor(invoice.paymentHash)
-        if (result.status === InvoiceStatus.COMPLETED) {
-          await this.invoiceRepository.update(invoice.paymentHash, {
-            status: PeeringInvoiceStatus.PAID,
-            reason: null,
-            autoPaid: invoice.autoPaid,
-            paidAt: now,
-          })
-          changed++
-        } else if (result.status === InvoiceStatus.EXPIRED) {
-          const reservation = {
-            reserved: true,
-            ...(invoice.budgetPeriodStart && invoice.budgetPeriodEnd
-              ? { peerWindow: { start: invoice.budgetPeriodStart, end: invoice.budgetPeriodEnd } }
-              : {}),
-            ...(invoice.globalBudgetPeriodStart && invoice.globalBudgetPeriodEnd
-              ? { globalWindow: { start: invoice.globalBudgetPeriodStart, end: invoice.globalBudgetPeriodEnd } }
-              : {}),
-          }
-          const transaction = new Transaction(this.dbClient)
-          let started = false
-          try {
-            await transaction.begin()
-            started = true
-            const claimed = await this.invoiceRepository.claim(
-              invoice.paymentHash,
-              [PeeringInvoiceStatus.PAYING],
-              PeeringInvoiceStatus.HELD,
-              transaction.transaction,
-            )
-            if (!claimed) {
-              await transaction.rollback()
-              continue
-            }
-            if (reservation.peerWindow) {
-              await this.invoiceRepository.releaseBudget(
-                `peer:${invoice.peerPubkey.toLowerCase()}`,
-                reservation.peerWindow.start,
-                invoice.amountMsats,
-                transaction.transaction,
-              )
-            }
-            if (reservation.globalWindow) {
-              await this.invoiceRepository.releaseBudget(
-                'global',
-                reservation.globalWindow.start,
-                invoice.amountMsats,
-                transaction.transaction,
-              )
-            }
-            await this.invoiceRepository.update(
-              invoice.paymentHash,
-              { reason: PeeringInvoiceReason.PAYMENT_FAILED, autoPaid: false },
-              transaction.transaction,
-            )
-            await transaction.commit()
-            started = false
-            changed++
-          } catch (error) {
-            if (started) {
-              await transaction.rollback()
-            }
-            logger('unable to release and hold recovering invoice %s: %o', invoice.paymentHash, error)
-          }
-        }
-      } catch (error) {
-        logger('unable to recover peering invoice %s: %o', invoice.paymentHash, error)
+      const recovered = await this.recoverInvoice(invoice, now)
+      if (recovered.status !== invoice.status) {
+        changed++
       }
     }
 
     return changed
+  }
+
+  private async recoverInvoice(invoice: PeeringInvoice, now: Date): Promise<PeeringInvoice> {
+    try {
+      const result = await this.paymentsService.getInvoiceFromPaymentsProcessor(invoice.paymentHash)
+      if (result.status === InvoiceStatus.COMPLETED) {
+        return (
+          (await this.invoiceRepository.update(invoice.paymentHash, {
+            status: PeeringInvoiceStatus.PAID,
+            reason: null,
+            autoPaid: invoice.autoPaid,
+            paidAt: now,
+          })) ?? {
+            ...invoice,
+            status: PeeringInvoiceStatus.PAID,
+            reason: null,
+            autoPaid: invoice.autoPaid,
+            paidAt: now,
+          }
+        )
+      }
+
+      if (result.status !== InvoiceStatus.EXPIRED) {
+        return invoice
+      }
+
+      const reservation = {
+        reserved: true,
+        ...(invoice.budgetPeriodStart && invoice.budgetPeriodEnd
+          ? { peerWindow: { start: invoice.budgetPeriodStart, end: invoice.budgetPeriodEnd } }
+          : {}),
+        ...(invoice.globalBudgetPeriodStart && invoice.globalBudgetPeriodEnd
+          ? { globalWindow: { start: invoice.globalBudgetPeriodStart, end: invoice.globalBudgetPeriodEnd } }
+          : {}),
+      }
+      const transaction = new Transaction(this.dbClient)
+      let started = false
+      try {
+        await transaction.begin()
+        started = true
+        const claimed = await this.invoiceRepository.claim(
+          invoice.paymentHash,
+          [PeeringInvoiceStatus.PAYING],
+          PeeringInvoiceStatus.HELD,
+          transaction.transaction,
+        )
+        if (!claimed) {
+          await transaction.rollback()
+          return invoice
+        }
+        if (reservation.peerWindow) {
+          await this.invoiceRepository.releaseBudget(
+            `peer:${invoice.peerPubkey.toLowerCase()}`,
+            reservation.peerWindow.start,
+            invoice.amountMsats,
+            transaction.transaction,
+          )
+        }
+        if (reservation.globalWindow) {
+          await this.invoiceRepository.releaseBudget(
+            'global',
+            reservation.globalWindow.start,
+            invoice.amountMsats,
+            transaction.transaction,
+          )
+        }
+        await this.invoiceRepository.update(
+          invoice.paymentHash,
+          { reason: PeeringInvoiceReason.PAYMENT_FAILED, autoPaid: false },
+          transaction.transaction,
+        )
+        await transaction.commit()
+        started = false
+        return claimed
+      } catch (error) {
+        if (started) {
+          await transaction.rollback()
+        }
+        logger('unable to release and hold recovering invoice %s: %o', invoice.paymentHash, error)
+        return invoice
+      }
+    } catch (error) {
+      logger('unable to recover peering invoice %s: %o', invoice.paymentHash, error)
+      return invoice
+    }
   }
 
   public list(statuses?: PeeringInvoiceStatus[], limit = 100): Promise<PeeringInvoice[]> {

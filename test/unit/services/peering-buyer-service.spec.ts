@@ -333,6 +333,7 @@ describe('PeeringBuyerService', () => {
       }),
     ])
     paymentsService.getInvoiceFromPaymentsProcessor = sandbox.stub().resolves({ status: 'expired' })
+    invoiceRepository.claim.resolves(invoice({ status: PeeringInvoiceStatus.HELD }))
 
     expect(await service.recover(now)).to.equal(1)
     expect(invoiceRepository.claim).to.have.been.calledWith(
@@ -360,6 +361,9 @@ describe('PeeringBuyerService', () => {
     await expect(service.approve(PAYMENT_HASH, now)).to.be.rejectedWith('not found')
 
     invoiceRepository.findByHash.resolves(invoice({ status: PeeringInvoiceStatus.PAID }))
+    expect((await service.approve(PAYMENT_HASH, now)).status).to.equal(PeeringInvoiceStatus.PAID)
+
+    invoiceRepository.findByHash.resolves(invoice({ status: PeeringInvoiceStatus.HELD }))
     invoiceRepository.claim.resolves(undefined)
     await expect(service.approve(PAYMENT_HASH, now)).to.be.rejectedWith('not awaiting approval')
     await expect(service.reject(PAYMENT_HASH)).to.be.rejectedWith('not awaiting a decision')
@@ -436,6 +440,33 @@ describe('PeeringBuyerService', () => {
       PAYMENT_HASH,
       Sinon.match({ status: PeeringInvoiceStatus.HELD }),
     )
+  })
+
+
+  it('recovers a paying invoice when the peer redelivers it', async () => {
+    invoiceRepository.insertIfNew.resolves({
+      inserted: false,
+      invoice: invoice({ status: PeeringInvoiceStatus.PAYING }),
+    })
+    paymentsService.getInvoiceFromPaymentsProcessor = sandbox.stub().resolves({ status: 'completed' })
+
+    const result = await service.handleInvoice(peer, advertisement, event, now)
+
+    expect(result.status).to.equal(PeeringInvoiceStatus.PAID)
+    expect(invoiceRepository.update).to.have.been.calledWith(
+      PAYMENT_HASH,
+      Sinon.match({ status: PeeringInvoiceStatus.PAID }),
+    )
+  })
+
+  it('recovers a paying invoice before an operator approval', async () => {
+    invoiceRepository.findByHash.resolves(invoice({ status: PeeringInvoiceStatus.PAYING }))
+    paymentsService.getInvoiceFromPaymentsProcessor = sandbox.stub().resolves({ status: 'completed' })
+
+    const result = await service.approve(PAYMENT_HASH, now)
+
+    expect(result.status).to.equal(PeeringInvoiceStatus.PAID)
+    expect(paymentsService.payInvoice).not.to.have.been.called
   })
 
   it('summarizes per-peer and global budget spend', async () => {
