@@ -1,4 +1,4 @@
-# ADR 0012: The Postgres-to-LMDB migration (job 029)
+# ADR 0013: The Postgres-to-LMDB migration (job 029)
 
 - **Status:** accepted (job 029, Phase 2)
 - **Deciders:** the rewrite team, on the evidence in job 029's recon and spec

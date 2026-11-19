@@ -3,7 +3,7 @@
 //! The seam is `nostream_storage::migration` — a paged read of each source table and an exact
 //! write of each row, neither of which the nine repository traits can express. This module owns
 //! what the seam's caller owns: the manifest, the checksum, resume, the verification pass and
-//! the run's own measurement (`docs/rewrite/decisions/0012-pg-to-lmdb-migration.md`).
+//! the run's own measurement (`docs/rewrite/decisions/0013-pg-to-lmdb-migration.md`).
 //!
 //! The batch commits to the store first and the manifest is replaced atomically second, so a
 //! crash between them replays one batch: every write is a put of the source's own key and
@@ -452,7 +452,7 @@ impl Default for TableEntry {
 /// is order-independent, needs constant memory, and composes across a resume
 /// (`sum(A ∪ B) = sum(A) + sum(B)`); it detects an added, removed or altered row and is stated
 /// as a corruption and completeness check, not as a cryptographic commitment
-/// (`docs/rewrite/decisions/0012-pg-to-lmdb-migration.md`, D4).
+/// (`docs/rewrite/decisions/0013-pg-to-lmdb-migration.md`, D4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 struct RowSum([u64; 4]);
 
@@ -506,7 +506,7 @@ impl RowSum {
 /// Adds four big-endian words into a 256-bit limb sum, modulo 2^256.
 ///
 /// The manifest documents the checksum as the sum of the row digests modulo 2^256
-/// (`docs/rewrite/decisions/0012-pg-to-lmdb-migration.md`). Adding the four words
+/// (`docs/rewrite/decisions/0013-pg-to-lmdb-migration.md`). Adding the four words
 /// independently is a different number whenever a limb wraps, and an independent checker
 /// written from the documentation would compute a checksum this tool calls wrong, so the
 /// carry has to cross the word boundary. Limb 3 is the least significant — `to_hex` writes
