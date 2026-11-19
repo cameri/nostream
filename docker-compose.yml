@@ -56,6 +56,8 @@ services:
       OPENNODE_API_KEY: ${OPENNODE_API_KEY}
       # Lnbits
       LNBITS_API_KEY: ${LNBITS_API_KEY}
+      # Nostr Wallet Connect
+      NWC_URL: ${NWC_URL}
       # OpenTelemetry metrics
       OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-nostream}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
