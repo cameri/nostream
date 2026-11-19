@@ -40,44 +40,27 @@ fn redacted_change(change: &SettingsChange) -> Value {
 fn apply_changes(
     user: &serde_yaml::Value,
     merged: &serde_yaml::Value,
-    defaults: &serde_yaml::Value,
     changes: &[SettingsChange],
 ) -> Result<(serde_yaml::Value, serde_yaml::Value), String> {
     let mut next_user = user.clone();
     for change in changes {
         let value = serde_yaml::from_str::<serde_yaml::Value>(&change.value.to_string())
             .map_err(|error| format!("{}: {error}", change.path))?;
-        // A `null` clears the override so the default applies on the next read — the
-        // capture writes `undefined` and its merge falls through (Value 12).
-        next_user = if value.is_null() {
-            nostream_config::path::remove_by_path(&next_user, &change.path)
-        } else {
-            nostream_config::path::set_by_path(&next_user, &change.path, value)
-        }
-        .map_err(|error| format!("{}: {error}", change.path))?;
+        // `null` is a value, not an absent one: the capture's schema is
+        // `z.custom(v => v !== undefined)` (`admin-settings-schema.ts:6`), so it reaches the
+        // validator and answers `400 Validation failed … Expected string, got null`.
+        next_user = nostream_config::path::set_by_path(&next_user, &change.path, value)
+            .map_err(|error| format!("{}: {error}", change.path))?;
     }
 
     let mut next_merged = merged.clone();
     for change in changes {
-        // A cleared override reads from the defaults, exactly as the next merge would.
-        match nostream_config::path::get_by_path(&next_user, &change.path)
+        let value = nostream_config::path::get_by_path(&next_user, &change.path)
             .map_err(|error| format!("{}: {error}", change.path))?
-            .or_else(|| {
-                nostream_config::path::get_by_path(defaults, &change.path)
-                    .ok()
-                    .flatten()
-            })
             .cloned()
-        {
-            Some(value) => {
-                next_merged = nostream_config::path::set_by_path(&next_merged, &change.path, value)
-                    .map_err(|error| format!("{}: {error}", change.path))?;
-            }
-            None => {
-                next_merged = nostream_config::path::remove_by_path(&next_merged, &change.path)
-                    .map_err(|error| format!("{}: {error}", change.path))?;
-            }
-        }
+            .unwrap_or(serde_yaml::Value::Null);
+        next_merged = nostream_config::path::set_by_path(&next_merged, &change.path, value)
+            .map_err(|error| format!("{}: {error}", change.path))?;
     }
 
     Ok((next_user, next_merged))
@@ -119,7 +102,7 @@ pub async fn handle(
     }
 
     let user = state.user_document()?;
-    let Ok((next_user, next_merged)) = apply_changes(&user, &merged, &defaults, &changes) else {
+    let Ok((next_user, next_merged)) = apply_changes(&user, &merged, &changes) else {
         return Ok(invalid_request());
     };
 
@@ -204,8 +187,7 @@ mod tests {
             path: "info.name".to_owned(),
             value: json!("New"),
         }];
-        let defaults = merged.clone();
-        let (next_user, next_merged) = apply_changes(&user, &merged, &defaults, &changes).unwrap();
+        let (next_user, next_merged) = apply_changes(&user, &merged, &changes).unwrap();
         assert_eq!(
             next_user["info"]["name"],
             serde_yaml::Value::String("New".to_owned())

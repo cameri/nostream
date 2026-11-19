@@ -314,8 +314,9 @@ pub fn mount(state: Arc<AdminState>) -> Router {
         // One mount, so the paths this router does not serve answer the capture's
         // `404 text/plain "Not Found"` rather than axum's empty 404 (Behaviour today 9).
         .fallback(not_found)
-        // Outermost first: the gate answers `404` before any handler runs, and the CSP layer
-        // stamps every response, including the gate's.
+        // `from_fn` wraps the router once per call, so the last layer added is the outermost:
+        // `content_security` runs first and stamps every response, and `admin_enabled` runs
+        // inside it and answers `404` before any handler does.
         .layer(middleware::from_fn_with_state(
             Arc::clone(&state),
             controllers::admin_enabled_middleware::admin_enabled,

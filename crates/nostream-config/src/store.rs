@@ -189,10 +189,8 @@ pub fn filter_against_defaults(settings: &Value, defaults: &Value) -> Value {
             let Value::String(name) = key else {
                 continue;
             };
-            // `admin.passwordHash` is written by the console and carried by no defaults, so
-            // `admin` recurses even when the defaults do not name it; only `passwordHash`
-            // survives inside.
-            if !defaults.contains_key(name.as_str()) && name != "passwordHash" && name != "admin" {
+            // `hasOwn(defaults, key) || key === 'passwordHash'` (`settings-config.ts:507-513`).
+            if !defaults.contains_key(name.as_str()) && name != "passwordHash" {
                 continue;
             }
             let sub_schema = defaults
@@ -314,7 +312,9 @@ mod tests {
 
     #[test]
     fn the_defaults_filter_keeps_a_key_the_defaults_carry_and_a_password_hash() {
-        let defaults: Value = serde_yaml::from_str("a:\n  b: 1\n").unwrap();
+        // The shipped defaults carry `admin: {}` (`resources/default-settings.yaml:437`), and
+        // `passwordHash` survives inside it on the capture's own rule.
+        let defaults: Value = serde_yaml::from_str("a:\n  b: 1\nadmin: {}\n").unwrap();
         let settings: Value =
             serde_yaml::from_str("a:\n  b: 2\n  unknown: 3\nadmin:\n  passwordHash: x\nother: 4\n")
                 .unwrap();

@@ -130,7 +130,7 @@ async fn an_empty_changes_array_is_refused() {
 }
 
 #[tokio::test]
-async fn a_missing_value_is_refused_and_a_null_one_is_allowed() {
+async fn a_missing_value_is_refused_and_a_null_one_is_a_validation_failure() {
     let server = TestServer::start().await;
     let cookie = server.login().await;
 
@@ -145,6 +145,9 @@ async fn a_missing_value_is_refused_and_a_null_one_is_allowed() {
     assert_eq!(missing.status, 400);
     assert_eq!(missing.json()["error"], "Invalid request");
 
+    // `null` is a value the validator sees, not an absent one: the capture's schema is
+    // `z.custom(v => v !== undefined)`, so the request answers `400 Validation failed` with
+    // `Expected string, got null` (review-code.md Finding 2).
     let null = server
         .send_json(
             "PATCH",
@@ -153,7 +156,13 @@ async fn a_missing_value_is_refused_and_a_null_one_is_allowed() {
             json!({ "path": "wot.seedPubkey", "value": null }),
         )
         .await;
-    assert_ne!(null.status, 400, "a null value is a value: {}", null.text());
+    assert_eq!(null.status, 400, "{}", null.text());
+    assert_eq!(null.json()["error"], "Validation failed");
+    assert_eq!(null.json()["issues"][0]["path"], "wot.seedPubkey");
+    assert_eq!(
+        null.json()["issues"][0]["message"],
+        "Expected string, got null"
+    );
 }
 
 #[tokio::test]

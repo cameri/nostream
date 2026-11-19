@@ -57,7 +57,20 @@ pub fn parse_token(token: &str) -> Option<i64> {
     if separator == 0 {
         return None;
     }
-    token[..separator].parse::<i64>().ok()
+    exponent_or_integer(&token[..separator])
+}
+
+/// The capture reads the expiry with `Number(...)` (`admin-auth.ts`), so `1e3` is 1000; a
+/// non-finite or fractional value is refused the way `Number.isFinite` refuses it.
+fn exponent_or_integer(text: &str) -> Option<i64> {
+    if let Ok(value) = text.parse::<i64>() {
+        return Some(value);
+    }
+    let value = text.parse::<f64>().ok()?;
+    if !value.is_finite() || value.fract() != 0.0 {
+        return None;
+    }
+    Some(value as i64)
 }
 
 /// Whether the token's signature verifies and it has not expired (`isValidAdminSessionToken`).
@@ -73,7 +86,7 @@ pub fn is_valid_token(key: &[u8], token: &str, now_seconds: i64) -> bool {
     }
     let (expiry, signature) = token.split_at(separator);
     let signature = &signature[1..];
-    let Ok(expires_at) = expiry.parse::<i64>() else {
+    let Some(expires_at) = exponent_or_integer(expiry) else {
         return false;
     };
     if expires_at <= now_seconds {
