@@ -23,7 +23,7 @@ pub async fn handle(
     client: ClientInfo,
     RequestSettings(settings): RequestSettings,
 ) -> HandlerResult {
-    record_audit(&state, "admin.logout", &client.address);
+    record_audit(&state, "admin.logout", &client.address, None);
 
     let prefix = path_prefix_from_relay_url(&settings.info.relay_url);
     let cookie = clear_cookie_header(&prefix, client.secure);

@@ -13,7 +13,7 @@ use crate::controllers::admin_json_body_middleware::{
     JsonBody, SettingsChange, SettingsPatch, invalid_request, settings_patch, validation_failed,
 };
 use crate::controllers::admin_rate_limit_middleware::AdminRateLimited;
-use crate::controllers::request_context::{ClientInfo, RequestDocument};
+use crate::controllers::request_context::ClientInfo;
 use crate::controllers::with_admin_controller_request_handler::{HandlerResult, json_response};
 use crate::state::AdminState;
 
@@ -71,12 +71,16 @@ pub async fn handle(
     _limited: AdminRateLimited,
     _session: Session,
     client: ClientInfo,
-    RequestDocument { merged, defaults }: RequestDocument,
     JsonBody(body): JsonBody,
 ) -> HandlerResult {
     let Some(SettingsPatch { changes, list_form }) = settings_patch(&body) else {
         return Ok(invalid_request());
     };
+
+    // The whole read → change → validate → write sequence runs under the settings write
+    // lock, so a concurrent save cannot land between this request's read and its write.
+    let _guard = state.lock_settings().await;
+    let (merged, defaults) = state.merged_document()?;
 
     // The path guards, before anything is written: a write-protected path first, then the
     // schema check (Value 14).
@@ -134,7 +138,7 @@ pub async fn handle(
         "changes": audit_changes,
         "remoteAddress": client.address,
     }));
-    crate::controllers::post_login::record_audit(&state, "settings.updated", &client.address);
+    crate::controllers::post_login::record_audit(&state, "settings.updated", &client.address, None);
     state
         .enqueue_settings_changed(json!({
             "changes": updated,

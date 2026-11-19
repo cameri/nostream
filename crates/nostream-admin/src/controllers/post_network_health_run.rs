@@ -72,7 +72,7 @@ pub async fn handle(
     // D3: the probe primitives (`nostream-services::monitor::run_probe`) are #865's labelled
     // stubs, so a configured and valid run has no results to record. Inventing measurements
     // here is the failure mode the porting discipline forbids.
-    crate::controllers::post_login::record_audit(&state, "probe.manual_run", &client.address);
+    crate::controllers::post_login::record_audit(&state, "probe.manual_run", &client.address, None);
     Ok(error_message(
         StatusCode::BAD_GATEWAY,
         "Probe run produced no results",

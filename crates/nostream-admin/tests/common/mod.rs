@@ -77,6 +77,8 @@ pub struct Fixture {
     /// The delivery-log repository, when a case needs rows.
     pub delivery_log:
         Option<Arc<dyn nostream_storage::repositories::NotificationDeliveryLogRepository>>,
+    /// The NIP-05 fetch seam, when a case scripts the verification outcome.
+    pub fetch: Option<Arc<dyn Nip05Fetch>>,
 }
 
 impl Default for Fixture {
@@ -91,6 +93,7 @@ impl Default for Fixture {
             worker_count: Some(1),
             nip05: None,
             delivery_log: None,
+            fetch: None,
         }
     }
 }
@@ -183,7 +186,7 @@ impl TestServer {
 
         let client = Arc::new(ReqwestClient::new().unwrap());
         let http: Arc<dyn HttpClient> = client.clone();
-        let fetch: Arc<dyn Nip05Fetch> = client;
+        let fetch: Arc<dyn Nip05Fetch> = fixture.fetch.unwrap_or(client as Arc<dyn Nip05Fetch>);
 
         let clock = Arc::new(TestClock::new(fixture.now_ms));
         let state = Arc::new(AdminState::with_random(

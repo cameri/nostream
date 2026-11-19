@@ -48,7 +48,12 @@ pub async fn handle(
 
     match crate::utils::nip05::reverify(&state, &existing).await {
         Ok(updated) => {
-            crate::controllers::post_login::record_audit(&state, "nip05.reverify", &client.address);
+            crate::controllers::post_login::record_audit(
+                &state,
+                "nip05.reverify",
+                &client.address,
+                None,
+            );
             let row = crate::utils::nip05::to_row(
                 &updated,
                 crate::utils::nip05::verify_expiration_ms(&settings),

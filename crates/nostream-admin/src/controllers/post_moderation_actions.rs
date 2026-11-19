@@ -12,7 +12,7 @@ use crate::controllers::admin_json_body_middleware::{
     JsonBody, invalid_request, moderation_action, validation_failed,
 };
 use crate::controllers::admin_rate_limit_middleware::AdminRateLimited;
-use crate::controllers::request_context::{ClientInfo, RequestDocument};
+use crate::controllers::request_context::ClientInfo;
 use crate::controllers::with_admin_controller_request_handler::{
     HandlerResult, error_message, json_response,
 };
@@ -23,13 +23,18 @@ use crate::utils::moderation::{
 };
 
 /// Writes the limits into the user document, validates the merged result, saves it with a
-/// backup, and records both audits.
-pub fn persist(
+/// backup, appends one settings-audit line, records **one** admin audit entry carrying
+/// `detail`, and enqueues the `settings.changed` row — the capture's
+/// `saveModerationLimitsFromRequest`, which both moderation routes share.
+///
+/// The caller holds the settings write lock, so the read, the change, the validation and the
+/// save are one step.
+pub async fn persist(
     state: &AdminState,
     defaults: &serde_yaml::Value,
     limits: &ModerationLimits,
     action: &str,
-    detail: serde_json::Value,
+    detail: Option<serde_json::Value>,
     remote_address: &str,
 ) -> Result<(), ModerationError> {
     let normalized = normalize(limits)?;
@@ -48,20 +53,28 @@ pub fn persist(
     state.save_user_settings(&user).map_err(|error| {
         ModerationError::Message(format!("the settings could not be written: {error}"))
     })?;
+    // The paths carry no values, so there is nothing to redact.
+    let changes = json!([
+        { "path": "limits.event.pubkey", "reload": "hot-reload" },
+        { "path": "limits.event.kind", "reload": "hot-reload" },
+        { "path": "limits.event.whitelists", "reload": "hot-reload" },
+    ]);
     let _ = state.append_settings_audit(json!({
         "timestamp": crate::state::iso8601(state.clock().now_ms()),
         "action": "settings.updated",
-        "changes": [
-            { "path": "limits.event.pubkey", "reload": "hot-reload" },
-            { "path": "limits.event.kind", "reload": "hot-reload" },
-            { "path": "limits.event.whitelists", "reload": "hot-reload" },
-        ],
+        "changes": changes.clone(),
         "remoteAddress": remote_address,
     }));
-    crate::controllers::post_login::record_audit(state, action, remote_address);
-    if !detail.is_null() {
-        let _ = state.append_audit(action, Some(remote_address), Some(detail));
-    }
+    // One entry per action: the detail rides on it rather than on a second append.
+    crate::controllers::post_login::record_audit(state, action, remote_address, detail);
+    // The ordinary settings-change message, so the operator's `settings.changed` toggle
+    // governs these alerts as it governs every other settings write.
+    state
+        .enqueue_settings_changed(json!({
+            "changes": changes,
+            "remoteAddress": remote_address,
+        }))
+        .await;
     Ok(())
 }
 
@@ -70,7 +83,6 @@ pub async fn handle(
     _limited: AdminRateLimited,
     _session: Session,
     client: ClientInfo,
-    RequestDocument { merged, defaults }: RequestDocument,
     JsonBody(body): JsonBody,
 ) -> HandlerResult {
     let Some((action, pubkey, ip)) = moderation_action(&body) else {
@@ -80,6 +92,9 @@ pub async fn handle(
         return Ok(invalid_request());
     };
 
+    // The current limits, the change, the validation and the save are one step.
+    let _guard = state.lock_settings().await;
+    let (merged, defaults) = state.merged_document()?;
     let current = read_limits(&merged);
     let fields = ActionFields { pubkey, ip };
     let next = match apply_action(&current, action, &fields) {
@@ -97,14 +112,13 @@ pub async fn handle(
         &defaults,
         &next,
         "moderation.action",
-        detail,
+        Some(detail),
         &client.address,
-    ) {
+    )
+    .await
+    {
         return Ok(moderation_error_response(error));
     }
-    state
-        .enqueue_notification("moderation.action", json!({ "action": action.as_str() }))
-        .await;
 
     Ok(json_response(
         StatusCode::OK,

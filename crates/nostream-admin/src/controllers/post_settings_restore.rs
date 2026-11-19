@@ -10,7 +10,7 @@ use axum::http::StatusCode;
 use crate::controllers::admin_auth_middleware::Session;
 use crate::controllers::admin_json_body_middleware::{JsonBody, invalid_request, restore_filename};
 use crate::controllers::admin_rate_limit_middleware::AdminRateLimited;
-use crate::controllers::request_context::{ClientInfo, RequestDocument};
+use crate::controllers::request_context::ClientInfo;
 use crate::controllers::with_admin_controller_request_handler::{
     HandlerResult, error_message, json_response,
 };
@@ -21,12 +21,15 @@ pub async fn handle(
     _limited: AdminRateLimited,
     _session: Session,
     client: ClientInfo,
-    RequestDocument { defaults, .. }: RequestDocument,
     JsonBody(body): JsonBody,
 ) -> HandlerResult {
     let Some(filename) = restore_filename(&body) else {
         return Ok(invalid_request());
     };
+
+    // The restored document replaces the user file, so it takes the settings write lock.
+    let _guard = state.lock_settings().await;
+    let defaults = state.defaults_document()?;
 
     match nostream_config::store::restore_backup(
         state.paths(),
@@ -45,6 +48,7 @@ pub async fn handle(
                 &state,
                 "settings.restored",
                 &client.address,
+                None,
             );
             Ok(json_response(
                 StatusCode::OK,

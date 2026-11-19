@@ -16,7 +16,7 @@ use crate::controllers::admin_json_body_middleware::{
 };
 use crate::controllers::admin_rate_limit_middleware::AdminRateLimited;
 use crate::controllers::post_moderation_actions::{moderation_error_response, persist};
-use crate::controllers::request_context::{ClientInfo, RequestDocument};
+use crate::controllers::request_context::ClientInfo;
 use crate::controllers::with_admin_controller_request_handler::{HandlerResult, json_response};
 use crate::state::AdminState;
 use crate::utils::moderation::read_limits;
@@ -26,13 +26,15 @@ pub async fn handle(
     _limited: AdminRateLimited,
     _session: Session,
     client: ClientInfo,
-    RequestDocument { merged, defaults }: RequestDocument,
     JsonBody(body): JsonBody,
 ) -> HandlerResult {
     let Some(patch) = moderation_limits_patch(&body) else {
         return Ok(invalid_request());
     };
 
+    // The current limits, the patch, the validation and the save are one step.
+    let _guard = state.lock_settings().await;
+    let (merged, defaults) = state.merged_document()?;
     let current = read_limits(&merged);
     // `mergeAdminModerationLimitsPatch`: a list the patch carries replaces the stored one, and
     // one it omits is left alone.
@@ -68,9 +70,11 @@ pub async fn handle(
         &defaults,
         &next,
         "moderation.limits.updated",
-        json!({}),
+        None,
         &client.address,
-    ) {
+    )
+    .await
+    {
         return Ok(moderation_error_response(error));
     }
 

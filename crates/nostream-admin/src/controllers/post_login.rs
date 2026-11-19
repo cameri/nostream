@@ -58,7 +58,7 @@ pub async fn handle(
         }
     };
 
-    record_audit(&state, "admin.login", &client.address);
+    record_audit(&state, "admin.login", &client.address, None);
 
     let prefix = path_prefix_from_relay_url(&settings.info.relay_url);
     let cookie = cookie_header(&prefix, &token, auth.session_ttl(), client.secure);
@@ -74,14 +74,22 @@ pub async fn handle(
         .into_response())
 }
 
-/// Appends the audit entry, logging rather than failing: the login already succeeded.
-pub fn record_audit(state: &AdminState, action: &str, remote_address: &str) {
+/// Appends the audit entry, logging rather than failing: the action already happened.
+///
+/// One call is one entry: a caller that has a detail passes it here rather than appending a
+/// second entry for the same action with the capture's `detail` field.
+pub fn record_audit(
+    state: &AdminState,
+    action: &str,
+    remote_address: &str,
+    detail: Option<serde_json::Value>,
+) {
     let address = if remote_address.is_empty() {
         None
     } else {
         Some(remote_address)
     };
-    if let Err(error) = state.append_audit(action, address, None) {
+    if let Err(error) = state.append_audit(action, address, detail) {
         tracing::warn!(error = %error, action, "the admin audit entry was not recorded");
     }
 }

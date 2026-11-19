@@ -12,7 +12,7 @@ use crate::controllers::admin_json_body_middleware::{
     JsonBody, invalid_request, notification_patch, validation_failed,
 };
 use crate::controllers::admin_rate_limit_middleware::AdminRateLimited;
-use crate::controllers::request_context::{ClientInfo, RequestDocument, RequestSettings};
+use crate::controllers::request_context::ClientInfo;
 use crate::controllers::with_admin_controller_request_handler::{HandlerResult, json_response};
 use crate::state::AdminState;
 
@@ -21,8 +21,6 @@ pub async fn handle(
     _limited: AdminRateLimited,
     _session: Session,
     client: ClientInfo,
-    RequestSettings(settings): RequestSettings,
-    RequestDocument { merged, defaults }: RequestDocument,
     JsonBody(body): JsonBody,
 ) -> HandlerResult {
     let Some(patch_value) = notification_patch(&body) else {
@@ -34,6 +32,10 @@ pub async fn handle(
             Err(_) => return Ok(invalid_request()),
         };
 
+    // The whole read → merge → validate → write sequence runs under the settings write lock.
+    let _guard = state.lock_settings().await;
+    let settings = state.settings()?;
+    let defaults = state.defaults_document()?;
     let configured = settings
         .admin
         .as_ref()
@@ -57,7 +59,6 @@ pub async fn handle(
     if !issues.is_empty() {
         return Ok(validation_failed(&issues));
     }
-    let _ = merged;
 
     state.save_user_settings(&user)?;
     let _ = state.append_settings_audit(json!({
@@ -66,7 +67,12 @@ pub async fn handle(
         "changes": [{ "path": "admin.notifications", "reload": "hot-reload" }],
         "remoteAddress": client.address,
     }));
-    crate::controllers::post_login::record_audit(&state, "notifications.updated", &client.address);
+    crate::controllers::post_login::record_audit(
+        &state,
+        "notifications.updated",
+        &client.address,
+        None,
+    );
     state
         .enqueue_settings_changed(json!({
             "changes": [{ "path": "admin.notifications", "reload": "hot-reload" }],

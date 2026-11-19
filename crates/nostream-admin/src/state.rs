@@ -105,6 +105,11 @@ pub struct AdminRuntime {
     /// The shared limiter (`nostream_relay::limits`), chosen by
     /// `limits.rateLimiter.strategy` and rebuilt when that setting changes (D14).
     limiter: Mutex<LimiterSlot>,
+    /// The write lock every settings-mutating route holds across its read → change →
+    /// validate → write → audit sequence. The capture's Express handler runs that sequence
+    /// synchronously, so two requests cannot interleave; axum runs them concurrently, so
+    /// this is what keeps a concurrent save from overwriting another.
+    settings_write: tokio::sync::Mutex<()>,
 }
 
 impl Default for AdminRuntime {
@@ -117,6 +122,7 @@ impl Default for AdminRuntime {
                 MAX_CONCURRENT_LOGIN_VERIFICATIONS,
             )),
             limiter: Mutex::new(LimiterSlot::default()),
+            settings_write: tokio::sync::Mutex::new(()),
         }
     }
 }
@@ -314,6 +320,12 @@ impl AdminState {
     /// The process-local tables.
     pub fn runtime(&self) -> &AdminRuntime {
         &self.runtime
+    }
+
+    /// The settings write lock. Held for a whole write route's read → change → validate →
+    /// write → audit sequence, so two saves cannot lose one another's change.
+    pub async fn lock_settings(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.runtime.settings_write.lock().await
     }
 
     /// The admin audit file: `<config>/admin-audit.jsonl` (D9).
