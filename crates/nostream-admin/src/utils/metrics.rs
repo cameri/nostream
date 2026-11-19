@@ -1,5 +1,8 @@
 //! The `/metrics` SSE snapshot. Mirrors the `unavailable` half of `src/utils/admin-metrics.ts`.
 //!
+//! shortcut: the snapshot is the capture's unavailable shape with real health, upgrade when the
+//! relay grows accepted/rejected counters or a Prometheus endpoint (ADR 0014, D5).
+//!
 //! The capture assembles its snapshot from Prometheus queries; the Rust process has neither a
 //! Prometheus endpoint nor accepted/rejected counters (D5), so what it emits is the shape the
 //! capture itself emits when collection fails — `status: "unavailable"`, the seven numeric keys

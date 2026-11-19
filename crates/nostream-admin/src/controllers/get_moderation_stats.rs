@@ -2,6 +2,9 @@
 //! `src/controllers/admin/get-moderation-stats-controller.ts` with D4's answer: the query
 //! validation and its message are the capture's, the three aggregates are empty because the
 //! store has no grouped aggregation and there is no hit counter.
+//
+// shortcut: the aggregates are empty, upgrade when `EventRepository` grows a grouped
+// aggregation and a rate-limit hit counter (ADR 0014, D4).
 
 use std::sync::Arc;
 

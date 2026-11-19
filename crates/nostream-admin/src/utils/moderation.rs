@@ -6,7 +6,8 @@
 //! `[start, end]` pairs — byte-identical through a round trip.
 //!
 //! **A narrowing, recorded rather than hidden:** pubkeys are accepted in the 64-character hex
-//! form only. The capture also accepts an `npub`, and this tree has no bech32 decoder
+//! form only. shortcut: hex pubkeys only, upgrade when `nostream-core` grows a bech32 decoder.
+//! The capture also accepts an `npub`, and this tree has no bech32 decoder
 //! (`crates/nostream-relay/src/handlers/subscribe.rs:152-153` refuses the same form for the
 //! same reason). An `npub` is a `400` here, never silently stored.
 
