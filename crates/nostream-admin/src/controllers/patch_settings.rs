@@ -1,21 +1,35 @@
 //! `PATCH <prefix>/admin/settings`: validate each path, merge the changes into the user
 //! document, validate the merged result, write it with a backup, audit it, and enqueue the
 //! `settings.changed` row. Mirrors `src/controllers/admin/patch-settings-controller.ts`.
+//!
+//! The sequence is [`apply`] — transport-free, over the admin state and the body's JSON object —
+//! because the MCP server's `settings_set` tool performs the same write (R13). [`handle`] is the
+//! HTTP edge: the extractors, then that call, then the response.
 
 use std::sync::Arc;
 
 use axum::extract::State;
 use axum::http::StatusCode;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use crate::controllers::admin_auth_middleware::Session;
 use crate::controllers::admin_json_body_middleware::{
-    JsonBody, SettingsChange, SettingsPatch, invalid_request, settings_patch, validation_failed,
+    JsonBody, SettingsChange, SettingsPatch, invalid_request_body, settings_patch,
+    validation_failed_body,
 };
 use crate::controllers::admin_rate_limit_middleware::AdminRateLimited;
 use crate::controllers::request_context::ClientInfo;
 use crate::controllers::with_admin_controller_request_handler::{HandlerResult, json_response};
 use crate::state::AdminState;
+
+/// What one settings write produced: the controller's body, or its refusal with its status.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SettingsWrite {
+    /// The controller's `200` body, verbatim.
+    Written(Value),
+    /// The controller's `400` body, and the status every refusal carries.
+    Refused { status: StatusCode, body: Value },
+}
 
 /// `getSettingsReloadBehavior`: `restart-required` for `workers.`, `payments` and `network.`,
 /// else `hot-reload` (Value 15 — `payments` is compared without a dot, as written).
@@ -66,15 +80,20 @@ fn apply_changes(
     Ok((next_user, next_merged))
 }
 
-pub async fn handle(
-    State(state): State<Arc<AdminState>>,
-    _limited: AdminRateLimited,
-    _session: Session,
-    client: ClientInfo,
-    JsonBody(body): JsonBody,
-) -> HandlerResult {
-    let Some(SettingsPatch { changes, list_form }) = settings_patch(&body) else {
-        return Ok(invalid_request());
+/// The read → guard → merge → validate → save → audit → outbox sequence, transport-free.
+///
+/// `remote_address` is the HTTP caller's address, and the empty string for a caller that has
+/// none: the audit's `remoteAddress` is then omitted rather than written blank.
+pub async fn apply(
+    state: &AdminState,
+    body: &Map<String, Value>,
+    remote_address: &str,
+) -> Result<SettingsWrite, crate::error::AdminError> {
+    let Some(SettingsPatch { changes, list_form }) = settings_patch(body) else {
+        return Ok(SettingsWrite::Refused {
+            status: StatusCode::BAD_REQUEST,
+            body: invalid_request_body(),
+        });
     };
 
     // The whole read → change → validate → write sequence runs under the settings write
@@ -102,17 +121,26 @@ pub async fn handle(
         }
     }
     if !issues.is_empty() {
-        return Ok(validation_failed(&issues));
+        return Ok(SettingsWrite::Refused {
+            status: StatusCode::BAD_REQUEST,
+            body: validation_failed_body(&issues),
+        });
     }
 
     let user = state.user_document()?;
     let Ok((next_user, next_merged)) = apply_changes(&user, &merged, &changes) else {
-        return Ok(invalid_request());
+        return Ok(SettingsWrite::Refused {
+            status: StatusCode::BAD_REQUEST,
+            body: invalid_request_body(),
+        });
     };
 
     let validation = nostream_config::validate_document(&next_merged, &defaults);
     if !validation.is_empty() {
-        return Ok(validation_failed(&validation));
+        return Ok(SettingsWrite::Refused {
+            status: StatusCode::BAD_REQUEST,
+            body: validation_failed_body(&validation),
+        });
     }
 
     state.save_user_settings(&next_user)?;
@@ -132,34 +160,50 @@ pub async fn handle(
         .iter()
         .map(|change| json!({ "path": change["path"], "reload": change["reload"] }))
         .collect();
-    let _ = state.append_settings_audit(json!({
+    let mut settings_audit = json!({
         "timestamp": crate::state::iso8601(state.clock().now_ms()),
         "action": "settings.updated",
         "changes": audit_changes,
-        "remoteAddress": client.address,
-    }));
-    crate::controllers::post_login::record_audit(&state, "settings.updated", &client.address, None);
-    state
-        .enqueue_settings_changed(json!({
-            "changes": updated,
-            "remoteAddress": client.address,
-        }))
-        .await;
+    });
+    let mut outbox_payload = json!({ "changes": updated });
+    with_remote_address(&mut settings_audit, remote_address);
+    with_remote_address(&mut outbox_payload, remote_address);
+    let _ = state.append_settings_audit(settings_audit);
+    crate::controllers::post_login::record_audit(state, "settings.updated", remote_address, None);
+    state.enqueue_settings_changed(outbox_payload).await;
 
-    match updated.as_slice() {
-        [only] if !list_form => Ok(json_response(
-            StatusCode::OK,
-            &json!({
-                "ok": true,
-                "path": only["path"],
-                "value": only["value"],
-                "reload": only["reload"],
-            }),
-        )),
-        _ => Ok(json_response(
-            StatusCode::OK,
-            &json!({ "ok": true, "changes": updated }),
-        )),
+    let body = match updated.as_slice() {
+        [only] if !list_form => json!({
+            "ok": true,
+            "path": only["path"],
+            "value": only["value"],
+            "reload": only["reload"],
+        }),
+        _ => json!({ "ok": true, "changes": updated }),
+    };
+    Ok(SettingsWrite::Written(body))
+}
+
+/// Adds `remoteAddress` to a record, and leaves the key out when there is none — the same
+/// convention [`record_audit`](crate::controllers::post_login::record_audit) uses, so a write
+/// from a caller with no address (the MCP server's stdio client) records no address rather
+/// than a blank one.
+fn with_remote_address(document: &mut Value, remote_address: &str) {
+    if !remote_address.is_empty() {
+        document["remoteAddress"] = json!(remote_address);
+    }
+}
+
+pub async fn handle(
+    State(state): State<Arc<AdminState>>,
+    _limited: AdminRateLimited,
+    _session: Session,
+    client: ClientInfo,
+    JsonBody(body): JsonBody,
+) -> HandlerResult {
+    match apply(&state, &body, &client.address).await? {
+        SettingsWrite::Written(body) => Ok(json_response(StatusCode::OK, &body)),
+        SettingsWrite::Refused { status, body } => Ok(json_response(status, &body)),
     }
 }
 

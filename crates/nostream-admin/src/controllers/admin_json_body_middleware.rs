@@ -12,10 +12,10 @@ use std::sync::Arc;
 use axum::body::Bytes;
 use axum::extract::{FromRequest, Request};
 use axum::http::{StatusCode, header};
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use serde_json::{Map, Value, json};
 
-use crate::controllers::with_admin_controller_request_handler::error_message;
+use crate::controllers::with_admin_controller_request_handler::{error_message, json_response};
 use crate::state::AdminState;
 
 /// The body cap the capture mounts (`json({ limit: '1mb' })`).
@@ -28,7 +28,12 @@ pub fn unsupported_media_type() -> Response {
 
 /// `400 {"error":"Invalid request"}`.
 pub fn invalid_request() -> Response {
-    error_message(StatusCode::BAD_REQUEST, "Invalid request")
+    json_response(StatusCode::BAD_REQUEST, &invalid_request_body())
+}
+
+/// The body [`invalid_request`] answers, for a caller that has no response to build.
+pub fn invalid_request_body() -> Value {
+    json!({ "error": "Invalid request" })
 }
 
 fn payload_too_large() -> Response {
@@ -449,16 +454,16 @@ fn kind_rule_list(value: &Value) -> Option<Vec<Value>> {
 /// `400 {"error":"Validation failed","issues":[…]}`, the settings and notifications patch
 /// failure body.
 pub fn validation_failed(issues: &[nostream_config::Issue]) -> Response {
+    json_response(StatusCode::BAD_REQUEST, &validation_failed_body(issues))
+}
+
+/// The body [`validation_failed`] answers, for a caller that has no response to build.
+pub fn validation_failed_body(issues: &[nostream_config::Issue]) -> Value {
     let issues: Vec<Value> = issues
         .iter()
         .map(|issue| json!({ "path": issue.path, "message": issue.message }))
         .collect();
-    (
-        StatusCode::BAD_REQUEST,
-        [(header::CONTENT_TYPE, "application/json")],
-        json!({ "error": "Validation failed", "issues": issues }).to_string(),
-    )
-        .into_response()
+    json!({ "error": "Validation failed", "issues": issues })
 }
 
 #[cfg(test)]
