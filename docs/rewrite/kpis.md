@@ -63,8 +63,11 @@ columns are absent because the host has no database, and #1132 owns them. Until 
 ## 3. Migration safety — may the cutover run unattended
 
 **Base: recorded.** Job `031-held-descriptor` ran 300 randomised swap rounds against the
-descriptor pin: 21 pinned, 0 opened the wrong directory, 279 refused. The window it narrowed is
-named in the record rather than claimed closed.
+descriptor pin: 21 pinned, 0 opened the wrong directory, 279 refused. That campaign was a
+measurement taken during the job, not a harness this repository carries — the committed tests
+that pin the same behaviour are the swap cases in `crates/nostream-cli/tests/migrate_cli.rs`,
+which run one inversion at a time. **Turning the campaign into a per-release harness is open
+work**, and until it exists this KPI has a recorded base and no standing command.
 
 **What fires:** any round that opens a directory the pin did not hold, on any release. The
 threshold is zero and it is not negotiable — this is the check that decides whether a data
@@ -72,9 +75,13 @@ migration may run without a person watching.
 
 ## 4. Review share of job spend — is the factory paying to verify more than to build
 
-**Base: measured over 27 recorded jobs** in the factory history (`.factory/jobs/*/runs.jsonl`,
-`t: "spans"` lines), **$103.16 in total**. The ratio is review cost (lenses plus approver)
-divided by build cost, and it has a wide spread:
+**Base: measured over the 27 recorded jobs** in the factory history (`.factory/jobs/*/runs.jsonl`,
+`t: "spans"` lines), **$103.16 in total**. Those records live in the operator's workspace and are
+not published in this repository — the figures below are recorded values, reproducible only where
+the records are shared (see §9). The ratio is review cost (lenses plus approver) divided by build
+cost, over the **24** jobs whose sessions can be attributed by agent name — three (`005`, `006`,
+`007`) predate the `factory-*` naming, so their build cost cannot be separated from their review
+cost and they are excluded rather than guessed at. It has a wide spread:
 
 | job | rounds | ratio |
 |---|---|---|
@@ -82,11 +89,13 @@ divided by build cost, and it has a wide spread:
 | `027-expiry-clock` | 1 | 2.58 |
 | `019-refusal-exhaustive` | 2 | 2.85 |
 | `026-nwc-req-before-event` | 1 | 4.14 |
-| `017-frame-budget-settings` (median) | 4 | 1.56 |
+| `029-pg-to-lmdb` | 3 | 2.02 |
 | `031-held-descriptor` | 2 | 1.16 |
 
-**Median 1.5 over 24 jobs that have a build session.** The useful reading is that a review
-costing more than the build it reviews is *normal here*, not exceptional — so a target of
+**Median 1.50 over the 24 jobs with a build session**, and **seven of the 24 exceed 2.0** —
+`001-nip-audit`, `019-refusal-exhaustive`, `020-pin-test-message`, `021-created-at-bound`,
+`026-nwc-req-before-event`, `027-expiry-clock` and `029-pg-to-lmdb`. The useful reading is that a
+review costing more than the build it reviews is *normal here*, not exceptional — so a target of
 "well under 1" would be an aspiration with no history behind it.
 
 **What fires:** a job whose ratio exceeds 2.0, at which point the round composition is read
@@ -101,7 +110,8 @@ the KPI will reward making builds expensive.
 ## 5. Rounds per merged job — is the spec buying the right amount
 
 **Base: measured over the same 27 jobs.** Median 3, maximum 15, distribution
-`1×4 2×4 3×5 4×6 5×1 6×1 7×1 8×1 11×1 15×1`.
+`1×4 2×5 3×5 4×7 5×1 6×1 7×1 8×1 11×1 15×1` — twenty-seven jobs, the twenty-eighth record
+(`001-dependabot-security-bump`) carrying no `spans` line and therefore no round count.
 
 **What fires:** above 5 rounds on a job whose scope is one crate. A job that needs a sixth
 round is a spec defect showing up late, and the fix belongs in recon and the spec — the same
@@ -132,12 +142,24 @@ should have caught it.
 | KPI | artifact | command |
 |---|---|---|
 | NIP parity | `docs/rewrite/nip-porting.md` (to build) | a script over the ledger; `grep -c` over `crates/**/*.rs` for the stub check this document retires |
-| performance | `docs/rewrite/benchmarks/lmdb-50k-seed7.json` | `cargo run --release -p nostream-storage --example bench -- --backend lmdb --events 50000 --seed 7 --repeats 3 --verify` |
-| migration safety | the job record's `round-*/` and `build.md` | the randomized-round harness the job added, run per release |
-| review share, rounds | `.factory/jobs/*/runs.jsonl` | sum `spans.sessions[].cost` by agent: `reviewer` and `approver` against `builder` |
-| escapes | `.factory/jobs/*/runs.jsonl` | `outcome` and `regret` lines |
+| performance | `docs/rewrite/benchmarks/lmdb-50k-seed7.json` | `cargo run --release -p nostream-storage --example bench -- --backend lmdb --events 50000 --seed 7 --repeats 3 --verify --out /tmp/bench-lmdb.json` — `--out` is required and has no default |
+| migration safety | `crates/nostream-cli/tests/migrate_cli.rs` (committed swap cases); the 300-round campaign is job-time, not committed | `cargo test -p nostream-cli --test migrate_cli` per release; the campaign repeats the same assertion at scale |
+| review share, rounds | `.factory/jobs/*/runs.jsonl`, workspace only (§9) | sum `spans.sessions[].cost` by agent: `reviewer` and `approver` against `builder` |
+| escapes | `.factory/jobs/*/runs.jsonl`, workspace only (§9) | `outcome` and `regret` lines |
 
 **Order of work.** The parity ledger is the only one of the six that needs building before it
-can report; the other five are read from records that already exist. Until the ledger exists,
-the honest statement about parity is the one in §1: it is unknown, and the two cheap proxies
-for it are wrong.
+can report; the migration campaign needs a committed harness before it can run per release; the
+rest are read from records that already exist.
+
+## 9. Provenance, and what a reader here cannot check
+
+The three rewrite KPIs are reproducible from this repository: the benchmark artifact is
+committed beside its document, the swap tests are committed, and the parity ledger will be.
+
+The three factory numbers are not. `.factory/jobs/` is written in the operator's workspace and
+**only `.factory/config.json` is published**, so the $103.16 total, the 24-job ratio sample and
+the 27-job round distribution are recorded values that a reader of this repository cannot
+recompute. They are stated with their sample sizes and the excluded record named, so the
+thresholds can be argued about; they cannot be verified here, and this document does not
+pretend otherwise. Publishing the job records, or a periodic aggregate committed under
+`docs/rewrite/`, is the fix when someone needs to check them.
