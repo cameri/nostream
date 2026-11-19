@@ -89,6 +89,12 @@ export const isSubscriptionAuthRequired = (
   return getAuthenticatedPubkeys().size === 0
 }
 
+// A filter that could match a restricted event: one naming a restricted kind, or naming no kinds at all.
+const mayMatchRestrictedKind = (
+  restrictedKinds: (EventKinds | EventKindsRange)[],
+  filter: SubscriptionFilter,
+): boolean => !Array.isArray(filter.kinds) || filter.kinds.some((kind) => isKindRestricted(restrictedKinds, kind))
+
 // NIP-77 reconciliation, like COUNT, can't be filtered per event: it reveals the id of every event the
 // filter matches. REQ hides restricted events per event, so a filter that *could* match one -- one
 // naming a restricted kind or naming no kinds at all -- must be scoped to the client's own pubkeys.
@@ -102,9 +108,7 @@ export const isReconciliationAuthorized = (
     return true
   }
 
-  const mayMatchRestricted =
-    !Array.isArray(filter.kinds) || filter.kinds.some((kind) => isKindRestricted(restrictedKinds, kind))
-  if (!mayMatchRestricted) {
+  if (!mayMatchRestrictedKind(restrictedKinds, filter)) {
     return true
   }
 
@@ -115,8 +119,8 @@ export const isReconciliationAuthorized = (
   return isScopedToClient(filter.authors) || isScopedToClient(filter['#p'])
 }
 
-// COUNT can't be filtered per event, so a restricted-kind filter must be
-// scoped to the client's own pubkeys via authors/#p.
+// COUNT can't be filtered per event, so a filter that may match a restricted kind -- one naming a restricted
+// kind or naming no kinds at all -- must be scoped to the client's own pubkeys via authors/#p.
 export const isCountAuthorized = (
   settings: Settings | undefined,
   filters: SubscriptionFilter[],
@@ -127,9 +131,7 @@ export const isCountAuthorized = (
     return true
   }
 
-  const restrictedFilters = filters.filter(
-    (filter) => Array.isArray(filter.kinds) && filter.kinds.some((kind) => isKindRestricted(restrictedKinds, kind)),
-  )
+  const restrictedFilters = filters.filter((filter) => mayMatchRestrictedKind(restrictedKinds, filter))
   if (!restrictedFilters.length) {
     return true
   }

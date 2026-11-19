@@ -163,8 +163,32 @@ describe('nip42', () => {
       expect(isCountAuthorized(undefined, [{ kinds: [4] }], () => new Set())).to.be.true
     })
 
-    it('returns true when no filter targets restricted kinds', () => {
-      expect(isCountAuthorized(enabledSettings(), [{ kinds: [1] }, {}], () => new Set())).to.be.true
+    it('returns true when every filter names only ordinary kinds', () => {
+      expect(isCountAuthorized(enabledSettings(), [{ kinds: [1] }, { kinds: [7], authors: [author] }], () => new Set())).to
+        .be.true
+    })
+
+    it('returns true for a filter that matches no kinds', () => {
+      expect(isCountAuthorized(enabledSettings(), [{ kinds: [] }], () => new Set())).to.be.true
+    })
+
+    it('returns false for a filter without kinds, which could match a restricted event', () => {
+      expect(isCountAuthorized(enabledSettings(), [{}], () => new Set())).to.be.false
+      expect(isCountAuthorized(enabledSettings(), [{ '#p': [recipient] }], () => new Set())).to.be.false
+      expect(isCountAuthorized(enabledSettings(), [{ kinds: [1] }, {}], () => new Set([author]))).to.be.false
+    })
+
+    it('returns false for a filter without kinds that is scoped to somebody else', () => {
+      expect(isCountAuthorized(enabledSettings(), [{ '#p': [recipient] }], () => new Set([stranger]))).to.be.false
+    })
+
+    it('returns true for a filter without kinds that is scoped to the authenticated client', () => {
+      expect(isCountAuthorized(enabledSettings(), [{ authors: [author] }], () => new Set([author]))).to.be.true
+      expect(isCountAuthorized(enabledSettings(), [{ '#p': [recipient] }], () => new Set([recipient]))).to.be.true
+    })
+
+    it('returns true for a filter without kinds when restricted reads are off', () => {
+      expect(isCountAuthorized(undefined, [{}], () => new Set())).to.be.true
     })
 
     it('returns false for unauthenticated restricted-kind counts', () => {

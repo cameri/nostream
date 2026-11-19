@@ -210,7 +210,7 @@ export class EventMessageHandler implements IMessageHandler {
 
     try {
       await strategy.execute(event)
-      this.processNip05Metadata(event)
+      await this.processNip05MetadataIfCurrent(event)
     } catch (error) {
       logger.error('error handling message', message, error)
       this.webSocket.emit(
@@ -755,6 +755,46 @@ export class EventMessageHandler implements IMessageHandler {
     }
   }
 
+  /**
+   * A kind-0 profile the relay already replaced with a newer one is still accepted by the replaceable-event
+   * strategy (the write is a no-op and the client gets `duplicate:`), but it must not change the author's
+   * NIP-05 state: replaying someone's older signed profile would otherwise delete or swap the verification
+   * that belongs to their current profile. Only a profile that is the author's current one is processed.
+   */
+  protected async processNip05MetadataIfCurrent(event: Event): Promise<void> {
+    const nip05Settings = this.settings().nip05
+    if (event.kind === EventKinds.SET_METADATA && nip05Settings && nip05Settings.mode !== 'disabled') {
+      try {
+        if (await this.isSupersededProfile(event)) {
+          logger('kind-0 %s from %s was replaced by a newer profile, NIP-05 left as is', event.id, event.pubkey)
+          return
+        }
+      } catch (error) {
+        // Not being able to tell is not a reason to skip a genuine profile update.
+        logger('unable to check whether kind-0 %s is the current profile: %o', event.id, error)
+      }
+    }
+
+    this.processNip05Metadata(event)
+  }
+
+  // Mirrors which of two kind-0 events the replaceable upsert keeps: the later created_at, and for equal
+  // created_at the lower id. The stored profile is read the way the upsert sees it, so a profile that
+  // subscriptions hide (a NIP-56 report, a soft delete) still holds the slot. A stored profile that is not
+  // newer does not count as superseding.
+  private async isSupersededProfile(event: Event): Promise<boolean> {
+    const [stored] = await this.eventRepository.findStoredReplaceable(event.pubkey, EventKinds.SET_METADATA)
+    if (!stored) {
+      return false
+    }
+
+    const storedId = stored.event_id.toString('hex')
+    return (
+      stored.event_created_at > event.created_at ||
+      (stored.event_created_at === event.created_at && storedId < event.id)
+    )
+  }
+
   protected processNip05Metadata(event: Event): void {
     const nip05Settings = this.settings().nip05
     if (!nip05Settings || nip05Settings.mode === 'disabled') {
@@ -802,10 +842,13 @@ export class EventMessageHandler implements IMessageHandler {
  * - `mismatch` / `invalid` are definitive: flip to unverified, null out
  *   lastVerifiedAt (the author is no longer the domain's owner), and bump
  *   failureCount relative to any prior row.
- * - `error` is transient: keep the prior isVerified/lastVerifiedAt (if any)
- *   so previously-verified authors aren't blocked by a single network hiccup,
- *   but still bump failureCount + lastCheckedAt so the re-verification backoff
- *   can take effect.
+ * - `error` is transient: keep the prior isVerified/lastVerifiedAt so
+ *   previously-verified authors aren't blocked by a single network hiccup, but
+ *   only when the identifier is the one that was verified. A changed identifier
+ *   (or domain) has not been proven yet, so it starts unverified instead of
+ *   inheriting the earlier identity's verification. failureCount and
+ *   lastCheckedAt are bumped either way so the re-verification backoff can
+ *   take effect.
  */
 function buildMetadataVerification(
   pubkey: string,
@@ -845,17 +888,23 @@ function buildMetadataVerification(
         updatedAt: now,
       }
     case 'error':
-    default:
+    default: {
+      const sameIdentity =
+        existing !== undefined &&
+        existing.nip05.toLowerCase() === nip05.toLowerCase() &&
+        existing.domain.toLowerCase() === domain.toLowerCase()
+
       return {
         pubkey,
         nip05,
         domain,
-        isVerified: existing?.isVerified ?? false,
-        lastVerifiedAt: existing?.lastVerifiedAt ?? null,
+        isVerified: sameIdentity ? existing.isVerified : false,
+        lastVerifiedAt: sameIdentity ? existing.lastVerifiedAt : null,
         lastCheckedAt: now,
         failureCount: priorFailureCount + 1,
         createdAt,
         updatedAt: now,
       }
+    }
   }
 }

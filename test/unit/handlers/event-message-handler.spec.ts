@@ -253,6 +253,28 @@ describe('EventMessageHandler', () => {
       expect(strategyExecuteStub).to.have.been.calledOnceWithExactly(event)
     })
 
+    it('hands the event to the NIP-05 handling after the strategy has run', async () => {
+      isEventValidStub.returns(undefined)
+      canAcceptEventStub.returns(undefined)
+      const nip05Stub = sandbox.stub(EventMessageHandler.prototype, 'processNip05MetadataIfCurrent' as any).resolves()
+
+      await handler.handleMessage(message)
+
+      expect(nip05Stub).to.have.been.calledOnceWithExactly(event)
+      expect(nip05Stub).to.have.been.calledAfter(strategyExecuteStub)
+    })
+
+    it('does not run the NIP-05 handling when the strategy rejects', async () => {
+      isEventValidStub.returns(undefined)
+      canAcceptEventStub.returns(undefined)
+      strategyExecuteStub.rejects()
+      const nip05Stub = sandbox.stub(EventMessageHandler.prototype, 'processNip05MetadataIfCurrent' as any).resolves()
+
+      await handler.handleMessage(message)
+
+      expect(nip05Stub).not.to.have.been.called
+    })
+
     it('does not reject if strategy rejects', async () => {
       isEventValidStub.returns(undefined)
       canAcceptEventStub.returns(undefined)
@@ -2339,6 +2361,112 @@ describe('EventMessageHandler', () => {
     })
   })
 
+  describe('processNip05MetadataIfCurrent', () => {
+    let settings: Settings
+    let findStoredReplaceable: Sinon.SinonStub
+    let processStub: Sinon.SinonStub
+
+    const storedProfile = (createdAt: number, id: string) => ({
+      event_id: Buffer.from(id, 'hex'),
+      event_created_at: createdAt,
+    })
+
+    beforeEach(() => {
+      settings = {
+        info: { relay_url: 'relay_url' },
+        nip05: { mode: 'enabled', verifyExpiration: 86400000, domainWhitelist: [], domainBlacklist: [] },
+      } as any
+      findStoredReplaceable = sandbox.stub().resolves([])
+      handler = new EventMessageHandler(
+        {} as any,
+        () => null,
+        { findStoredReplaceable } as any,
+        userRepository,
+        () => settings,
+        {} as any,
+        {} as any,
+        () => ({ hit: async () => ({ limited: false }) }),
+        {} as any,
+      )
+      processStub = sandbox.stub(handler as any, 'processNip05Metadata')
+      event.kind = EventKinds.SET_METADATA
+      event.created_at = 1000
+      event.id = '5'.repeat(64)
+    })
+
+    it('processes a profile that is the author\'s current one', async () => {
+      findStoredReplaceable.resolves([storedProfile(1000, event.id)])
+
+      await (handler as any).processNip05MetadataIfCurrent(event)
+
+      expect(processStub).to.have.been.calledOnceWithExactly(event)
+      expect(findStoredReplaceable).to.have.been.calledOnceWithExactly(event.pubkey, EventKinds.SET_METADATA)
+    })
+
+    it('processes a profile when none is stored', async () => {
+      await (handler as any).processNip05MetadataIfCurrent(event)
+
+      expect(processStub).to.have.been.calledOnce
+    })
+
+    it('ignores an older profile that a newer stored profile has replaced', async () => {
+      findStoredReplaceable.resolves([storedProfile(2000, 'a'.repeat(64))])
+
+      await (handler as any).processNip05MetadataIfCurrent(event)
+
+      expect(processStub).not.to.have.been.called
+    })
+
+    it('ignores a profile that lost the tie on created_at to a stored profile with a lower id', async () => {
+      findStoredReplaceable.resolves([storedProfile(1000, '1'.repeat(64))])
+
+      await (handler as any).processNip05MetadataIfCurrent(event)
+
+      expect(processStub).not.to.have.been.called
+    })
+
+    it('processes a profile that wins the tie on created_at against a stored profile with a higher id', async () => {
+      findStoredReplaceable.resolves([storedProfile(1000, '9'.repeat(64))])
+
+      await (handler as any).processNip05MetadataIfCurrent(event)
+
+      expect(processStub).to.have.been.calledOnce
+    })
+
+    it('processes a profile when the stored one is older, as with a replica that has not caught up', async () => {
+      findStoredReplaceable.resolves([storedProfile(500, 'a'.repeat(64))])
+
+      await (handler as any).processNip05MetadataIfCurrent(event)
+
+      expect(processStub).to.have.been.calledOnce
+    })
+
+    it('processes the profile when the check fails', async () => {
+      findStoredReplaceable.rejects(new Error('db down'))
+
+      await (handler as any).processNip05MetadataIfCurrent(event)
+
+      expect(processStub).to.have.been.calledOnce
+    })
+
+    it('does not look anything up for other kinds', async () => {
+      event.kind = EventKinds.TEXT_NOTE
+
+      await (handler as any).processNip05MetadataIfCurrent(event)
+
+      expect(findStoredReplaceable).not.to.have.been.called
+      expect(processStub).to.have.been.calledOnce
+    })
+
+    it('does not look anything up when NIP-05 is disabled', async () => {
+      settings.nip05.mode = 'disabled'
+
+      await (handler as any).processNip05MetadataIfCurrent(event)
+
+      expect(findStoredReplaceable).not.to.have.been.called
+    })
+  })
+
   describe('processNip05Metadata', () => {
     let settings: Settings
     let nip05VerificationRepository: any
@@ -2545,6 +2673,71 @@ describe('EventMessageHandler', () => {
       expect(upsertArg.lastVerifiedAt).to.equal(priorVerifiedAt)
       expect(upsertArg.failureCount).to.equal(2)
       expect(upsertArg.lastCheckedAt).to.be.an.instanceOf(Date)
+    })
+
+    describe('on a transient error when the identifier changed', () => {
+      const priorVerifiedAt = new Date(Date.now() - 1000)
+      const priorRow = () => ({
+        pubkey: event.pubkey,
+        nip05: 'alice@example.com',
+        domain: 'example.com',
+        isVerified: true,
+        lastVerifiedAt: priorVerifiedAt,
+        lastCheckedAt: priorVerifiedAt,
+        failureCount: 1,
+        createdAt: priorVerifiedAt,
+        updatedAt: priorVerifiedAt,
+      })
+
+      const run = async (nip05: string) => {
+        nip05VerificationRepository.findByPubkey.resolves(priorRow())
+        verifyStub.resolves({ status: 'error', reason: 'ETIMEDOUT' })
+        event.kind = EventKinds.SET_METADATA
+        event.content = JSON.stringify({ nip05 })
+
+        ;(handler as any).processNip05Metadata(event)
+        await new Promise((resolve) => setTimeout(resolve, 10))
+
+        return nip05VerificationRepository.upsert.firstCall.args[0]
+      }
+
+      it('does not give a new domain the earlier verification', async () => {
+        const upsertArg = await run('alice@other.example')
+
+        expect(upsertArg.nip05).to.equal('alice@other.example')
+        expect(upsertArg.domain).to.equal('other.example')
+        expect(upsertArg.isVerified).to.be.false
+        expect(upsertArg.lastVerifiedAt).to.be.null
+        expect(upsertArg.failureCount).to.equal(2)
+      })
+
+      it('does not give a new local part on the same domain the earlier verification', async () => {
+        const upsertArg = await run('bob@example.com')
+
+        expect(upsertArg.isVerified).to.be.false
+        expect(upsertArg.lastVerifiedAt).to.be.null
+      })
+
+      it('still keeps the verification when only the letter case differs', async () => {
+        const upsertArg = await run('Alice@Example.com')
+
+        expect(upsertArg.isVerified).to.be.true
+        expect(upsertArg.lastVerifiedAt).to.equal(priorVerifiedAt)
+      })
+
+      it('starts unverified when there was no earlier row', async () => {
+        nip05VerificationRepository.findByPubkey.resolves(undefined)
+        verifyStub.resolves({ status: 'error', reason: 'ETIMEDOUT' })
+        event.kind = EventKinds.SET_METADATA
+        event.content = JSON.stringify({ nip05: 'alice@example.com' })
+
+        ;(handler as any).processNip05Metadata(event)
+        await new Promise((resolve) => setTimeout(resolve, 10))
+
+        const upsertArg = nip05VerificationRepository.upsert.firstCall.args[0]
+        expect(upsertArg.isVerified).to.be.false
+        expect(upsertArg.lastVerifiedAt).to.be.null
+      })
     })
 
     it('handles verification errors gracefully (thrown by verifier)', async () => {
