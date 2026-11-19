@@ -46,6 +46,12 @@ The KPI is `ported / advertised`. It fires in two places: a NIP moving backwards
 cutover requiring 25/25 `ported`. The floor is not a percentage chosen for comfort — it is the
 cutover's own precondition, which is what makes it a gate rather than a score.
 
+**Built: [`nip-porting.md`](nip-porting.md).** The first reading is **15 of 25 `ported`**, with
+8 `partial` and 2 `open` at `f01cb5f3`; every Rust citation in it was checked to exist at that
+commit. The two `open` rows are unbuilt surfaces rather than untested code — NIP-11 needs an
+HTTP document and NIP-77 needs negentropy on the wire — so the gate cannot reach 25/25 by
+writing tests alone.
+
 ## 2. Store performance — did the rewrite earn its price
 
 **Base: recorded.** `docs/rewrite/benchmarks/lmdb-50k-seed7.json`, from `cargo run --release -p
@@ -141,7 +147,7 @@ should have caught it.
 
 | KPI | artifact | command |
 |---|---|---|
-| NIP parity | `docs/rewrite/nip-porting.md` (to build) | a script over the ledger; `grep -c` over `crates/**/*.rs` for the stub check this document retires |
+| NIP parity | `docs/rewrite/nip-porting.md` (built; 15/25 at `f01cb5f3`) | count the `ported` rows in its ledger table — the `grep -c` stub check this document retires is not the reading |
 | performance | `docs/rewrite/benchmarks/lmdb-50k-seed7.json` | `cargo run --release -p nostream-storage --example bench -- --backend lmdb --events 50000 --seed 7 --repeats 3 --verify --out /tmp/bench-lmdb.json` — `--out` is required and has no default |
 | migration safety | `crates/nostream-cli/tests/migrate_cli.rs` (committed swap cases); the 300-round campaign is job-time, not committed | `cargo test -p nostream-cli --test migrate_cli` **on Linux, with `/proc/self/fd` present**; the campaign repeats the same assertion at scale |
 | review share, rounds | `.factory/jobs/*/runs.jsonl`, workspace only (§9) | sum `spans.sessions[].cost` by agent: `reviewer` and `approver` against `builder` |
@@ -152,9 +158,9 @@ should have caught it.
 passes while skipping every directory-pin test. A green run anywhere else is not evidence for
 this KPI, and the release record must name the host it ran on.
 
-**Order of work.** The parity ledger is the only one of the six that needs building before it
-can report; the migration campaign needs a committed harness before it can run per release; the
-rest are read from records that already exist.
+**Order of work.** The parity ledger is built and reports 15/25; the migration campaign still
+needs a committed harness before it can run per release; the rest are read from records that
+already exist.
 
 ## 9. Provenance, and what a reader here cannot check
 
