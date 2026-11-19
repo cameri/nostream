@@ -8,7 +8,9 @@
 //! file; the loader reads them.
 
 use std::fs;
+use std::io::Write as _;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
@@ -84,8 +86,8 @@ pub fn is_backup_filename(filename: &str) -> bool {
 }
 
 /// Writes `document` as the user settings file, copying the previous file into the backups
-/// directory first. The write is atomic (temporary file, then rename) and the file is created
-/// owner-readable only, as the capture's `mode: 0o600` does.
+/// directory first. The write is atomic (temporary file, then rename) and the temporary file
+/// is created owner-readable only, as the capture's `mode: 0o600` does.
 pub fn save_with_backup(
     paths: &SettingsPaths,
     document: &Value,
@@ -110,16 +112,25 @@ pub fn save_with_backup(
         })?;
     }
 
-    let temporary = paths
-        .config_base_dir
-        .join(format!(".settings.{}.tmp", std::process::id()));
+    let temporary = paths.config_base_dir.join(format!(
+        ".settings.{}.{}.tmp",
+        std::process::id(),
+        next_temp()
+    ));
     let write = || -> std::io::Result<()> {
-        fs::write(&temporary, serialized.as_bytes())?;
+        // Created with the file's final mode, so the document is never readable by another
+        // local user even for the instant before the rename (`fs::write` would create it at
+        // `0666 & ~umask` and leave the chmod a window behind).
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true);
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&temporary, fs::Permissions::from_mode(0o600))?;
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
         }
+        let mut file = options.open(&temporary)?;
+        file.write_all(serialized.as_bytes())?;
+        drop(file);
         fs::rename(&temporary, &paths.settings_file)
     };
     write().map_err(|source| {
@@ -131,10 +142,15 @@ pub fn save_with_backup(
     })
 }
 
+/// The temporary file's counter, so two saves in one process never share a name (the capture
+/// stamps `Date.now()` into it for the same reason).
+fn next_temp() -> u64 {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
 /// Appends one JSON line to the settings audit file (`appendSettingsAuditLog`).
 pub fn append_audit(paths: &SettingsPaths, entry: &serde_json::Value) -> Result<(), ConfigError> {
-    use std::io::Write;
-
     fs::create_dir_all(&paths.config_base_dir).map_err(|source| ConfigError::Write {
         path: paths.config_base_dir.clone(),
         source,
