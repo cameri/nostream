@@ -7,6 +7,7 @@
 //! | `the_comparator_rejects_a_changed_list` | the comparator can fail: a removed tool, a changed description and a changed schema each fail through the same `compare` |
 //! | `the_required_parameters_are_typed` | the shapes the values fix: an `Option<T>` is a two-element type array, `get_event` carries `id`, `settings_set` names both accepted forms, no schema is empty |
 //! | `the_server_version_is_what_the_composition_supplies` | `serverInfo.version` is the composition's, not this crate's |
+//! | `initialize_publishes_the_prerequisites` | `initialize`'s `instructions` name the three prerequisites and the credential |
 //!
 //! The snapshot is **name-sorted**, because rmcp sorts the list and array equality is
 //! order-sensitive (R21). It is compared, never regenerated: nothing here writes a file.
@@ -16,7 +17,9 @@
 mod common;
 
 use common::TestMcp;
-use nostream_mcp::{TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET};
+use nostream_mcp::{
+    MAX_PAGE_ROWS, TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET,
+};
 use serde_json::{Value, json};
 
 /// The committed snapshot, as a document. A missing fixture fails the case.
@@ -116,6 +119,22 @@ async fn the_required_parameters_are_typed() {
     );
     assert_eq!(kinds[1], "null", "and its second member is null: {limit}");
 
+    // The page contract the descriptions state, and the schema's own bound.
+    let listing = tool(TOOL_LIST_EVENTS);
+    let description = listing["description"].as_str().unwrap_or_default();
+    assert!(description.contains("oldest first"), "{description}");
+    assert!(description.contains("truncated"), "{description}");
+    assert_eq!(
+        listing["inputSchema"]["properties"]["limit"]["minimum"],
+        json!(1),
+        "a page of zero rows is not a page: {description}"
+    );
+    assert_eq!(
+        listing["inputSchema"]["properties"]["limit"]["maximum"],
+        json!(MAX_PAGE_ROWS),
+        "the schema's bound is the tool's page bound"
+    );
+
     assert!(
         tool(TOOL_GET_EVENT)["inputSchema"]["properties"]
             .get("id")
@@ -167,4 +186,27 @@ async fn the_server_version_is_what_the_composition_supplies() {
     assert_eq!(server.name, nostream_mcp::MCP_SERVER_NAME);
     assert_eq!(server.version, "9.9.9");
     assert_ne!(server.version, env!("CARGO_PKG_VERSION"));
+}
+
+#[tokio::test]
+async fn initialize_publishes_the_prerequisites() {
+    let fixture = TestMcp::start().await;
+    let client = fixture.client().await;
+    let instructions = client
+        .client
+        .peer()
+        .peer_info()
+        .and_then(|info| info.instructions.clone())
+        .expect("initialize carries instructions");
+    for needle in [
+        "admin.enabled",
+        "SECRET",
+        "NOSTREAM_ADMIN_TOKEN",
+        "POST /admin/login",
+    ] {
+        assert!(
+            instructions.contains(needle),
+            "the instructions name `{needle}`: {instructions}"
+        );
+    }
 }

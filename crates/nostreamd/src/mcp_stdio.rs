@@ -1,4 +1,10 @@
-//! `--mcp-stdio`: the admin MCP server on stdin/stdout, in the daemon's own process.
+//! `--mcp-stdio`: the admin MCP server on stdin/stdout, in a process of its own.
+//!
+//! It composes an [`AdminState`](nostream_admin::AdminState) of its own over the same config
+//! directory rather than sharing the console's: `--mcp-stdio` returns before the daemon's
+//! `serve` loop would start, so the two modes are alternatives, and running both against one
+//! directory is outside ADR 0012 D9 — the audit file and the settings write each assume one
+//! writer per configuration (D18).
 //!
 //! The mode binds **no socket** — `nostreamd` stays the crate that binds, and this mode is not
 //! one of its listeners (D13) — and opens **no store of its own**: the admin state comes from

@@ -4,6 +4,7 @@
 //! |---|---|
 //! | `each_call_appends_one_line` | four calls append five lines in call order — the four `mcp.*` lines, then `settings_set`'s own `settings.updated` |
 //! | `a_refused_call_appends_nothing` | a call with bad arguments and a call with no token each leave the file untouched |
+//! | `every_registered_tool_is_in_the_audit_table` | the audit table is total: no tool the router registers can execute unaudited |
 //!
 //! R9 appends the `mcp.*` line at dispatch, before the handler's work, so the order in the file
 //! is the order of the calls and a domain line always follows its own dispatch line.
@@ -11,6 +12,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod common;
+
+use std::collections::BTreeSet;
 
 use common::{Fixture, TestMcp, Token, event, id_of, text};
 use nostream_mcp::{
@@ -108,5 +111,35 @@ async fn a_refused_call_appends_nothing() {
     assert!(
         untokened.audit_entries().is_empty(),
         "a refused credential writes nothing"
+    );
+}
+
+#[tokio::test]
+async fn every_registered_tool_is_in_the_audit_table() {
+    let fixture = TestMcp::start().await;
+    let client = fixture.client().await;
+
+    // The router's own list: `tools/list` is what `ToolRouter::list_all()` answers, so a tool
+    // added with a `#[tool]` method and no table entry is in `registered` and nowhere else.
+    let registered: BTreeSet<String> = client
+        .tools()
+        .await
+        .iter()
+        .map(|tool| tool.name.to_string())
+        .collect();
+    for name in &registered {
+        assert!(
+            nostream_mcp::arguments_parse(name, None).is_some(),
+            "tool {name} is registered but has no TOOL_ARGUMENTS entry, so its calls would \
+             execute unaudited"
+        );
+    }
+    let tabled: BTreeSet<String> = nostream_mcp::TOOL_ARGUMENTS
+        .iter()
+        .map(|(name, _)| (*name).to_owned())
+        .collect();
+    assert_eq!(
+        tabled, registered,
+        "the table names exactly the tools the router registers"
     );
 }

@@ -11,6 +11,7 @@ The following environment variables can be set:
 | RELAY_PRIVATE_KEY                | Relay's private key in hex     | (auto-generated)       |
 | WORKER_COUNT                     | Number of workers override     | No. of available CPUs  |
 | LOG_FORMAT                       | Set to `json` to replace the startup banner with one `relay starting` record, so every line the relay writes parses as JSON. | (banner) |
+| NOSTREAM_ADMIN_TOKEN            | Admin session token `nostreamd --mcp-stdio` authenticates every call with. Mint it by logging in to the admin console (`POST /admin/login`); the mode needs `admin.enabled: true` and `SECRET` set as well. | (none: every call answers `Unauthorized`) |
 | DB_URI                           | PostgreSQL URI (overrides DB_HOST, DB_PORT, etc.) | |
 | DB_HOST                          | PostgresSQL Hostname           |                        |
 | DB_PORT                          | PostgreSQL Port                | 5432                   |

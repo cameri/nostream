@@ -59,9 +59,6 @@ pub const LMDB_MAX_DBS: u32 = 64;
 /// The number of concurrent read transactions the environment reserves.
 pub const LMDB_MAX_READERS: u32 = 512;
 
-/// The capture's default page size (`DEFAULT_FILTER_LIMIT`).
-pub(crate) const DEFAULT_FILTER_LIMIT: u64 = 500;
-
 /// The largest page a read materialises, however large a limit the wire asks for.
 ///
 /// `limits.client.subscription.maxLimit` is the relay's own bound, but it is applied only when

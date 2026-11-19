@@ -71,6 +71,17 @@ pub enum Token {
     Expired,
 }
 
+/// Which store bundle the composed state reads.
+#[derive(Debug, Clone, Copy, Default)]
+pub enum Stores {
+    /// The seeded LMDB backend: every tool's real read path.
+    #[default]
+    Seeded,
+    /// The daemon's own unwired bundle, where every repository call reports
+    /// `NotImplemented` (R19) — which tells a case what ran before the store was reached.
+    Unavailable,
+}
+
 /// What a test wants built.
 pub struct Fixture {
     /// The user settings document written to `<config>/settings.yaml`.
@@ -81,6 +92,8 @@ pub struct Fixture {
     pub token: Token,
     /// The starting clock reading.
     pub now_ms: u64,
+    /// The store bundle the state is composed over.
+    pub stores: Stores,
 }
 
 impl Default for Fixture {
@@ -90,6 +103,7 @@ impl Default for Fixture {
             secret: Some(SECRET.to_vec()),
             token: Token::Valid,
             now_ms: NOW_MS,
+            stores: Stores::Seeded,
         }
     }
 }
@@ -134,22 +148,29 @@ impl TestMcp {
             (Token::Expired, Some(secret)) => Some(mint(secret, now_seconds(fixture.now_ms) - 1)),
         };
 
+        // The backend is always opened, so a case can seed it; when the fixture asks for the
+        // daemon's bundle the state reads `unavailable::stores()` instead, and the seeded rows
+        // are simply never reached.
         let backend = LmdbBackend::open(temp.path().join("store")).await.unwrap();
         let backend = Arc::new(backend);
-        let stores = Arc::new(ServiceStores {
-            events: Arc::clone(&backend) as Arc<dyn EventRepository>,
-            users: Arc::clone(&backend) as Arc<dyn nostream_storage::repositories::UserRepository>,
-            invoices: Arc::clone(&backend)
-                as Arc<dyn nostream_storage::repositories::InvoiceRepository>,
-            nip05: Arc::clone(&backend)
-                as Arc<dyn nostream_storage::repositories::Nip05VerificationRepository>,
-            dvm_jobs: Arc::clone(&backend)
-                as Arc<dyn nostream_storage::repositories::DvmJobRepository>,
-            notification_outbox: Arc::clone(&backend)
-                as Arc<dyn nostream_storage::repositories::NotificationOutboxRepository>,
-            notification_delivery_log: Arc::clone(&backend)
-                as Arc<dyn nostream_storage::repositories::NotificationDeliveryLogRepository>,
-        });
+        let stores = match fixture.stores {
+            Stores::Seeded => Arc::new(ServiceStores {
+                events: Arc::clone(&backend) as Arc<dyn EventRepository>,
+                users: Arc::clone(&backend)
+                    as Arc<dyn nostream_storage::repositories::UserRepository>,
+                invoices: Arc::clone(&backend)
+                    as Arc<dyn nostream_storage::repositories::InvoiceRepository>,
+                nip05: Arc::clone(&backend)
+                    as Arc<dyn nostream_storage::repositories::Nip05VerificationRepository>,
+                dvm_jobs: Arc::clone(&backend)
+                    as Arc<dyn nostream_storage::repositories::DvmJobRepository>,
+                notification_outbox: Arc::clone(&backend)
+                    as Arc<dyn nostream_storage::repositories::NotificationOutboxRepository>,
+                notification_delivery_log: Arc::clone(&backend)
+                    as Arc<dyn nostream_storage::repositories::NotificationDeliveryLogRepository>,
+            }),
+            Stores::Unavailable => Arc::new(nostream_services::unavailable::stores()),
+        };
 
         let client = Arc::new(ReqwestClient::new().unwrap());
         let http: Arc<dyn HttpClient> = client.clone();

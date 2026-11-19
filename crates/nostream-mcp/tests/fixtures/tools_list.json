@@ -1,12 +1,12 @@
 {
   "tools": [
     {
-      "description": "Read one stored event by its exact 64-character hex id; null when no such id is stored",
+      "description": "Read one stored event by its exact 64-character hex id, in either case; null when no such id is stored",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "id": {
-            "description": "The event's 64-character lowercase hex id.",
+            "description": "The event's 64-character hex id, in either case.",
             "type": "string"
           }
         },
@@ -18,12 +18,12 @@
       "name": "get_event"
     },
     {
-      "description": "List stored events matching the given kinds, authors, ids, since and until, up to limit",
+      "description": "List stored events matching the given kinds, authors, ids, since and until. Rows come back oldest first, and `limit` is the page size — the first rows in that order, at most 500; `truncated` is true when the page is full, so more rows may match",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "authors": {
-            "description": "Author pubkey hex prefixes.",
+            "description": "Author pubkey hex prefixes, 4 to 64 characters each in either case; at most 64 per\ncall. A criterion the wire would refuse is an error, not a narrower read.",
             "items": {
               "type": "string"
             },
@@ -33,7 +33,7 @@
             ]
           },
           "ids": {
-            "description": "Event id hex prefixes.",
+            "description": "Event id hex prefixes, 4 to 64 characters each in either case; at most 64 per call.",
             "items": {
               "type": "string"
             },
@@ -55,9 +55,10 @@
             ]
           },
           "limit": {
-            "description": "Page size; absent leaves the store's own default in charge.",
+            "description": "Page size: 1 to 500 rows, and they are the first rows in the payload's order; absent\nuses 500, the store's own page.",
             "format": "uint64",
-            "minimum": 0,
+            "maximum": 500,
+            "minimum": 1,
             "type": [
               "integer",
               "null"
@@ -85,7 +86,7 @@
       "name": "list_events"
     },
     {
-      "description": "Read the merged settings document, narrowed to the defaults' keys and redacted",
+      "description": "Read the merged settings document, narrowed to the defaults' keys and redacted. The document arrives under `settings`",
       "inputSchema": {
         "properties": {},
         "type": "object"
@@ -93,13 +94,56 @@
       "name": "settings_get"
     },
     {
-      "description": "Write settings: one path as {\"path\": \"wot.enabled\", \"value\": false}, or several as {\"changes\": [{\"path\": …, \"value\": …}, …]}",
+      "description": "Write settings: one path as {\"path\": \"wot.enabled\", \"value\": false}, or several as {\"changes\": [{\"path\": …, \"value\": …}, …]}. No other keys are accepted",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": true,
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "value": {}
+            },
+            "required": [
+              "path",
+              "value"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "changes": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "value": {}
+                  },
+                  "required": [
+                    "path",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              }
+            },
+            "required": [
+              "changes"
+            ],
+            "type": "object"
+          }
+        ],
         "type": "object"
       },
       "name": "settings_set"
     }
   ]
 }
+

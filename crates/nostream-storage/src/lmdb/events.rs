@@ -24,9 +24,9 @@ use super::encoding::{self, EventHeader};
 use super::rows;
 use super::search;
 use super::{
-    DEFAULT_FILTER_LIMIT, Databases, Gates, MAX_PAGE_KEYS, RETENTION_BATCH_SIZE,
-    STREAM_BATCH_ITEMS, STREAM_BATCH_KEYS,
+    Databases, Gates, MAX_PAGE_KEYS, RETENTION_BATCH_SIZE, STREAM_BATCH_ITEMS, STREAM_BATCH_KEYS,
 };
+use crate::DEFAULT_PAGE_ROWS;
 use crate::error::StorageError;
 use crate::records::{distinct_replacements, replaces_fields};
 use crate::repositories::{
@@ -1103,7 +1103,7 @@ fn counted_earlier(
 /// The page a filter may materialise: its own limit or the capture's default, and never more
 /// than [`MAX_PAGE_KEYS`] however large the limit on the wire is.
 fn page_limit(filter: &Filter) -> usize {
-    count_limit(filter.limit.unwrap_or(DEFAULT_FILTER_LIMIT))
+    count_limit(filter.limit.unwrap_or(DEFAULT_PAGE_ROWS))
 }
 
 /// A wire limit clamped to [`MAX_PAGE_KEYS`], so no request chooses the size of an allocation.
@@ -3698,13 +3698,13 @@ mod tests {
                     .collect(),
             ),
             kinds: Some(vec![Kind(1)]),
-            limit: Some(DEFAULT_FILTER_LIMIT),
+            limit: Some(DEFAULT_PAGE_ROWS),
             ..Filter::default()
         };
         let page = assert_page_sorts_once(&transaction, &databases, &filter, MAX_PAGE_KEYS);
         assert_eq!(
             created(&page),
-            (MAX_PAGE_KEYS as i64 - DEFAULT_FILTER_LIMIT as i64..MAX_PAGE_KEYS as i64)
+            (MAX_PAGE_KEYS as i64 - DEFAULT_PAGE_ROWS as i64..MAX_PAGE_KEYS as i64)
                 .rev()
                 .collect::<Vec<i64>>(),
             "the page is the newest `limit` authors, newest first"
@@ -3721,7 +3721,7 @@ mod tests {
         let filter = Filter {
             authors: Some(vec![records[0].event.pubkey.to_string()]),
             kinds: Some(vec![Kind(1)]),
-            limit: Some(DEFAULT_FILTER_LIMIT),
+            limit: Some(DEFAULT_PAGE_ROWS),
             ..Filter::default()
         };
         let page = assert_page_sorts_once(&transaction, &databases, &filter, 1);

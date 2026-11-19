@@ -25,6 +25,12 @@ pub enum McpError {
     #[error("the tool's arguments could not be read: {0}")]
     Arguments(String),
 
+    /// A criterion the tool refuses before it reads: an id or author that is not a
+    /// 4-to-64-character hex prefix, more criteria than one call may carry, or a page size
+    /// outside its bound.
+    #[error("{0}")]
+    Criterion(String),
+
     /// A payload the tool built could not be serialised.
     #[error("the payload could not be serialised: {0}")]
     Serialise(#[from] serde_json::Error),

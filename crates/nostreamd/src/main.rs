@@ -40,6 +40,10 @@ struct Cli {
     log_level: Option<String>,
 
     /// Serve the admin MCP server on stdin/stdout and exit when stdin closes. Binds no socket.
+    ///
+    /// Every call is authenticated with an admin session token (minted by `POST /admin/login`)
+    /// in NOSTREAM_ADMIN_TOKEN, and needs `admin.enabled: true` in the settings and `SECRET`
+    /// set; without them a call answers Not Found, Internal Server Error or Unauthorized.
     #[arg(long)]
     mcp_stdio: bool,
 }

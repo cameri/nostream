@@ -19,7 +19,7 @@ and the daemon answered no HTTP request at all — a plain `GET` died in the Web
 (`crates/nostream-relay/src/relay.rs:315-329`), measured as `curl: (52) Empty reply from
 server` on every admin path.
 
-The seventeen decisions below are the ones a reader would otherwise have to reconstruct from
+The eighteen decisions below are the ones a reader would otherwise have to reconstruct from
 the diff. Each is recorded with its reason and the evidence that produced it.
 
 ## Decisions
@@ -305,6 +305,22 @@ tool's work, so the file's order is the dispatch order: `mcp.settings_set` prece
 `settings.updated` line the shared write path then appends, and a call the credential gate
 refuses appends nothing at all — matching `admin_auth_middleware.rs:52-63`, which logs a warning
 and writes nothing.
+
+**The mode is its own process, and the record says so.** `nostreamd --mcp-stdio` returns before
+the daemon's `serve` loop starts (`crates/nostreamd/src/main.rs:135-141`), so the process that
+serves a tool call composes its own `AdminState` over the same config directory rather than
+sharing the console's: the two modes are alternatives, and running both against one directory is
+outside ADR 0012 D9 — `admin-audit.jsonl` (whose compaction is a read, a write and a rename on a
+shared staging path, `crates/nostream-admin/src/state.rs:715-733`) and the settings write both
+assume one writer per configuration.
+
+**The audit table is total.** Every tool the router registers has its own entry in
+`crates/nostream-mcp`'s `TOOL_ARGUMENTS` table, and the dispatch path looks a name up there
+instead of defaulting: a tool added without an entry fails
+`every_registered_tool_is_in_the_audit_table`, which reads the router's own list, so no call can
+execute unaudited. "One line per executed call" therefore means what it says — a call whose
+arguments do not parse and a call to a name the router does not register reach no tool and write
+nothing, and every other call writes its line before the handler runs.
 
 ## Evidence
 

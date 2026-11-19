@@ -17,6 +17,13 @@
 //! | `an_empty_change_list_is_refused` | `{changes: []}` is `Invalid request`, and the attempt is audited |
 //! | `an_unknown_tool_is_a_protocol_error` | an absent tool is JSON-RPC `-32602`, not a result |
 //! | `bad_arguments_are_an_error_result` | wrong-typed arguments are an `isError` result, not a protocol error |
+//! | `an_uppercase_id_finds_its_row` | a stored id pasted in uppercase is the same id, not a confident `null` |
+//! | `a_criterion_the_wire_would_refuse_is_an_argument_error` | a non-hex, short, oversized or over-counted criterion is refused, naming its field |
+//! | `a_refused_criterion_never_reaches_the_store` | the refusal comes before the store: over the unwired store the argument error answers, not `NotImplemented` |
+//! | `a_page_is_the_first_rows_oldest_first` | the payload is one order, and `limit` is its first N, with `truncated` marking a full page |
+//! | `a_full_default_page_is_marked_truncated` | a page the store's own bound cut says so |
+//! | `a_success_carries_one_copy_of_the_payload` | a success is in `structuredContent` only, never also as a text block |
+//! | `the_settings_schema_forbids_what_the_handler_refuses` | the published schema and the handler agree on the two accepted shapes |
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -24,7 +31,7 @@ mod common;
 
 use std::collections::BTreeSet;
 
-use common::{TestMcp, event, id_of, payload, text};
+use common::{Fixture, Stores, TestMcp, event, id_of, payload, text};
 use nostream_mcp::{TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET};
 use serde_json::{Value, json};
 
@@ -345,5 +352,271 @@ async fn bad_arguments_are_an_error_result() {
         text(&result).contains("failed to deserialize parameters"),
         "{}",
         text(&result)
+    );
+}
+
+#[tokio::test]
+async fn an_uppercase_id_finds_its_row() {
+    let fixture = TestMcp::start().await;
+    let record = event(13, 1, 1_699_999_952);
+    let id = id_of(&record);
+    fixture.seed(std::slice::from_ref(&record)).await;
+    let client = fixture.client().await;
+
+    let result = client
+        .call(TOOL_GET_EVENT, json!({ "id": id.to_uppercase() }))
+        .await;
+    assert_eq!(result.is_error, Some(false), "{}", text(&result));
+    let payload = payload(&result);
+    assert_eq!(
+        payload["event"]["event"]["id"], id,
+        "the uppercase form of a stored id is that id: {payload}"
+    );
+}
+
+#[tokio::test]
+async fn a_criterion_the_wire_would_refuse_is_an_argument_error() {
+    let fixture = TestMcp::start().await;
+    let record = event(14, 1, 1_699_999_953);
+    let id = id_of(&record);
+    fixture.seed(std::slice::from_ref(&record)).await;
+    let client = fixture.client().await;
+
+    let over_cap: Vec<String> = (0..65).map(|index| format!("{index:04x}")).collect();
+    let refused = [
+        (TOOL_GET_EVENT, json!({ "id": "" }), "id"),
+        (TOOL_GET_EVENT, json!({ "id": "ze" }), "id"),
+        (TOOL_GET_EVENT, json!({ "id": &id[..3] }), "id"),
+        (TOOL_GET_EVENT, json!({ "id": format!("{id}0") }), "id"),
+        (TOOL_LIST_EVENTS, json!({ "ids": ["ze"] }), "ids"),
+        (TOOL_LIST_EVENTS, json!({ "ids": [&id[..3]] }), "ids"),
+        (
+            TOOL_LIST_EVENTS,
+            json!({ "authors": ["npub1qqqq"] }),
+            "authors",
+        ),
+        (TOOL_LIST_EVENTS, json!({ "ids": over_cap }), "ids"),
+        (TOOL_LIST_EVENTS, json!({ "limit": 0 }), "limit"),
+        (TOOL_LIST_EVENTS, json!({ "limit": 501 }), "limit"),
+    ];
+    for (tool, arguments, field) in refused {
+        let answer = client.call(tool, arguments.clone()).await;
+        assert_eq!(
+            answer.is_error,
+            Some(true),
+            "{tool} {arguments}: {}",
+            text(&answer)
+        );
+        assert!(
+            text(&answer).starts_with(&format!("{field}:")),
+            "{tool} {arguments} names `{field}`: {}",
+            text(&answer)
+        );
+    }
+
+    // The control: the stored id is a criterion the wire takes.
+    let found = client.call(TOOL_GET_EVENT, json!({ "id": id })).await;
+    assert_eq!(found.is_error, Some(false), "{}", text(&found));
+    assert_eq!(payload(&found)["event"]["event"]["id"], id);
+}
+
+#[tokio::test]
+async fn a_refused_criterion_never_reaches_the_store() {
+    let fixture = TestMcp::start_with(Fixture {
+        stores: Stores::Unavailable,
+        ..Fixture::default()
+    })
+    .await;
+    let client = fixture.client().await;
+
+    // Over the daemon's unwired bundle every read answers `NotImplemented`, so a refusal that
+    // arrives instead is one made before the store was touched.
+    let refused = client.call(TOOL_GET_EVENT, json!({ "id": "" })).await;
+    assert_eq!(refused.is_error, Some(true), "{}", text(&refused));
+    assert!(text(&refused).starts_with("id:"), "{}", text(&refused));
+    assert!(
+        !text(&refused).contains("storage::backend::wiring"),
+        "the refusal is not the store's: {}",
+        text(&refused)
+    );
+
+    let reached = client.call(TOOL_GET_EVENT, json!({ "id": "abcd" })).await;
+    assert_eq!(reached.is_error, Some(true), "{}", text(&reached));
+    assert!(
+        text(&reached).contains("not implemented in Phase 1 (job 005): storage::backend::wiring"),
+        "a criterion the wire takes reaches the store: {}",
+        text(&reached)
+    );
+}
+
+#[tokio::test]
+async fn a_page_is_the_first_rows_oldest_first() {
+    let fixture = TestMcp::start().await;
+    let seeded: Vec<_> = (0..12)
+        .map(|index| {
+            event(
+                u8::try_from(index + 40).unwrap(),
+                1,
+                1_699_998_000 + i64::from(index),
+            )
+        })
+        .collect();
+    fixture.seed(&seeded).await;
+    let client = fixture.client().await;
+
+    let result = client.call(TOOL_LIST_EVENTS, json!({ "limit": 5 })).await;
+    assert_eq!(result.is_error, Some(false), "{}", text(&result));
+    let page = payload(&result);
+    let created: Vec<i64> = page["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["event"]["created_at"].as_i64().unwrap())
+        .collect();
+    assert_eq!(
+        created,
+        vec![
+            1_699_998_000,
+            1_699_998_001,
+            1_699_998_002,
+            1_699_998_003,
+            1_699_998_004
+        ],
+        "a limited page is the first rows in the same order: {page}"
+    );
+    assert_eq!(page["truncated"], json!(true), "the page is full: {page}");
+
+    let whole = client.call_without_arguments(TOOL_LIST_EVENTS).await;
+    let whole = payload(&whole);
+    assert_eq!(whole["events"].as_array().unwrap().len(), 12, "{whole}");
+    assert_eq!(
+        whole["truncated"],
+        json!(false),
+        "nothing was cut, so the marker is false: {whole}"
+    );
+}
+
+#[tokio::test]
+async fn a_full_default_page_is_marked_truncated() {
+    let fixture = TestMcp::start().await;
+    let seeded: Vec<_> = (0..=500)
+        .map(|index| event(1, 1, 1_699_000_000 + index))
+        .collect();
+    fixture.seed(&seeded).await;
+    let client = fixture.client().await;
+
+    let result = client.call_without_arguments(TOOL_LIST_EVENTS).await;
+    assert_eq!(result.is_error, Some(false), "{}", text(&result));
+    let payload = payload(&result);
+    let events = payload["events"].as_array().unwrap();
+    assert_eq!(events.len(), 500, "the store's own page bound");
+    assert_eq!(
+        events[0]["event"]["created_at"],
+        json!(1_699_000_000),
+        "and the page starts at the oldest row"
+    );
+    assert_eq!(
+        payload["truncated"],
+        json!(true),
+        "501 rows match, so the full page is cut: {payload}"
+    );
+}
+
+#[tokio::test]
+async fn a_success_carries_one_copy_of_the_payload() {
+    let fixture = TestMcp::start().await;
+    fixture
+        .seed(&[event(15, 1, 1_699_999_954), event(16, 1, 1_699_999_955)])
+        .await;
+    let client = fixture.client().await;
+
+    for (tool, arguments) in [
+        (TOOL_SETTINGS_GET, json!({})),
+        (TOOL_LIST_EVENTS, json!({})),
+        (TOOL_GET_EVENT, json!({ "id": "abcd" })),
+        (
+            TOOL_SETTINGS_SET,
+            json!({ "path": "wot.enabled", "value": false }),
+        ),
+    ] {
+        let answer = client.call(tool, arguments).await;
+        assert_eq!(answer.is_error, Some(false), "{tool}: {}", text(&answer));
+        assert!(
+            answer.content.is_empty(),
+            "{tool} sends the payload once, not also as a text block: {:?}",
+            answer.content
+        );
+        assert!(
+            answer.structured_content.is_some(),
+            "{tool} answers with structured content"
+        );
+    }
+}
+
+#[tokio::test]
+async fn the_settings_schema_forbids_what_the_handler_refuses() {
+    let fixture = TestMcp::start().await;
+    let client = fixture.client().await;
+
+    let refused = client
+        .call(
+            TOOL_SETTINGS_SET,
+            json!({ "path": "wot.enabled", "value": true, "note": "x" }),
+        )
+        .await;
+    assert_eq!(refused.is_error, Some(true), "{}", text(&refused));
+    let refusal: Value = serde_json::from_str(&text(&refused)).expect("the body is JSON");
+    assert_eq!(refusal["error"], "Invalid request");
+
+    let schema = client
+        .tools()
+        .await
+        .into_iter()
+        .find(|tool| tool.name == TOOL_SETTINGS_SET)
+        .expect("settings_set is listed");
+    let schema = Value::Object((*schema.input_schema).clone());
+    assert_eq!(
+        schema["oneOf"].as_array().map(Vec::len),
+        Some(2),
+        "the schema models exactly the two accepted bodies: {schema}"
+    );
+    let shapes = schema["oneOf"].as_array().unwrap();
+    for shape in shapes {
+        assert_eq!(
+            shape["additionalProperties"],
+            json!(false),
+            "no shape allows another key: {shape}"
+        );
+    }
+    assert_eq!(shapes[0]["required"], json!(["path", "value"]), "{schema}");
+    assert_eq!(
+        shapes[1]["properties"]["changes"]["items"]["additionalProperties"],
+        json!(false),
+        "a change carries `path` and `value` and nothing else: {schema}"
+    );
+    assert_eq!(
+        shapes[1]["properties"]["changes"]["minItems"],
+        json!(1),
+        "{schema}"
+    );
+
+    // Every shape the schema allows, the handler takes.
+    let accepted = client
+        .call(
+            TOOL_SETTINGS_SET,
+            json!({ "changes": [{ "path": "wot.enabled", "value": false }] }),
+        )
+        .await;
+    assert_eq!(accepted.is_error, Some(false), "{}", text(&accepted));
+    let null_value = client
+        .call(
+            TOOL_SETTINGS_SET,
+            json!({ "path": "wot.seedPubkey", "value": null }),
+        )
+        .await;
+    let null_value: Value = serde_json::from_str(&text(&null_value)).expect("a refusal body");
+    assert_eq!(
+        null_value["error"], "Validation failed",
+        "an explicit null is a value the schema allows and the validator judges"
     );
 }

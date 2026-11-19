@@ -9,6 +9,7 @@
 //! | `the_mode_binds_no_socket` | the dialogue completes while the port the flag names is held by the test |
 //! | `the_process_exits_zero_on_stdin_eof` | closing stdin ends the process with `0` |
 //! | `the_store_backed_tools_report_the_unwired_store` | `list_events` answers the store's own `NotImplemented` message, not an empty list |
+//! | `the_help_text_names_the_credential` | `--help` names the three prerequisites and `NOSTREAM_ADMIN_TOKEN` |
 //!
 //! The dialogue is hand-written JSON-RPC over the child's pipes: this target proves a property
 //! of the process, so it spawns the binary the way an MCP client does.
@@ -318,4 +319,23 @@ async fn the_store_backed_tools_report_the_unwired_store() {
         "{text}"
     );
     assert!(outcome.status.success(), "{}", outcome.stderr);
+}
+
+#[tokio::test]
+async fn the_help_text_names_the_credential() {
+    let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_nostreamd"))
+        .arg("--help")
+        .output()
+        .await
+        .expect("the binary answers --help");
+    assert!(output.status.success(), "--help exits 0");
+    let help = String::from_utf8_lossy(&output.stdout);
+    for needle in [
+        "--mcp-stdio",
+        "NOSTREAM_ADMIN_TOKEN",
+        "admin.enabled",
+        "SECRET",
+    ] {
+        assert!(help.contains(needle), "the help names `{needle}`: {help}");
+    }
 }
