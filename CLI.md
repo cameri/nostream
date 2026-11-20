@@ -56,6 +56,11 @@ take `--data-dir <DIR>` for the LMDB root: the environment lives at `<DIR>/lmdb`
 `nostream-cli migrate pg-to-lmdb --target <DIR>` writes. With the lmdb backend selected and no
 `--data-dir`, the command fails with `Error: the lmdb backend needs --data-dir <path>`.
 
+`start` and `setup` create `<config>/settings.yaml` from the defaults only when the config
+directory has neither `settings.yaml` nor the deprecated `settings.json`. If it holds only
+`settings.json`, both leave it in place and write no `settings.yaml`, and the relay keeps reading
+its values; move the overrides into YAML yourself when you want them in the new file.
+
 ## Cleaning events
 
 `clean-db` deletes events by age, by kind, or every event. Nothing else is touched: invite
