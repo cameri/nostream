@@ -698,43 +698,6 @@ export class PeeringBuyerService implements IPeeringBuyerService {
     }
   }
 
-  private async release(invoice: PeeringInvoice, reservation: ReserveResult, now: Date): Promise<boolean> {
-    if (!reservation.reserved) {
-      return true
-    }
-
-    const transaction = new Transaction(this.dbClient)
-    let started = false
-    try {
-      await transaction.begin()
-      started = true
-      if (reservation.peerWindow) {
-        await this.invoiceRepository.releaseBudget(
-          `peer:${invoice.peerPubkey.toLowerCase()}`,
-          reservation.peerWindow.start,
-          invoice.amountMsats,
-          transaction.transaction,
-        )
-      }
-      if (reservation.globalWindow) {
-        await this.invoiceRepository.releaseBudget(
-          'global',
-          reservation.globalWindow.start,
-          invoice.amountMsats,
-          transaction.transaction,
-        )
-      }
-      await transaction.commit()
-      started = false
-      return true
-    } catch (error) {
-      if (started) {
-        await transaction.rollback()
-      }
-      logger('unable to release the peering budget for %s: %o', invoice.paymentHash, error)
-      return false
-    }
-  }
 
   private async notify(type: OperatorNotificationEventType, payload: Record<string, unknown>): Promise<void> {
     try {
