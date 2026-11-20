@@ -1,5 +1,45 @@
 # nostream
 
+## 3.17.0
+
+### Minor Changes
+
+- [#1167](https://github.com/cameri/nostream/pull/1167) [`be2aba4`](https://github.com/cameri/nostream/commit/be2aba440a06d42f030886bec6ce411c95b733b6) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(peering): add the buyer invoice ledger and budget primitives
+
+  Adds the storage and decoding foundation for buying peering: a
+  `peering_invoices` ledger deduped by BOLT11 payment hash, per-peer/global
+  `peering_budgets` counters, a narrow BOLT11 decoder, and the buyer settings
+  contracts. Automatic payment and admin approval ship in the follow-up slices.
+
+- [#1168](https://github.com/cameri/nostream/pull/1168) [`9c5917d`](https://github.com/cameri/nostream/commit/9c5917da350c17b6642008d4b609b8712d28be42) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(peering): enforce buyer budgets before paying peer invoices
+
+  Adds the buying-side policy: verify a peer invoice against its advertised
+  NIP-11 term, dedupe on the payment hash, reserve per-peer and global budget
+  counters atomically, pay through the configured wallet, and hold anything
+  outside the envelope for operator approval.
+
+### Patch Changes
+
+- [#1160](https://github.com/cameri/nostream/pull/1160) [`1267cec`](https://github.com/cameri/nostream/commit/1267cec935fac56b325711f5de54ec201ed340a6) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix(nip42): require auth to COUNT a filter that names no kinds when restricted reads are on
+
+  With `nip42.restrictedReads` enabled, a COUNT filter that named a restricted kind (4, 1059, ...) had to be scoped to the client's own pubkeys, but a filter that named no kinds was not checked, and the count still included the restricted events. An unauthenticated client could count, for example, `{"#p": [pubkey]}` and learn how many private messages a pubkey had received. A COUNT filter without `kinds` is now treated like one that names a restricted kind, the same rule NIP-77 reconciliation already follows: it must be scoped with `authors` or `#p` to the authenticated client's own pubkeys. Relays that do not enable `nip42.restrictedReads` are not affected.
+
+- [#1172](https://github.com/cameri/nostream/pull/1172) [`dddbcc0`](https://github.com/cameri/nostream/commit/dddbcc08d6ef008618baf6d8d8a8465fc5c3fb7c) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix(nip05): a changed NIP-05 identifier does not inherit the earlier verification
+
+  When an author published a kind-0 profile with a different `nip05` and the lookup failed with a transient error (a timeout, a 5xx), the new identifier and domain were saved with the previous identifier's `isVerified` and `lastVerifiedAt`. With NIP-05 mode `enabled` that treated the new domain as verified, so an author could keep publishing under a domain the relay's allow or block list now rejected, or under an identifier they had not proven, without ever passing a lookup. The earlier verification is now kept after a transient error only when the identifier and domain are the same (ignoring letter case); a changed identifier starts unverified until a lookup succeeds.
+
+- [#1174](https://github.com/cameri/nostream/pull/1174) [`98d2359`](https://github.com/cameri/nostream/commit/98d23593fd6c14569b34f4e9727822949041358c) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix(nip05): a replaced kind-0 profile no longer changes the author's NIP-05 verification
+
+  A relay accepts an older kind-0 profile for an author who has already published a newer one (the replace is a no-op and the client is answered `duplicate:`), but the NIP-05 handling ran for it anyway. Anyone could take a public, validly signed older profile of an author, one without a `nip05` field or with another identifier, and publish it again to delete the author's current verification, or replace it with the older identifier, which with NIP-05 mode `enabled` blocked the author from publishing. The NIP-05 handling now runs only for a profile that is the author's current one (the later `created_at`, and the lower id on a tie, which is the one the replaceable upsert keeps). The stored profile is read the way the upsert sees it, so a current profile that subscriptions hide (a NIP-56 reported or a deleted one) still counts. If the check itself fails the profile is processed as before.
+
+- [#1159](https://github.com/cameri/nostream/pull/1159) [`8f39038`](https://github.com/cameri/nostream/commit/8f390382ba19d48283ab58d46c4a3a8e2f68cfac) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix(ops): retry a probe alert that could not be saved
+
+  When a probe run changed status (ok to failed, or back to ok), the new status was stored first and the alert was written to the notification outbox afterwards. If the database was unavailable at that moment the alert was lost: the next run saw the same status and sent nothing, so an operator never heard about that outage or recovery. The status is now recorded only after the alert has been stored, and a short claim keeps two runs from sending the same alert, so a failed save is tried again by the next run that observes the same change.
+
+- [#1175](https://github.com/cameri/nostream/pull/1175) [`470d3f9`](https://github.com/cameri/nostream/commit/470d3f9a2de0ccecb79f3d8694243c70863113a9) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - docs: split the README into a landing page and reference guides
+
+  The README had grown to 731 lines and carried a full payments walkthrough, an operations manual and a duplicate of the standalone setup steps. It is now 264 lines: what the relay is, the supported NIPs, requirements, the Docker quick start, and a table pointing at the guide for each task. The payments and operations material moved to `docs/PAYMENTS.md` and `docs/OPERATIONS.md` verbatim, and the standalone setup points at the development quick start in `CONTRIBUTING.md` instead of repeating it. `docs/SETUP.md` now links its payments pointer at the new file. The moved instructions were then checked against the code: the importer write semantics, the admission-fee sum, the knex fallback database name, the LNURL `/callback` convention, and the standalone database and Redis steps. `docker-compose.yml` now forwards `NWC_URL`, and `.env.example` names it correctly.
+
 ## 3.16.0
 
 ### Minor Changes
