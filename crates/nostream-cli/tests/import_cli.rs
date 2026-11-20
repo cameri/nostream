@@ -197,11 +197,14 @@ fn the_help_route_does_not_print_a_second_import_page() {
         .output()
         .expect("the binary runs");
 
+    // The port answers every word that is no command with the capture's marker, so `help` is
+    // refused before any parser runs and no second import page can be rendered.
     assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    assert_eq!(stderr(&output), "Unknown command: help\n");
     assert!(
-        stderr(&output).contains("unrecognized subcommand"),
+        !String::from_utf8_lossy(&output.stdout).contains("The .jsonl or .json file to import"),
         "{}",
-        stderr(&output)
+        String::from_utf8_lossy(&output.stdout)
     );
 }
 

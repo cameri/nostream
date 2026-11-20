@@ -2,7 +2,6 @@
 //! process supervisor.
 
 pub mod config;
-pub mod dev;
 pub mod export;
 pub mod import;
 pub mod info;

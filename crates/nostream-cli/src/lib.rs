@@ -17,10 +17,8 @@ pub mod commands;
 pub mod compose;
 pub mod compression;
 pub mod config;
-pub mod docker;
 pub mod env_file;
 pub mod error;
-pub mod process;
 pub mod store;
 pub mod tui;
 

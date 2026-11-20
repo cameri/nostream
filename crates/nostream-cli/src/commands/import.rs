@@ -52,6 +52,9 @@ pub enum ParsedArgs {
 struct ImportHelp {
     /// The .jsonl or .json file to import.
     file: Option<PathBuf>,
+    /// Path to .jsonl/.json file.
+    #[arg(long = "file", value_name = "file")]
+    file_option: Option<PathBuf>,
     /// Events per insert batch.
     #[arg(long, value_name = "N")]
     batch_size: Option<u64>,
@@ -80,6 +83,31 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, CliError> {
 
     while index < args.len() {
         let arg = &args[index];
+
+        if arg == "--file" {
+            let Some(value) = args.get(index + 1) else {
+                return Err(CliError::Import("Missing value for --file".to_owned()));
+            };
+            if file.is_some() {
+                return Err(CliError::Import(format!(
+                    "Unexpected extra argument: {value}"
+                )));
+            }
+            file = Some(PathBuf::from(value));
+            index += 2;
+            continue;
+        }
+
+        if let Some(value) = arg.strip_prefix("--file=") {
+            if file.is_some() {
+                return Err(CliError::Import(format!(
+                    "Unexpected extra argument: {value}"
+                )));
+            }
+            file = Some(PathBuf::from(value));
+            index += 1;
+            continue;
+        }
 
         if arg == "--batch-size" {
             let Some(value) = args.get(index + 1) else {
