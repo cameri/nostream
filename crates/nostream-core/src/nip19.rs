@@ -40,6 +40,8 @@ pub fn decode_npub_hex(value: &str) -> Result<String, CoreError> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
     use super::*;
 
     /// The fixture pair the CLI's criterion names (`test/unit/utils/nip43-invites.spec.ts:29,75-89`).
