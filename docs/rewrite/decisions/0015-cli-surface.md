@@ -15,8 +15,9 @@ the stream each failure writes to, and the exit code per class.
 
 The twelve decisions below are the ones a reader would otherwise have to reconstruct from the
 diff. Each is recorded with its cost, because every one of them buys something by giving up
-something else. D10 and D11 were added by the job's first review round: the `--older-than`
-bound and the spawn seam were each decided in the code and had no decision to point at.
+something else. D10, D11 and D12 were added by the job's first review round: the `--older-than`
+bound, the spawn seam and the out-of-range kind were each decided in the code and had no
+decision to point at.
 
 ## Decisions
 
