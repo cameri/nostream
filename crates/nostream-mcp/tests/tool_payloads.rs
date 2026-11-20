@@ -396,6 +396,21 @@ async fn an_unknown_argument_is_an_argument_error() {
         );
     }
 
+    // The same rule on `get_event`, whose `id` is required: an extra key used to be harmless
+    // there — the row came back — and is an argument error now.
+    let record = event(33, 7, 1_699_999_958);
+    let id = id_of(&record);
+    fixture.seed(std::slice::from_ref(&record)).await;
+    let extra = client
+        .call(TOOL_GET_EVENT, json!({ "id": id, "fields": ["content"] }))
+        .await;
+    assert_eq!(extra.is_error, Some(true), "{}", text(&extra));
+    assert!(
+        text(&extra).contains("unknown field `fields`"),
+        "{}",
+        text(&extra)
+    );
+
     // The control: the right key is a page of exactly the rows that match.
     let rows = client.call(TOOL_LIST_EVENTS, json!({ "kinds": [1] })).await;
     assert_eq!(rows.is_error, Some(false), "{}", text(&rows));
