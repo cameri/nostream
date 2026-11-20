@@ -27,6 +27,21 @@ pub enum CliError {
     #[error("{}", lines.join(" | "))]
     Reported { lines: Vec<String>, exit_code: u8 },
 
+    /// Lines the command already earned, then the failure it reports: the first go to
+    /// **stdout**, where a successful run writes them, and only the failure's lines to stderr
+    /// at `exit_code`.
+    ///
+    /// `config set --restart` is the case this exists for: the file is written before the
+    /// restart runs, so `Updated <path>` is a fact whatever the restart does — the capture logs
+    /// it with `logInfo` (stdout) and only the failed step with `spinner.fail` (stderr), which
+    /// an all-stderr `Reported` cannot reproduce (`src/cli/commands/config.ts:152-155`).
+    #[error("{}", lines.join(" | "))]
+    ReportedAfter {
+        output: Vec<String>,
+        lines: Vec<String>,
+        exit_code: u8,
+    },
+
     /// A thrown usage failure (`CliUsageError`): `Error: <message>` on stderr, exit code 2.
     #[error("{0}")]
     Usage(String),

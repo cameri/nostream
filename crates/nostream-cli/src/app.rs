@@ -744,6 +744,19 @@ pub fn render(result: Result<CommandOutput, CliError>) -> ExitCode {
                     }
                     exit_code
                 }
+                CliError::ReportedAfter {
+                    output,
+                    lines,
+                    exit_code,
+                } => {
+                    // The data was earned before the failure happened, so it keeps the stream a
+                    // successful run writes it to; only the failure goes to stderr.
+                    let _ = print_lines(&output);
+                    for line in lines {
+                        eprintln!("{line}");
+                    }
+                    exit_code
+                }
                 CliError::Json { message, code } => {
                     let envelope = ErrorEnvelope {
                         error: ErrorBody {

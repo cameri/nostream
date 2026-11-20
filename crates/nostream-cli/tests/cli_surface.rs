@@ -593,12 +593,11 @@ fn a_failed_restart_keeps_the_written_line() {
     );
 
     // The file is already written when the restart runs, so its line is the operator's only
-    // notice that the value landed; the restart's own step and code follow it.
+    // notice that the value landed: it keeps stdout, where a successful `config set` writes it,
+    // and only the restart's step goes to stderr at the step's code.
     assert_eq!(code(&output), 1, "{}", stderr(&output));
-    assert_eq!(
-        stderr(&output),
-        "Updated info.name\nRestart failed while stopping relay\n"
-    );
+    assert_eq!(stdout(&output), "Updated info.name\n");
+    assert_eq!(stderr(&output), "Restart failed while stopping relay\n");
     let written = fs::read_to_string(config.join("settings.yaml")).expect("the settings");
     assert!(written.contains("after"), "{written}");
 }

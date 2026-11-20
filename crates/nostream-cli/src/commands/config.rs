@@ -46,9 +46,11 @@ pub struct SetRequest<'a> {
 
 /// Runs `config set <path> <value>`, and the restart `--restart` asks for.
 ///
-/// A failed restart does not swallow the write: the settings file already changed, so the
-/// `Updated <path>` line is reported with the restart's own failure and its code, as the
-/// capture logs the line before it restarts (`src/cli/commands/config.ts:152-155`).
+/// A failed restart does not swallow the write: the settings file already changed, so
+/// `Updated <path>` keeps **stdout**, where every successful `config set` writes it, and only
+/// the restart's own step goes to stderr at its code — which is the capture's split,
+/// `logInfo` before `restartRelay()` and `spinner.fail` inside it
+/// (`src/cli/commands/config.ts:152-155`).
 pub fn set(
     context: &Context,
     config_dir: Option<&Path>,
@@ -74,10 +76,9 @@ pub fn set(
     let restarted = match context.block_on(restart(context)) {
         Ok(restarted) => restarted,
         Err(CliError::Reported { lines, exit_code }) => {
-            let mut reported = output.lines;
-            reported.extend(lines);
-            return Err(CliError::Reported {
-                lines: reported,
+            return Err(CliError::ReportedAfter {
+                output: output.lines,
+                lines,
                 exit_code,
             });
         }
