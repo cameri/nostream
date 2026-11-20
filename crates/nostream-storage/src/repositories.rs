@@ -176,6 +176,25 @@ pub fn collect_page<'a>(
     })
 }
 
+/// Drains a live scan into the rows it yielded.
+///
+/// The sibling of [`collect_records`] for [`EventRepository::scan_live`]: that read yields rows
+/// and not page slots, so there is no marker to account for and the caller needs nothing but
+/// the rows. A caller that pages keeps `limit` and the cursor itself.
+pub fn collect_scan<'a>(
+    mut stream: QueryStream<'a, EventRecord>,
+) -> StorageFuture<'a, Vec<EventRecord>> {
+    Box::pin(async move {
+        let mut records = Vec::new();
+        while let Some(item) =
+            std::future::poll_fn(|context| stream.as_mut().poll_next(context)).await
+        {
+            records.push(item?);
+        }
+        Ok(records)
+    })
+}
+
 /// One NIP-77 reconciliation item (`src/@types/repositories.ts` `ReconciliationItem`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReconciliationItem {

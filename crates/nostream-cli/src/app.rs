@@ -125,8 +125,8 @@ pub enum Invocation {
 /// The top-level words, in the page's order. A word not here is the capture's unknown command
 /// (`src/cli/index.ts:514-518`), which is answered before the parser runs.
 pub const COMMANDS: &[&str] = &[
-    "config", "export", "import", "info", "invite", "migrate", "seed", "setup", "start", "stop",
-    "tui", "update",
+    "clean-db", "config", "export", "import", "info", "invite", "migrate", "seed", "setup",
+    "start", "stop", "tui", "update",
 ];
 
 /// `src/cli/index.ts:470-531`: the three answers that are not a command's, before `parse`.
@@ -175,6 +175,7 @@ pub fn run(argv: Vec<String>) -> ExitCode {
 /// One command, dispatched. The only place that knows a subcommand exists.
 fn dispatch(command: Command, context: &Context) -> Result<CommandOutput, CliError> {
     match command {
+        Command::CleanDb { args } => commands::clean_db::run(context, &args),
         Command::Config { command } => match command {
             ConfigCommand::Validate { config_dir, config } => {
                 commands::config::validate(&context.cwd, config_dir.as_deref(), config.as_deref())
@@ -218,12 +219,40 @@ fn dispatch(command: Command, context: &Context) -> Result<CommandOutput, CliErr
                 ConfigEnvCommand::Validate => commands::config::env_validate(&context.cwd),
             },
         },
-        Command::Export => commands::export::run().map(|_| CommandOutput::default()),
+        Command::Export {
+            output,
+            output_option,
+            compress,
+            format,
+            data_dir,
+        } => {
+            let options = commands::export::ExportOptions {
+                output: output_option.or(output),
+                compress,
+                format,
+                data_dir,
+            };
+            let mut stdout = std::io::stdout().lock();
+            commands::export::run(context, &options, &mut stdout)
+        }
         Command::Import { args } => {
             let mut stdout = std::io::stdout().lock();
             commands::import::run(&args, &context.cwd, &mut stdout)
         }
-        Command::Info => commands::info::run().map(|_| CommandOutput::default()),
+        Command::Info {
+            tor_hostname,
+            i2p_hostname,
+            json,
+            data_dir,
+        } => {
+            let options = commands::info::InfoOptions {
+                tor_hostname,
+                i2p_hostname,
+                json,
+                data_dir,
+            };
+            commands::info::run(context, &options)
+        }
         Command::Invite => commands::invite::run().map(|_| CommandOutput::default()),
         Command::Migrate { command } => match command {
             MigrateCommand::PgToLmdb {
@@ -300,13 +329,40 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Delete events by age or kind, or every event.
+    #[command(disable_help_flag = true)]
+    CleanDb {
+        /// The command's own arguments, parsed by the command (see its help).
+        #[arg(
+            value_name = "ARGS",
+            trailing_var_arg = true,
+            allow_hyphen_values = true
+        )]
+        args: Vec<String>,
+    },
     /// Inspect and validate the effective settings.
     Config {
         #[command(subcommand)]
         command: ConfigCommand,
     },
     /// Export events to a file.
-    Export,
+    Export {
+        /// Output path (alias to the positional argument)
+        #[arg(value_name = "output")]
+        output: Option<String>,
+        /// Output path (alias to the positional argument)
+        #[arg(long = "output", value_name = "output")]
+        output_option: Option<String>,
+        /// Enable compression (legacy compatibility)
+        #[arg(short = 'z', long)]
+        compress: bool,
+        /// Export format (jsonl|json|gzip|gz|xz)
+        #[arg(long, value_name = "format")]
+        format: Option<String>,
+        /// The store root (the LMDB environment lives under `<DIR>/lmdb`).
+        #[arg(long, value_name = "DIR")]
+        data_dir: Option<PathBuf>,
+    },
     /// Import events from a .jsonl or .json file.
     #[command(disable_help_flag = true)]
     Import {
@@ -319,7 +375,20 @@ enum Command {
         args: Vec<String>,
     },
     /// Print the relay's NIP-11 info.
-    Info,
+    Info {
+        /// Print the Tor hostname.
+        #[arg(long)]
+        tor_hostname: bool,
+        /// Print the I2P hostnames.
+        #[arg(long)]
+        i2p_hostname: bool,
+        /// Print the payload as JSON.
+        #[arg(long)]
+        json: bool,
+        /// The store root (the LMDB environment lives under `<DIR>/lmdb`).
+        #[arg(long, value_name = "DIR")]
+        data_dir: Option<PathBuf>,
+    },
     /// Mint and manage invite codes.
     Invite,
     /// Copy the Postgres store into an LMDB store.

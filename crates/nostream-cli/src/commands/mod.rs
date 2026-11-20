@@ -1,6 +1,7 @@
 //! The CLI commands. `config` is implemented; the rest are labelled stubs for the Phase-2
 //! process supervisor.
 
+pub mod clean_db;
 pub mod config;
 pub mod export;
 pub mod import;
