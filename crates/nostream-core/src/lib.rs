@@ -68,6 +68,7 @@ pub mod negentropy;
 pub mod nip03;
 pub mod nip04;
 pub mod nip05;
+pub mod nip19;
 pub mod nip25;
 pub mod nip42;
 pub mod nip43;
