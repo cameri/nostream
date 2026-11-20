@@ -953,6 +953,7 @@ const PEERING_POW_MAX_BITS = 256
 const PEERING_SCOPE_KEYS = new Set(['kinds', 'since', 'until', 'windowSeconds'])
 const PEERING_TERM_KEYS = new Set(['amount', 'unit', 'period'])
 const PEERING_PEER_KEYS = new Set(['pubkey', 'relayUrl', 'enabled', 'budget'])
+const PEERING_AUTOPAY_KEYS = new Set(['enabled', 'globalBudget'])
 
 const isValidPeeringKindValue = (value: unknown): boolean =>
   typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= PEERING_KIND_MAX
@@ -1042,44 +1043,53 @@ const validatePeeringScopes = (scopes: unknown, issues: ValidationIssue[]): void
   })
 }
 
+const validatePeeringTermValue = (
+  term: unknown,
+  prefix: string,
+  issues: ValidationIssue[],
+  options: { allowZero: boolean },
+): void => {
+  if (!isPlainObject(term)) {
+    issues.push({ path: prefix, message: 'term must be an object' })
+    return
+  }
+
+  for (const key of Object.keys(term)) {
+    if (!PEERING_TERM_KEYS.has(key)) {
+      issues.push({ path: `${prefix}.${key}`, message: 'Unknown setting key' })
+    }
+  }
+
+  if (!(typeof term.amount === 'number' && Number.isSafeInteger(term.amount) && term.amount >= 0)) {
+    issues.push({ path: `${prefix}.amount`, message: 'amount must be a non-negative integer' })
+  } else if (!options.allowZero && term.amount === 0) {
+    issues.push({ path: `${prefix}.amount`, message: 'amount must be positive' })
+  }
+
+  if (typeof term.unit !== 'string' || !term.unit.trim()) {
+    issues.push({ path: `${prefix}.unit`, message: 'unit must be a non-empty string' })
+  } else if (typeof term.amount === 'number' && term.amount > 0) {
+    const unit = term.unit.trim().toLowerCase()
+    if (!['msats', 'sats', 'btc'].includes(unit)) {
+      issues.push({ path: `${prefix}.unit`, message: 'paid terms must use msats, sats or btc' })
+    } else if (unit === 'msats' && term.amount % 1000 !== 0) {
+      // Processors such as LNbits and OpenNode truncate msats to whole sats.
+      issues.push({ path: `${prefix}.amount`, message: 'paid msat terms must be a whole number of satoshis' })
+    }
+  }
+
+  if (!(typeof term.period === 'number' && Number.isSafeInteger(term.period) && term.period > 0)) {
+    issues.push({ path: `${prefix}.period`, message: 'period must be a positive integer (seconds)' })
+  }
+}
+
 const validatePeeringTerms = (terms: unknown, issues: ValidationIssue[]): void => {
   if (!Array.isArray(terms)) {
     return
   }
 
   terms.forEach((term, index) => {
-    const prefix = `peering.terms[${index}]`
-
-    if (!isPlainObject(term)) {
-      issues.push({ path: prefix, message: 'term must be an object' })
-      return
-    }
-
-    for (const key of Object.keys(term)) {
-      if (!PEERING_TERM_KEYS.has(key)) {
-        issues.push({ path: `${prefix}.${key}`, message: 'Unknown setting key' })
-      }
-    }
-
-    if (!(typeof term.amount === 'number' && Number.isSafeInteger(term.amount) && term.amount >= 0)) {
-      issues.push({ path: `${prefix}.amount`, message: 'amount must be a non-negative integer' })
-    }
-
-    if (typeof term.unit !== 'string' || !term.unit.trim()) {
-      issues.push({ path: `${prefix}.unit`, message: 'unit must be a non-empty string' })
-    } else if (typeof term.amount === 'number' && term.amount > 0) {
-      const unit = term.unit.trim().toLowerCase()
-      if (!['msats', 'sats', 'btc'].includes(unit)) {
-        issues.push({ path: `${prefix}.unit`, message: 'paid terms must use msats, sats or btc' })
-      } else if (unit === 'msats' && term.amount % 1000 !== 0) {
-        // Processors such as LNbits and OpenNode truncate msats to whole sats.
-        issues.push({ path: `${prefix}.amount`, message: 'paid msat terms must be a whole number of satoshis' })
-      }
-    }
-
-    if (!(typeof term.period === 'number' && Number.isSafeInteger(term.period) && term.period > 0)) {
-      issues.push({ path: `${prefix}.period`, message: 'period must be a positive integer (seconds)' })
-    }
+    validatePeeringTermValue(term, `peering.terms[${index}]`, issues, { allowZero: true })
   })
 }
 
@@ -1134,35 +1144,7 @@ const validatePeeringPeers = (peers: unknown, issues: ValidationIssue[]): void =
     }
 
     if (peer.budget !== undefined) {
-      if (!isPlainObject(peer.budget)) {
-        issues.push({ path: `${prefix}.budget`, message: 'budget must be an object' })
-      } else {
-        for (const key of Object.keys(peer.budget)) {
-          if (!PEERING_TERM_KEYS.has(key)) {
-            issues.push({ path: `${prefix}.budget.${key}`, message: 'Unknown setting key' })
-          }
-        }
-
-        const { amount, unit, period } = peer.budget
-        if (!(typeof amount === 'number' && Number.isSafeInteger(amount) && amount > 0)) {
-          issues.push({ path: `${prefix}.budget.amount`, message: 'amount must be a positive integer' })
-        }
-
-        if (typeof unit !== 'string' || !unit.trim()) {
-          issues.push({ path: `${prefix}.budget.unit`, message: 'unit must be a non-empty string' })
-        } else if (typeof amount === 'number' && amount > 0) {
-          const normalized = unit.trim().toLowerCase()
-          if (!['msats', 'sats', 'btc'].includes(normalized)) {
-            issues.push({ path: `${prefix}.budget.unit`, message: 'paid terms must use msats, sats or btc' })
-          } else if (normalized === 'msats' && amount % 1000 !== 0) {
-            issues.push({ path: `${prefix}.budget.amount`, message: 'paid msat terms must be a whole number of satoshis' })
-          }
-        }
-
-        if (!(typeof period === 'number' && Number.isSafeInteger(period) && period > 0)) {
-          issues.push({ path: `${prefix}.budget.period`, message: 'period must be a positive integer (seconds)' })
-        }
-      }
+      validatePeeringTermValue(peer.budget, `${prefix}.budget`, issues, { allowZero: false })
     }
   })
 }
@@ -1225,6 +1207,35 @@ const validatePeering = (settings: Settings, issues: ValidationIssue[]): void =>
   validatePeeringScopes(peering.scopes, issues)
   validatePeeringTerms(peering.terms, issues)
   validatePeeringPeers(peering.peers, issues)
+
+  if (peering.autoPay !== undefined) {
+    if (!isPlainObject(peering.autoPay)) {
+      issues.push({ path: 'peering.autoPay', message: 'must be an object' })
+    } else {
+      for (const key of Object.keys(peering.autoPay)) {
+        if (!PEERING_AUTOPAY_KEYS.has(key)) {
+          issues.push({ path: `peering.autoPay.${key}`, message: 'Unknown setting key' })
+        }
+      }
+
+      if (typeof peering.autoPay.enabled !== 'boolean') {
+        issues.push({ path: 'peering.autoPay.enabled', message: 'must be a boolean' })
+      }
+
+      if (peering.autoPay.globalBudget !== undefined) {
+        validatePeeringTermValue(peering.autoPay.globalBudget, 'peering.autoPay.globalBudget', issues, {
+          allowZero: true,
+        })
+      }
+
+      if (peering.autoPay.enabled === true && settings.payments?.enabled !== true) {
+        issues.push({
+          path: 'peering.autoPay.enabled',
+          message: 'payments must be enabled to auto-pay peering invoices',
+        })
+      }
+    }
+  }
 
   const paidTerms = Array.isArray(peering.terms)
     ? peering.terms.filter(

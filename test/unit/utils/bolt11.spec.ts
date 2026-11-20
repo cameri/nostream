@@ -26,7 +26,7 @@ describe('decodeBolt11', () => {
   })
 
   it('rejects an invoice longer than the parser bound', () => {
-    expect(() => decodeBolt11(`lnbc1${'q'.repeat(1_000)}`)).to.throw('Invalid bolt11 invoice')
+    expect(() => decodeBolt11(`lnbc1${'q'.repeat(4_096)}`)).to.throw('Invalid bolt11 invoice')
   })
 
   it('rejects a broken checksum', () => {

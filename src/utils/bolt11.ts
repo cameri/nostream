@@ -1,6 +1,6 @@
 
-/** The relay's max payload is 512 KiB; a longer tag cannot arrive on a peer socket. */
-const MAX_BOLT11_LENGTH = 1_000
+/** Bounds decode work without rejecting real invoices with route hints (a few KB). */
+const MAX_BOLT11_LENGTH = 4_096
 
 const BECH32_ALPHABET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l'
 const BECH32_ALPHABET_MAP: Record<string, number> = {}
@@ -63,7 +63,7 @@ const bech32Convert = (data: number[], inBits: number, outBits: number, pad: boo
 const bech32Decode = (input: string): { prefix: string; words: number[] } => {
   const value = input.trim()
   if (!value || value.length > MAX_BOLT11_LENGTH) {
-    throw new Error('Invalid bolt11 invoice')
+    throw new Error(`Invalid bolt11 invoice (length ${value.length})`)
   }
   const lower = value.toLowerCase()
   if (value !== lower && value !== value.toUpperCase()) {

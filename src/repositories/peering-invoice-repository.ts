@@ -1,6 +1,7 @@
 import { DatabaseClient } from '../@types/base'
 import {
   DBPeeringInvoice,
+  PeeringBudgetUsage,
   PeeringInvoice,
   PeeringInvoiceReason,
   PeeringInvoiceStatus,
@@ -22,6 +23,8 @@ const toRow = (invoice: PeeringInvoice): DBPeeringInvoice => ({
   auto_paid: invoice.autoPaid,
   budget_period_start: invoice.budgetPeriodStart ?? null,
   budget_period_end: invoice.budgetPeriodEnd ?? null,
+  global_budget_period_start: invoice.globalBudgetPeriodStart ?? null,
+  global_budget_period_end: invoice.globalBudgetPeriodEnd ?? null,
   term_period_seconds: invoice.termPeriodSeconds ?? null,
   expires_at: invoice.expiresAt ?? null,
   seen_count: invoice.seenCount,
@@ -41,6 +44,8 @@ const fromRow = (row: DBPeeringInvoice): PeeringInvoice => ({
   autoPaid: Boolean(row.auto_paid),
   budgetPeriodStart: row.budget_period_start,
   budgetPeriodEnd: row.budget_period_end,
+  globalBudgetPeriodStart: row.global_budget_period_start,
+  globalBudgetPeriodEnd: row.global_budget_period_end,
   termPeriodSeconds: row.term_period_seconds,
   expiresAt: row.expires_at,
   seenCount: row.seen_count,
@@ -112,6 +117,8 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
         | 'paidAt'
         | 'budgetPeriodStart'
         | 'budgetPeriodEnd'
+        | 'globalBudgetPeriodStart'
+        | 'globalBudgetPeriodEnd'
         | 'termPeriodSeconds'
       >
     >,
@@ -135,6 +142,12 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
     }
     if (changes.budgetPeriodEnd !== undefined) {
       patch.budget_period_end = changes.budgetPeriodEnd
+    }
+    if (changes.globalBudgetPeriodStart !== undefined) {
+      patch.global_budget_period_start = changes.globalBudgetPeriodStart
+    }
+    if (changes.globalBudgetPeriodEnd !== undefined) {
+      patch.global_budget_period_end = changes.globalBudgetPeriodEnd
     }
     if (changes.termPeriodSeconds !== undefined) {
       patch.term_period_seconds = changes.termPeriodSeconds
@@ -193,7 +206,7 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
        ON CONFLICT (scope, period_start) DO UPDATE
        SET spent_msats = peering_budgets.spent_msats + EXCLUDED.spent_msats,
            period_end = EXCLUDED.period_end
-       WHERE peering_budgets.spent_msats + EXCLUDED.spent_msats <= CAST(? AS bigint)
+       WHERE peering_budgets.spent_msats <= CAST(? AS bigint) - CAST(? AS bigint)
        RETURNING spent_msats`,
       [
         scope,
@@ -203,6 +216,7 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
         amountMsats.toString(),
         limitMsats.toString(),
         limitMsats.toString(),
+        amountMsats.toString(),
       ],
     )
     const row = firstRow(result)
@@ -214,5 +228,79 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
     return BigInt(row.spent_msats)
   }
 
+  public async addBudgetSpend(
+    scope: string,
+    periodStart: Date,
+    periodEnd: Date,
+    amountMsats: bigint,
+    client: DatabaseClient,
+  ): Promise<bigint> {
+    if (amountMsats < 0n) {
+      throw new Error('budget spend amount must be non-negative')
+    }
 
+    const result = await client.raw(
+      `INSERT INTO peering_budgets (scope, period_start, period_end, spent_msats)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT (scope, period_start) DO UPDATE
+       SET spent_msats = peering_budgets.spent_msats + EXCLUDED.spent_msats,
+           period_end = EXCLUDED.period_end
+       RETURNING spent_msats`,
+      [scope, periodStart, periodEnd, amountMsats.toString()],
+    )
+
+    return BigInt(firstRow(result).spent_msats)
+  }
+
+  public async releaseBudget(
+    scope: string,
+    periodStart: Date,
+    amountMsats: bigint,
+    client: DatabaseClient,
+  ): Promise<void> {
+    if (amountMsats < 0n) {
+      throw new Error('budget release amount must be non-negative')
+    }
+
+    await client.raw(
+      `UPDATE peering_budgets
+       SET spent_msats = GREATEST(spent_msats - ?, 0)
+       WHERE scope = ? AND period_start = ?`,
+      [amountMsats.toString(), scope, periodStart],
+    )
+  }
+
+  public async countInWindow(
+    peerPubkey: string | undefined,
+    start: Date,
+    end: Date,
+  ): Promise<{ received: number; paid: number; held: number }> {
+    const result = await this.dbClient.raw(
+      `SELECT COUNT(*) AS received,
+              COUNT(*) FILTER (WHERE status = 'paid') AS paid,
+              COUNT(*) FILTER (WHERE status IN ('held', 'failed')) AS held
+       FROM peering_invoices
+       WHERE created_at >= ? AND created_at < ?
+       ${peerPubkey ? 'AND peer_pubkey = ?' : ''}`,
+      peerPubkey ? [start, end, toBuffer(peerPubkey)] : [start, end],
+    )
+    const row = firstRow(result) ?? {}
+
+    return {
+      received: Number(row.received ?? 0),
+      paid: Number(row.paid ?? 0),
+      held: Number(row.held ?? 0),
+    }
+  }
+
+  public async listBudgets(): Promise<PeeringBudgetUsage[]> {
+    const rows = await this.dbClient<any>('peering_budgets').orderBy('period_start', 'desc')
+
+    return rows.map((row) => ({
+      scope: row.scope,
+      periodStart: row.period_start,
+      periodEnd: row.period_end,
+      spentMsats: BigInt(row.spent_msats),
+    }))
+  }
 }

@@ -12,7 +12,7 @@ import {
   NotificationDeliveryStatus,
   OperatorNotificationChannelType,
 } from './operator-notifications'
-import { PeeringInvoice, PeeringInvoiceStatus, PeeringPayment } from './peering'
+import { PeeringBudgetUsage, PeeringInvoice, PeeringInvoiceStatus, PeeringPayment } from './peering'
 import { Report } from './report'
 import { EventKindsRange } from './settings'
 import { SubscriptionFilter } from './subscription'
@@ -109,7 +109,20 @@ export interface IPeeringInvoiceRepository {
   findByHash(paymentHash: string, client?: DatabaseClient): Promise<PeeringInvoice | undefined>
   update(
     paymentHash: string,
-    changes: Partial<Pick<PeeringInvoice, 'status' | 'reason' | 'autoPaid' | 'paidAt' | 'budgetPeriodStart' | 'budgetPeriodEnd' | 'termPeriodSeconds'>>,
+    changes: Partial<
+      Pick<
+        PeeringInvoice,
+        | 'status'
+        | 'reason'
+        | 'autoPaid'
+        | 'paidAt'
+        | 'budgetPeriodStart'
+        | 'budgetPeriodEnd'
+        | 'globalBudgetPeriodStart'
+        | 'globalBudgetPeriodEnd'
+        | 'termPeriodSeconds'
+      >
+    >,
     client?: DatabaseClient,
   ): Promise<PeeringInvoice | undefined>
   /** Atomically moves one row from an allowed state; undefined when another writer won. */
@@ -129,6 +142,23 @@ export interface IPeeringInvoiceRepository {
     limitMsats: bigint,
     client: DatabaseClient,
   ): Promise<bigint | undefined>
+  /** Adds manual spend even when it exceeds the auto-pay limit. */
+  addBudgetSpend(
+    scope: string,
+    periodStart: Date,
+    periodEnd: Date,
+    amountMsats: bigint,
+    client: DatabaseClient,
+  ): Promise<bigint>
+  releaseBudget(scope: string, periodStart: Date, amountMsats: bigint, client: DatabaseClient): Promise<void>
+  /** Current and recent budget counters for the admin console. */
+  listBudgets(): Promise<PeeringBudgetUsage[]>
+  /** Invoice counts in one budget window, optionally for one peer. */
+  countInWindow(
+    peerPubkey: string | undefined,
+    start: Date,
+    end: Date,
+  ): Promise<{ received: number; paid: number; held: number }>
 }
 
 export interface IUserSubscriptionRepository {
