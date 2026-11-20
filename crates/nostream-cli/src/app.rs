@@ -240,6 +240,7 @@ fn dispatch(command: Command, context: &Context) -> Result<CommandOutput, CliErr
                 value,
                 config_dir,
                 value_type,
+                validate,
                 no_validate,
                 restart,
             } => commands::config::set(
@@ -249,7 +250,9 @@ fn dispatch(command: Command, context: &Context) -> Result<CommandOutput, CliErr
                     path: &path,
                     value: &value,
                     value_type: value_type.as_deref(),
-                    validate: !no_validate,
+                    // The capture's one boolean: `resolved.validate !== false`. clap's
+                    // `overrides_with` leaves at most one of the pair set, so the last flag wins.
+                    validate: validate || !no_validate,
                     restart,
                 },
             ),
@@ -616,8 +619,15 @@ enum ConfigCommand {
         /// How to parse the value: `inferred` or `json`.
         #[arg(long = "type", value_name = "type")]
         value_type: Option<String>,
+        /// Validate the merged settings before writing (the default).
+        ///
+        /// The capture declares both spellings and reads them as one boolean
+        /// (`src/cli/index.ts:339-340,412`): `--validate` is the default named, and the last
+        /// flag wins (see the dispatch).
+        #[arg(long, overrides_with = "no_validate")]
+        validate: bool,
         /// Write the value without validating the merged settings.
-        #[arg(long)]
+        #[arg(long, overrides_with = "validate")]
         no_validate: bool,
         /// Restart the relay stack after the write.
         #[arg(long)]

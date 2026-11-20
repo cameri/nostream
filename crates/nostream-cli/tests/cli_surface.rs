@@ -578,6 +578,60 @@ fn ac13_config_set_refuses_an_invalid_value_unless_told_not_to() {
     assert!(stdout(&output).contains("broken-strategy"));
 }
 
+/// The capture declares **both** spellings of the flag and reads them as one boolean,
+/// `validate: resolved.validate !== false` (`src/cli/index.ts:339-340,412`), and `CLI.md`
+/// documents the pair — the port refused `--validate` as an unknown flag, exit 2.
+#[test]
+fn config_set_accepts_the_captures_validate_spellings() {
+    let work = Work::new();
+    let config = work.path().join("config");
+    fs::create_dir_all(&config).expect("the config directory");
+    let env = [("NOSTR_CONFIG_DIR", config.to_str().expect("a path"))];
+
+    // `--validate` is the default named: a good value lands.
+    let output = run_env(
+        work.path(),
+        &["config", "set", "info.name", "after", "--validate"],
+        &env,
+    );
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    assert_eq!(stdout(&output).trim(), "Updated info.name");
+
+    // And it validates: the same refusal the unflagged run gives, at the same class.
+    let output = run_env(
+        work.path(),
+        &[
+            "config",
+            "set",
+            "limits.rateLimiter.strategy",
+            "broken-strategy",
+            "--validate",
+        ],
+        &env,
+    );
+    assert_eq!(code(&output), 1);
+    assert!(
+        stderr(&output).starts_with("Config update rejected by validation:\n"),
+        "{}",
+        stderr(&output)
+    );
+
+    // The pair is one boolean and the last flag wins, so `--validate --no-validate` writes.
+    let output = run_env(
+        work.path(),
+        &[
+            "config",
+            "set",
+            "limits.rateLimiter.strategy",
+            "broken-strategy",
+            "--validate",
+            "--no-validate",
+        ],
+        &env,
+    );
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+}
+
 #[test]
 fn a_failed_restart_keeps_the_written_line() {
     let (work, log) = compose_work();
