@@ -158,8 +158,10 @@ pub(crate) async fn export(
     let mut counting = CountingWriter::new(file);
 
     let interrupt = Arc::new(AtomicU8::new(SIGNAL_NONE));
-    let watcher = Arc::clone(&interrupt);
-    context.block_on(async move { tokio::spawn(watch_signals(watcher)) });
+    let _watcher = {
+        let _entered = context.enter();
+        tokio::spawn(watch_signals(Arc::clone(&interrupt)))
+    };
 
     let source = FirstPage::new(first_page, source);
     let exported = match shape {
@@ -569,7 +571,7 @@ fn interrupt_lines(out: &mut dyn Write, signal: Signal) -> Result<(), CliError> 
 
 /// `Exported ${n} events...` every ten thousand rows.
 fn progress(rows: u64, out: &mut dyn Write) -> Result<(), CliError> {
-    if rows % PROGRESS_EVERY == 0 {
+    if rows.is_multiple_of(PROGRESS_EVERY) {
         writeln!(out, "Exported {rows} events...").map_err(stream_error)?;
     }
 

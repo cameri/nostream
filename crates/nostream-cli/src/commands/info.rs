@@ -174,7 +174,7 @@ async fn payload(context: &Context, settings: &Settings, data_dir: Option<&Path>
                 .as_ref()
                 .is_some_and(|payments| payments.enabled),
             payment_processor: settings.payments.as_ref().and_then(|payments| {
-                serde_json::to_value(&payments.processor)
+                serde_json::to_value(payments.processor)
                     .ok()
                     .and_then(|name| name.as_str().map(str::to_owned))
             }),

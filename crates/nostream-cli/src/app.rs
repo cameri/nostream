@@ -55,6 +55,11 @@ impl Context {
     pub fn block_on<F: Future>(&self, future: F) -> F::Output {
         self.runtime.block_on(future)
     }
+
+    /// Enters the runtime, so a command can spawn a task that runs alongside its futures.
+    pub fn enter(&self) -> tokio::runtime::EnterGuard<'_> {
+        self.runtime.enter()
+    }
 }
 
 /// The version page (V44): `nostream/<CARGO_PKG_VERSION>`, the crate's own version — the same
@@ -125,8 +130,8 @@ pub enum Invocation {
 /// The top-level words, in the page's order. A word not here is the capture's unknown command
 /// (`src/cli/index.ts:514-518`), which is answered before the parser runs.
 pub const COMMANDS: &[&str] = &[
-    "clean-db", "config", "export", "import", "info", "invite", "migrate", "seed", "setup",
-    "start", "stop", "tui", "update",
+    "clean", "clean-db", "config", "export", "import", "info", "invite", "migrate", "seed",
+    "setup", "start", "stop", "tui", "update",
 ];
 
 /// `src/cli/index.ts:470-531`: the three answers that are not a command's, before `parse`.
@@ -175,6 +180,7 @@ pub fn run(argv: Vec<String>) -> ExitCode {
 /// One command, dispatched. The only place that knows a subcommand exists.
 fn dispatch(command: Command, context: &Context) -> Result<CommandOutput, CliError> {
     match command {
+        Command::Clean => commands::clean::run(context),
         Command::CleanDb { args } => commands::clean_db::run(context, &args),
         Command::Config { command } => match command {
             ConfigCommand::Validate { config_dir, config } => {
@@ -253,7 +259,23 @@ fn dispatch(command: Command, context: &Context) -> Result<CommandOutput, CliErr
             };
             commands::info::run(context, &options)
         }
-        Command::Invite => commands::invite::run().map(|_| CommandOutput::default()),
+        Command::Invite { command } => match command {
+            Some(InviteCommand::Create {
+                uses,
+                expires_in,
+                json,
+                data_dir,
+            }) => commands::invite::run(
+                context,
+                &commands::invite::InviteOptions {
+                    uses,
+                    expires_in,
+                    json,
+                    data_dir,
+                },
+            ),
+            None => Err(CliError::usage(commands::invite::INVITE_USAGE)),
+        },
         Command::Migrate { command } => match command {
             MigrateCommand::PgToLmdb {
                 target,
@@ -269,8 +291,12 @@ fn dispatch(command: Command, context: &Context) -> Result<CommandOutput, CliErr
                 commands::migrate::run(options, &mut stdout)
             }
         },
-        Command::Seed => commands::seed::run().map(|_| CommandOutput::default()),
-        Command::Setup => commands::setup::run().map(|_| CommandOutput::default()),
+        Command::Seed { count, data_dir } => {
+            commands::seed::run(context, &commands::seed::SeedOptions { count, data_dir })
+        }
+        Command::Setup { yes, start } => {
+            commands::setup::run(context, &commands::setup::SetupOptions { yes, start })
+        }
         Command::Start {
             tor,
             i2p,
@@ -307,7 +333,7 @@ fn dispatch(command: Command, context: &Context) -> Result<CommandOutput, CliErr
             };
             commands::stop::run(context, &options, &args)
         }
-        Command::Update => commands::update::run().map(|_| CommandOutput::default()),
+        Command::Update { args } => commands::update::run(context, &args),
         Command::Tui => crate::tui::run().map(|_| CommandOutput::default()),
     }
 }
@@ -329,6 +355,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Clean Docker resources (legacy script replacement).
+    Clean,
     /// Delete events by age or kind, or every event.
     #[command(disable_help_flag = true)]
     CleanDb {
@@ -390,16 +418,33 @@ enum Command {
         data_dir: Option<PathBuf>,
     },
     /// Mint and manage invite codes.
-    Invite,
+    Invite {
+        #[command(subcommand)]
+        command: Option<InviteCommand>,
+    },
     /// Copy the Postgres store into an LMDB store.
     Migrate {
         #[command(subcommand)]
         command: MigrateCommand,
     },
     /// Seed the database.
-    Seed,
+    Seed {
+        /// Number of events to seed
+        #[arg(long, value_name = "count")]
+        count: Option<String>,
+        /// The store root (the LMDB environment lives under `<DIR>/lmdb`).
+        #[arg(long, value_name = "DIR")]
+        data_dir: Option<PathBuf>,
+    },
     /// Run the first-time setup flow.
-    Setup,
+    Setup {
+        /// Non-interactive defaults
+        #[arg(short = 'y', long)]
+        yes: bool,
+        /// Start relay after setup
+        #[arg(long)]
+        start: bool,
+    },
     /// Start the relay stack.
     Start {
         /// Enable Tor hidden service
@@ -454,9 +499,36 @@ enum Command {
         args: Vec<String>,
     },
     /// Update the deployment.
-    Update,
+    Update {
+        /// Additional arguments passed to docker compose when the stack restarts
+        #[arg(
+            value_name = "ARGS",
+            trailing_var_arg = true,
+            allow_hyphen_values = true
+        )]
+        args: Vec<String>,
+    },
     /// Run the interactive settings editor.
     Tui,
+}
+
+#[derive(Debug, Subcommand)]
+enum InviteCommand {
+    /// Mint an invite code.
+    Create {
+        /// Times the code can be claimed (default: nip43.defaultMaxUses)
+        #[arg(long, value_name = "uses")]
+        uses: Option<String>,
+        /// Code lifetime in seconds (default: nip43.inviteCodeExpirySeconds)
+        #[arg(long = "expires-in", value_name = "seconds")]
+        expires_in: Option<String>,
+        /// Print machine-readable JSON
+        #[arg(long)]
+        json: bool,
+        /// The store root (the LMDB environment lives under `<DIR>/lmdb`).
+        #[arg(long, value_name = "DIR")]
+        data_dir: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
