@@ -357,8 +357,15 @@ The credential is now the mode's own artifact, a **token document** delivered on
 
 | flag | delivery | lifetime |
 |---|---|---|
-| `--admin-token-file <path>` | a file, which must be mode `0600` (`mode & 0o077 == 0`) | **the file's**: it is re-read on the path that decides every call, so deleting or rewriting it is the revocation |
+| `--admin-token-file <path>` | a regular file, which must be mode `0600` (`mode & 0o077 == 0`) | **the file's**: it is re-read on the path that decides every call, so deleting or rewriting it is the revocation |
 | `--admin-token-fd <n>` | a descriptor the parent passed, conventionally `3` | **the process's**: it is read once at start, so a rewrite of its source changes nothing until a restart |
+
+**One shape: a regular file.** The type is checked on the path before the open and again on the
+descriptor it was opened as, so a FIFO, a device or a directory is refused rather than opened: a
+FIFO's open waits for a writer, and this door re-opens the file on every call, so a pipe in its
+place would stall a call instead of failing it. The pre-open check is the one check made by path;
+a FIFO swapped in between it and the open stalls one call, which is the same writer who could
+drop in their own `0600` document — the boundary below.
 
 Exactly one of the two is required; both is a refusal, and neither is a refusal naming both.
 `NOSTREAM_ADMIN_TOKEN` is retired: a mode started with it **refuses to start**, naming the variable
@@ -383,12 +390,14 @@ and other *write* bits, which is what would let another user replace the documen
 followed, so a `0600` link to a `0644` target is refused on the target's mode. The descriptor form
 has no mode to check: the parent already opened it.
 
-**Revocation is the file's lifetime, with no server-side store.** The file form calls
-`std::fs::metadata`, `std::fs::read_to_string` and a small JSON parse **per call** — measured at
-`9.67 µs` for a 20-byte document over 10 000 grants in a debug build (`crates/nostream-mcp`'s
-`Credential::grant`, the same path `call_tool` takes), against a tool call that reaches an LMDB
-read or a settings write. That is the price of a revocation that needs no session store, no
-notification path and no restart: narrowing a running door is `printf '{"scopes": []}' >` the file.
+**Revocation is the file's lifetime, with no server-side store.** The file form opens the path,
+fstats **the descriptor it just opened** for the mode and the type, and reads the document from
+that same handle — `File::open`, `File::metadata()`, `File::read_to_string` and a small JSON parse
+**per call** — measured at `10.6 µs` for a 20-byte document over 10 000 grants in a debug build
+(`crates/nostream-mcp`'s `Credential::grant`, the same path `call_tool` takes), against a tool call
+that reaches an LMDB read or a settings write. That is the price of a revocation that
+needs no session store, no notification path and no restart: narrowing a running door is
+`printf '{"scopes": []}' >` the file.
 The descriptor form's asymmetry is stated rather than implied away, in `CONFIGURATION.md`, in the
 mode's `--help`, in the crate's docs and here: it is read once, so its lifetime is the process's.
 
