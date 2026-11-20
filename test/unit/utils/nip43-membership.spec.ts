@@ -7,7 +7,6 @@ import * as eventUtils from '../../../src/utils/event'
 import { buildMembershipListEvent, MAX_MEMBERSHIP_LIST_ENTRIES, MembershipListPublisher } from '../../../src/utils/nip43-membership'
 import { EventKinds } from '../../../src/constants/base'
 import { Settings } from '../../../src/@types/settings'
-import { WebSocketAdapterEvent } from '../../../src/constants/adapter'
 
 chai.use(sinonChai)
 chai.use(chaiAsPromised)
@@ -61,6 +60,7 @@ describe('NIP-43 membership list', () => {
     let findStoredReplaceable: Sinon.SinonStub
     let upsert: Sinon.SinonStub
     let emit: Sinon.SinonStub
+    let onBroadcast: Sinon.SinonStub
     let publisher: MembershipListPublisher
     const NOW = 1_800_000_000
 
@@ -75,11 +75,12 @@ describe('NIP-43 membership list', () => {
       findStoredReplaceable = sandbox.stub().resolves([])
       upsert = sandbox.stub().resolves(1)
       emit = sandbox.stub()
+      onBroadcast = sandbox.stub()
       publisher = new MembershipListPublisher(
         () => settings,
         { findAdmittedPubkeys } as any,
         { findStoredReplaceable, upsert } as any,
-        { emit } as any,
+        { emit, onBroadcast } as any,
       )
     })
 
@@ -92,7 +93,13 @@ describe('NIP-43 membership list', () => {
       expect(event.pubkey).to.equal(relayPubkey)
       expect(event.tags).to.deep.equal([['-'], ['member', memberA], ['member', memberB]])
       expect(event.created_at).to.equal(NOW)
-      expect(emit).to.have.been.calledOnceWithExactly(WebSocketAdapterEvent.Broadcast, event)
+      expect(onBroadcast).to.have.been.calledOnceWithExactly(event)
+    })
+
+    it('broadcasts through the adapter, not through its listeners, which are gone once the client disconnected', async () => {
+      await publisher.refresh()
+
+      expect(emit).not.to.have.been.called
     })
 
     it('does nothing by default, when publishMembershipList is not set', async () => {
@@ -166,7 +173,7 @@ describe('NIP-43 membership list', () => {
 
       await publisher.refresh()
 
-      expect(emit).not.to.have.been.called
+      expect(onBroadcast).not.to.have.been.called
     })
 
     it('cuts the list at the maximum number of entries', async () => {

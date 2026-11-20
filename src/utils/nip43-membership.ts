@@ -9,7 +9,6 @@ import { isRelaySelfConsistent } from './nip43'
 import { Pubkey, Tag } from '../@types/base'
 import { createLogger } from '../factories/logger-factory'
 import { Settings } from '../@types/settings'
-import { WebSocketAdapterEvent } from '../constants/adapter'
 
 const logger = createLogger('nip43-membership')
 
@@ -107,7 +106,9 @@ export class MembershipListPublisher {
 
     const count = await this.eventRepository.upsert(event)
     if (count) {
-      this.webSocket.emit(WebSocketAdapterEvent.Broadcast, event)
+      // Not webSocket.emit(Broadcast): a queued refresh can run after the client that asked for it has
+      // disconnected, and its adapter no longer listens for that event.
+      this.webSocket.onBroadcast(event)
     }
 
     logger('published a membership list with %d members', members.length)

@@ -55,7 +55,12 @@ export const eventStrategyFactory =
   ): Factory<IEventStrategy<Event, Promise<void>>, [Event, IWebSocketAdapter]> =>
   ([event, adapter]: [Event, IWebSocketAdapter]) => {
     if (isRequestToVanishEvent(event)) {
-      return new VanishEventStrategy(adapter, eventRepository, userRepository)
+      return new VanishEventStrategy(
+        adapter,
+        eventRepository,
+        userRepository,
+        new MembershipListPublisher(settings, userRepository, eventRepository, adapter),
+      )
     } else if (isGiftWrapEvent(event)) {
       return new GiftWrapEventStrategy(adapter, eventRepository)
     } else if (isMarmotGroupEvent(event)) {
