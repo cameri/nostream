@@ -72,6 +72,8 @@ Each processor step ends with `nostream stop` and `nostream start`, which is the
       - Your instance must be accessible from the internet and have a valid SSL/TLS certificate
     - Get wallet Invoice/read key (in Api docs section of your wallet)
     - set `LNBITS_API_KEY` environment variable with the Invoice/read key Key above on your `.env` file
+    - if this relay buys paid peering feeds, the same key must also allow
+      **outgoing payments** (spending), otherwise auto-pay cannot pay a peer invoice
 
       ```
       LNBITS_API_KEY={YOUR_LNBITS_API_KEY_HERE}

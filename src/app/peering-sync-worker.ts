@@ -3,16 +3,20 @@ import { z } from 'zod'
 import { ICacheAdapter } from '../@types/adapters'
 import { IRunnable } from '../@types/base'
 import { Event } from '../@types/event'
-import { PeeringPeerSyncState } from '../@types/peering'
+import { PeeringAdvertisement, PeeringPeerSyncState } from '../@types/peering'
 import { IEventRepository, IUserRepository } from '../@types/repositories'
+import { IPeeringBuyerService } from '../@types/services'
 import { PeeringPeer, PeeringScope, Settings } from '../@types/settings'
 import { SubscriptionFilter } from '../@types/subscription'
 import { createLogger } from '../factories/logger-factory'
 import { idSchema, pubkeySchema, signatureSchema, tagSchema } from '../schemas/base-schema'
 import { createEventBatchPersister } from '../services/event-import-service'
+import { EventKinds } from '../constants/base'
+import { PEERING_INVOICE_TAG } from '../utils/peering-billing'
 import { ADMIN_OPS_HEARTBEAT_KEEPALIVE_MS, publishAdminOpsWorkerHeartbeatSafely } from '../utils/admin-ops-store'
 import {
   broadcastEvent,
+  getPublicKey,
   getRelayPrivateKey,
   isEphemeralEvent,
   isEventIdValid,
@@ -46,6 +50,7 @@ export const PEERING_SYNC_RECONNECT_DELAY_MS = 5_000
 export const PEERING_SYNC_EVENT_BATCH_SIZE = 500
 export const PEERING_SYNC_PEER_REFRESH_MS = 30_000
 export const PEERING_SYNC_STATE_HEARTBEAT_MS = 60_000
+export const PEERING_BUYER_RECOVERY_INTERVAL_MS = 60_000
 export const PEERING_SYNC_MAX_PENDING_EVENTS = 500
 export const PEERING_SYNC_MAX_PENDING_EVENT_BYTES = 8 * 1024 * 1024
 export const PEERING_SYNC_MAX_SCOPE_SPLIT_DEPTH = 20
@@ -86,6 +91,7 @@ export interface PeeringSyncWorkerOptions {
   peerRefreshMs?: number
   stateHeartbeatMs?: number
   eventBatchSize?: number
+  buyerService?: IPeeringBuyerService
 }
 
 interface SessionCallbacks {
@@ -125,6 +131,7 @@ class PeeringPeerSession {
   private drainingEvents = false
   private readonly persistEvents: (events: Event[]) => Promise<number>
   private stateHeartbeatTimer: NodeJS.Timeout | undefined
+  private advertisement: PeeringAdvertisement | undefined
 
   public constructor(
     private readonly peer: PeeringPeer,
@@ -141,6 +148,7 @@ class PeeringPeerSession {
         | 'eventBatchSize'
         | 'userRepository'
         | 'stateHeartbeatMs'
+        | 'buyerService'
       >,
     private readonly callbacks: SessionCallbacks,
   ) {
@@ -263,6 +271,7 @@ class PeeringPeerSession {
     const connection = this.options.createConnection(authenticated.socket)
     this.connection = connection
     this.scopes = advertisement.scopes
+    this.advertisement = advertisement
 
     // Start the live feed first: a long history reconciliation can outlast the
     // overlap window, and events published after its snapshot must still be
@@ -271,6 +280,8 @@ class PeeringPeerSession {
     if (this.liveFilters.length) {
       await connection.subscribe(this.liveFilters, (event) => this.queueEvent(event))
     }
+
+    await this.subscribeToInvoices(connection)
 
     if (this.stopped) {
       return
@@ -292,8 +303,53 @@ class PeeringPeerSession {
     }
   }
 
-  private startReconcileTimer(connection: PeeringSyncConnection, scopes: PeeringScope[]): void {
-    clearInterval(this.reconcileTimer)
+  /**
+   * The seller publishes its kind 402 invoice on the same authenticated
+   * connection. Asking for it in its own short subscription keeps invoices out
+   * of the feed scopes and lets the live feed continue while a payment runs.
+   */
+  private async subscribeToInvoices(connection: PeeringSyncConnection): Promise<void> {
+    const advertisement = this.advertisement
+    if (!this.options.buyerService || !advertisement) {
+      return
+    }
+
+    const paid = advertisement.terms.some((term) => typeof term.amount === 'number' && term.amount > 0)
+    if (!paid) {
+      return
+    }
+
+    const self = getPublicKey(this.options.privateKey())
+    const filter: SubscriptionFilter = {
+      kinds: [EventKinds.INVOICE_UPDATE],
+      '#p': [self],
+      '#t': [PEERING_INVOICE_TAG],
+    }
+
+    await connection.subscribe([filter], (event) => {
+      void this.handleInvoiceEvent(event)
+    })
+  }
+
+  private async handleInvoiceEvent(event: Event): Promise<void> {
+    const advertisement = this.advertisement
+    if (!advertisement || event.pubkey.toLowerCase() !== this.peer.pubkey.toLowerCase()) {
+      return
+    }
+
+    if (!(await isEventIdValid(event)) || !(await isEventSignatureValid(event))) {
+      logger.warn('peer %s sent an invalid peering invoice event: %s', this.peer.relayUrl, event.id)
+      return
+    }
+
+    try {
+      await this.options.buyerService?.handleInvoice(this.peer, advertisement, event)
+    } catch (error) {
+      logger.error('unable to process a peering invoice from %s: %o', this.peer.relayUrl, error)
+    }
+  }
+
+  private startReconcileTimer(connection: PeeringSyncConnection, scopes: PeeringScope[]): void {    clearInterval(this.reconcileTimer)
     const intervalMs = this.options.reconcileIntervalMs ?? PEERING_SYNC_RECONCILE_INTERVAL_MS
 
     this.reconcileTimer = setInterval(() => {
@@ -674,6 +730,7 @@ export class PeeringSyncWorker implements IRunnable {
   private sessions = new Map<string, PeeringPeerSession>()
   private heartbeatTimer: NodeJS.Timeout | undefined
   private peerRefreshTimer: NodeJS.Timeout | undefined
+  private buyerRecoveryTimer: NodeJS.Timeout | undefined
   private watchers: FSWatcher[] | undefined
   private lastRunFinishedAt: string | undefined
   private lastError: string | undefined
@@ -700,6 +757,13 @@ export class PeeringSyncWorker implements IRunnable {
     this.publishHeartbeat()
     this.heartbeatTimer = setInterval(() => this.publishHeartbeat(), ADMIN_OPS_HEARTBEAT_KEEPALIVE_MS)
     this.heartbeatTimer.unref()
+
+    void this.recoverPayingInvoices()
+    this.buyerRecoveryTimer = setInterval(
+      () => void this.recoverPayingInvoices(),
+      PEERING_BUYER_RECOVERY_INTERVAL_MS,
+    )
+    this.buyerRecoveryTimer.unref()
 
     // `watchSettings` invalidates the cached settings document; this periodic
     // pass also replaces a session when only its relay URL changed, which a
@@ -740,6 +804,7 @@ export class PeeringSyncWorker implements IRunnable {
       reconcileIntervalMs: this.options.reconcileIntervalMs,
       eventBatchSize: this.options.eventBatchSize,
       stateHeartbeatMs: this.options.stateHeartbeatMs,
+      buyerService: this.options.buyerService,
     }
 
     for (const [id, peer] of desired) {
@@ -778,6 +843,17 @@ export class PeeringSyncWorker implements IRunnable {
     })
   }
 
+  private async recoverPayingInvoices(): Promise<void> {
+    try {
+      const changed = await this.options.buyerService?.recover?.()
+      if (changed) {
+        logger('recovered %d paying peering invoice(s)', changed)
+      }
+    } catch (error) {
+      logger.error('unable to recover paying peering invoices: %o', error)
+    }
+  }
+
   private onError(error: Error): void {
     logger('error: %o', error)
     this.lastError = error.message
@@ -796,6 +872,8 @@ export class PeeringSyncWorker implements IRunnable {
     this.heartbeatTimer = undefined
     clearInterval(this.peerRefreshTimer)
     this.peerRefreshTimer = undefined
+    clearInterval(this.buyerRecoveryTimer)
+    this.buyerRecoveryTimer = undefined
     if (Array.isArray(this.watchers)) {
       for (const watcher of this.watchers) {
         watcher.close()

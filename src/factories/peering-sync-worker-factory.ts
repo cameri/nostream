@@ -4,6 +4,7 @@ import { UserRepository } from '../repositories/user-repository'
 import { PeeringSyncStateStore } from '../utils/peering-sync-state'
 import { createAdminOpsCacheAdapter } from './admin-ops-cache-adapter-factory'
 import { createEventRepository } from './event-repository-factory'
+import { createPeeringBuyerService } from './peering-buyer-service-factory'
 import { createSettings } from './settings-factory'
 
 export const peeringSyncWorkerFactory = () => {
@@ -15,5 +16,6 @@ export const peeringSyncWorkerFactory = () => {
   return new PeeringSyncWorker(process, createSettings, eventRepository, {
     ...(cache ? { opsCache: cache, stateStore: new PeeringSyncStateStore(cache) } : {}),
     userRepository,
+    buyerService: createPeeringBuyerService(),
   })
 }

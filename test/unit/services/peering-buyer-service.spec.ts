@@ -481,6 +481,29 @@ describe('PeeringBuyerService', () => {
     expect(paymentsService.payInvoice).not.to.have.been.called
   })
 
+
+  it('refuses to approve a malformed invoice', async () => {
+    invoiceRepository.findByHash.resolves(
+      invoice({ paymentHash: 'invalid:abc', amountMsats: 0n, status: PeeringInvoiceStatus.HELD }),
+    )
+
+    await expect(service.approve('invalid:abc', now)).to.be.rejectedWith('no decodable payment')
+    expect(paymentsService.payInvoice).not.to.have.been.called
+  })
+
+
+  it('returns the current row when the failed-payment claim is lost', async () => {
+    invoiceRepository.claim.onFirstCall().resolves(invoice({ status: PeeringInvoiceStatus.PAYING }))
+    invoiceRepository.claim.onSecondCall().resolves(undefined)
+    paymentsService.payInvoice.rejects(new Error('wallet down'))
+    invoiceRepository.findByHash.resolves(invoice({ status: PeeringInvoiceStatus.HELD }))
+
+    const result = await service.handleInvoice(peer, advertisement, event, now)
+
+    expect(result.status).to.equal(PeeringInvoiceStatus.HELD)
+    expect(invoiceRepository.releaseBudget).not.to.have.been.called
+  })
+
   it('summarizes per-peer and global budget spend', async () => {
     const window = peeringBudgetWindow(now, 2592000)
     invoiceRepository.countInWindow.resolves({ received: 2, paid: 1, held: 1 })

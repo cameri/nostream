@@ -15,6 +15,7 @@ describe('NwcPaymentsProcessor', () => {
   let sandbox: sinon.SinonSandbox
   let makeInvoiceStub: sinon.SinonStub
   let lookupInvoiceStub: sinon.SinonStub
+  let payInvoiceStub: sinon.SinonStub
   let closeStub: sinon.SinonStub
 
   const settings = () => ({
@@ -30,12 +31,14 @@ describe('NwcPaymentsProcessor', () => {
     sandbox = sinon.createSandbox()
     makeInvoiceStub = sandbox.stub()
     lookupInvoiceStub = sandbox.stub()
+    payInvoiceStub = sandbox.stub()
     closeStub = sandbox.stub()
 
     sandbox.stub(nwc, 'NWCClient').callsFake(() => {
       return {
         makeInvoice: makeInvoiceStub,
         lookupInvoice: lookupInvoiceStub,
+        payInvoice: payInvoiceStub,
         close: closeStub,
       } as any
     })
@@ -210,5 +213,19 @@ describe('NwcPaymentsProcessor', () => {
         requestId: 'pubkey-unsafe',
       })
     ).to.be.rejectedWith('CreateInvoiceRequest.amount exceeds Number.MAX_SAFE_INTEGER.')
+  })
+
+  it('pays a BOLT11 invoice and returns its payment hash', async () => {
+    payInvoiceStub.resolves({ preimage: 'preimage-1' })
+    const processor = new NwcPaymentsProcessor('nostr+walletconnect://wallet?relay=wss://relay&secret=abc', 10_000, settings)
+    const bolt11 =
+      'lnbc2500u1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu9qrsgquk0rl77nj30yxdy8j9vdx85fkpmdla2087ne0xh8nhedh8w27kyke0lp53ut353s06fv3qfegext0eh0ymjpf39tuven09sam30g4vgpfna3rh'
+
+    const result = await processor.payInvoice({ bolt11 })
+
+    expect(payInvoiceStub).to.have.been.calledOnceWith({ invoice: bolt11 })
+    expect(result.paymentHash).to.equal('0001020304050607080900010203040506070809000102030405060708090102')
+    expect(result.preimage).to.equal('preimage-1')
+    expect(closeStub).to.have.been.calledOnce
   })
 })

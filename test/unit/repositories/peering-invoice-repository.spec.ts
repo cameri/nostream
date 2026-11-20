@@ -180,6 +180,36 @@ describe('PeeringInvoiceRepository', () => {
     expect(recording.queries[0].sql.toLowerCase()).to.include('filter (where status =')
   })
 
+  it('records manual spend, releases it and reads budget rows', async () => {
+    const recording = createRecordingKnex()
+    const repository = new PeeringInvoiceRepository(recording.db)
+    recording.respondWith(
+      [{ spent_msats: '500000000' }],
+      1,
+      [{ scope: `peer:${peerPubkey}`, period_start: now, period_end: now, spent_msats: '500000000' }],
+    )
+
+    const spent = await repository.addBudgetSpend(`peer:${peerPubkey}`, now, now, 250_000_000n, recording.db)
+    await repository.releaseBudget(`peer:${peerPubkey}`, now, 250_000_000n, recording.db)
+    const rows = await repository.listBudgets()
+
+    expect(spent).to.equal(500_000_000n)
+    expect(rows[0].spentMsats).to.equal(500_000_000n)
+  })
+
+  it('rejects negative manual spend and release amounts', async () => {
+    const recording = createRecordingKnex()
+    const repository = new PeeringInvoiceRepository(recording.db)
+
+    expect(await rejection(repository.addBudgetSpend(`peer:${peerPubkey}`, now, now, -1n, recording.db))).to.equal(
+      'budget spend amount must be non-negative',
+    )
+    expect(await rejection(repository.releaseBudget(`peer:${peerPubkey}`, now, -1n, recording.db))).to.equal(
+      'budget release amount must be non-negative',
+    )
+    expect(recording.queries).to.be.empty
+  })
+
   it('refuses a first reservation that already exceeds the limit', async () => {
     const recording = createRecordingKnex()
     const repository = new PeeringInvoiceRepository(recording.db)
