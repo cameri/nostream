@@ -186,6 +186,18 @@ fn row(tool: &str) -> Option<&'static Tool> {
     TOOLS.iter().find(|entry| entry.name == tool)
 }
 
+/// `tool`'s row, when the router dispatches it too: the door serves a name the table carries
+/// **and** the router's own map holds (D18).
+///
+/// The two lists are one by case — `every_registered_tool_has_a_table_row`, and the equality
+/// `tests/audit.rs` and `tests/auth.rs` assert — but a call is dispatched from the router's map,
+/// so that is the membership the refusal asks as well: a row whose `#[tool]` method is absent is
+/// refused exactly as a name the table does not carry is, rather than audited for a call that
+/// reaches no tool.
+fn served(router: &ToolRouter<AdminMcp>, tool: &str) -> Option<&'static Tool> {
+    row(tool).filter(|entry| router.has_route(entry.name))
+}
+
 /// Whether `tool`'s arguments parse; `None` when the table does not name it.
 ///
 /// `call_tool` refuses such a name before it asks, so the `None` is this function's contract and
@@ -574,10 +586,10 @@ impl ServerHandler for AdminMcp {
     ///
     /// `tools/list` is not gated (R8): a client discovers the surface before it presents a
     /// credential, and the refusal is at the call. The order is the console's — the enabled
-    /// predicate, then the credential — after which the table answers: whether the name is one the
-    /// router serves, then what scope it needs, then whether its arguments parse (R9, R28). A scope
-    /// is only meaningful once the document that names it has been read, and a name the table does
-    /// not carry is a refusal rather than a tool.
+    /// predicate, then the credential — after which the name is asked of the table **and** the
+    /// router: is it one this door serves, then what scope it needs, then whether its arguments
+    /// parse (R9, R28). A scope is only meaningful once the document that names it has been read,
+    /// and a name either of them does not carry is a refusal rather than a tool.
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
@@ -590,12 +602,13 @@ impl ServerHandler for AdminMcp {
                 return Ok(tool_refusal(refusal).into());
             }
         };
-        // The table answers first, and an absence is a refusal, not a dispatch: a name it does
-        // not carry is not a tool this router serves, so it is answered exactly as the router
-        // answers it — `-32602 tool not found` — before the scopes are consulted and before any
-        // line is written. A tool added to the router without its row is therefore unreachable
-        // rather than unaudited (R9), and the name a line records is one of these constants.
-        let Some(entry) = row(&request.name) else {
+        // The table and the router answer together, and an absence from either is a refusal, not
+        // a dispatch: a name neither serves is answered exactly as the router answers it —
+        // `-32602 tool not found` — before the scopes are consulted and before any line is
+        // written. A tool added to the router without its row is therefore unreachable rather
+        // than unaudited, and a row whose method is absent writes no line for a call that reached
+        // nothing (R9, D18); the name a line records is one of these constants.
+        let Some(entry) = served(&self.tool_router, &request.name) else {
             return Err(rmcp::ErrorData::invalid_params(TOOL_NOT_FOUND, None));
         };
         if let Requires::Write = entry.needs
@@ -647,6 +660,7 @@ fn tool_refusal(text: &str) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(text)])
 }
 
+
 /// A refusal body as an `isError: true` result — the controller's own JSON, rendered (R13).
 fn tool_error_body(body: &Value) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(body.to_string())])
@@ -663,4 +677,33 @@ fn tool_ok(payload: Value) -> CallToolResult {
     result.structured_content = Some(payload);
     result.is_error = Some(false);
     result
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use super::*;
+
+    /// The door serves a name the table carries **and** the router dispatches. `TOOLS` is a
+    /// `const`, so a row with no `#[tool]` method cannot be added by a case; removing the route
+    /// from the router's `map` is the same disagreement from the other side, and it is the state
+    /// D18 forbids a line for: the table's `row` still answers, the dispatch does not.
+    #[test]
+    fn a_row_without_a_route_is_not_served() {
+        let mut router = AdminMcp::tool_router();
+        assert!(
+            served(&router, TOOL_SETTINGS_GET).is_some(),
+            "the row and the route agree to begin with"
+        );
+        router.map.remove(TOOL_SETTINGS_GET);
+        assert!(
+            row(TOOL_SETTINGS_GET).is_some(),
+            "the table still carries the name"
+        );
+        assert!(
+            served(&router, TOOL_SETTINGS_GET).is_none(),
+            "the router's map decides dispatch, so it decides the refusal"
+        );
+    }
 }

@@ -338,6 +338,14 @@ async fn an_unknown_tool_is_a_protocol_error() {
     };
     assert_eq!(error.code.0, -32602, "{error:?}");
     assert!(error.message.contains("tool not found"), "{error:?}");
+    // The refusal precedes the scope decision and the dispatch line on this arm too: the read-only
+    // arm's case asserts the same empty file (`tests/auth.rs`), and this is the one that would have
+    // caught a line for a call that reached no tool.
+    assert!(
+        fixture.audit_entries().is_empty(),
+        "an absent name writes no line: {:?}",
+        fixture.audit_entries()
+    );
 }
 
 #[tokio::test]
