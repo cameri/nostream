@@ -32,7 +32,8 @@
 //! - the event store, the repositories and the notification channels — `nostream-storage` and
 //!   `nostream-services`;
 //! - NIP-98 authentication and its replay claim — a later job (D6);
-//! - the MCP server and the CLI — separate issues, with no module here;
+//! - the MCP server — `crates/nostream-mcp`, a separate crate that reuses this one's state,
+//!   session credential and audit path — and the CLI, a separate issue;
 //! - the app-level connection rate limiter — deliberately not applied to HTTP (D1).
 
 // An axum rejection *is* an `http::Response`, so every extractor's error type is one; the

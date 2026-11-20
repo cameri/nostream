@@ -34,8 +34,18 @@ pub(crate) use sql::{Arg, Args, EventQuery, Gates, Nip50Gate};
 pub(crate) const DEFAULT_TS_CONFIG: &str = "simple";
 /// The default `nip50.maxQueryLength` (`src/repositories/event-repository.ts:50-52`).
 pub(crate) const DEFAULT_MAX_SEARCH_QUERY_LENGTH: u64 = 256;
-/// The capture's default page size (`DEFAULT_FILTER_LIMIT`).
-pub(crate) const DEFAULT_FILTER_LIMIT: u64 = 500;
+/// The capture's default page size (`DEFAULT_FILTER_LIMIT`): the store's own no-limit page,
+/// under the name this module's SQL reads it by.
+pub(crate) use crate::DEFAULT_PAGE_ROWS as DEFAULT_FILTER_LIMIT;
+
+// The MCP surface publishes this number as `list_events`' page bound and derives `truncated`
+// from it, so a Postgres read has to materialise exactly the page the tool reports on. The alias
+// above makes the two one item; this fails the build if it is ever retyped as a literal.
+const _: () = assert!(
+    DEFAULT_FILTER_LIMIT == crate::DEFAULT_PAGE_ROWS,
+    "the Postgres no-limit page is the store's own DEFAULT_PAGE_ROWS"
+);
+
 /// The retention batch size (`RETENTION_BATCH_SIZE`).
 pub(crate) const RETENTION_BATCH_SIZE: u64 = 1000;
 

@@ -11,6 +11,7 @@ The following environment variables can be set:
 | RELAY_PRIVATE_KEY                | Relay's private key in hex     | (auto-generated)       |
 | WORKER_COUNT                     | Number of workers override     | No. of available CPUs  |
 | LOG_FORMAT                       | Set to `json` to replace the startup banner with one `relay starting` record, so every line the relay writes parses as JSON. | (banner) |
+| NOSTREAM_ADMIN_TOKEN            | **Retired.** It used to carry a console session token to `nostreamd --mcp-stdio`; it grants nothing now, and setting it makes the mode refuse to start. See [The admin MCP mode](#the-admin-mcp-mode---mcp-stdio). | (unset: the mode refuses to start if it is set) |
 | DB_URI                           | PostgreSQL URI (overrides DB_HOST, DB_PORT, etc.) | |
 | DB_HOST                          | PostgresSQL Hostname           |                        |
 | DB_PORT                          | PostgreSQL Port                | 5432                   |
@@ -70,6 +71,52 @@ The following environment variables can be set:
 | DEBUG                            | Debugging filter                 |                        |
 | ZEBEDEE_API_KEY                  | Zebedee Project API Key          |                        |
 | NWC_URL                          | NWC connection URL (`nostr+walletconnect://...`) | |
+
+## The admin MCP mode (`--mcp-stdio`)
+
+`nostreamd --mcp-stdio` serves the admin MCP server (`settings_get`, `settings_set`,
+`list_events`, `get_event`) on stdin/stdout and exits when stdin closes. It binds no socket,
+opens no store of its own, and writes its log lines to **stderr** so nothing but JSON-RPC crosses
+stdout.
+
+Its credential is a **scoped token document** of its own — never a console session token and never
+an environment variable. Deliver it one of two ways; exactly one is required:
+
+| Flag | What it reads |
+|---|---|
+| `--admin-token-file <path>` | The document in a **regular** file that carries **no group or other permission** — `mode & 0o077 == 0`, which `0600` satisfies and a read-only `0400` does too — of at most 4 KiB. Anything else refuses the start, naming what it found: a group- or world-accessible mode, a FIFO, a device or a directory there (the mode re-opens the file on every call, and opening a FIFO waits for a writer), or a file too large to be a document. It is re-read on **every call**, so deleting or rewriting it is the revocation: narrowing it to reads takes effect on the next call, with nothing restarted. |
+| `--admin-token-fd <n>` | The same document on an inherited descriptor, conventionally `3` (`exec 3<token.json`). It is read **once at start**, so its lifetime is the process's — a rewrite of the file it came from changes nothing until the process is restarted. The descriptor's target is held to the same rules as the file form's: a regular file, no group or other permission, at most 4 KiB. |
+
+The document is JSON, and `scopes` is optional:
+
+```json
+{ "scopes": ["write"] }
+```
+
+| Document | What it may call |
+|---|---|
+| `{}` or `{ "scopes": [] }` | The read tools: `settings_get`, `list_events`, `get_event`. |
+| `{ "scopes": ["write"] }` | The read tools and `settings_set`. |
+
+`write` is the only accepted scope, and an unknown name — a typo, or a document from another tool
+— refuses to start rather than being narrowed silently. A call the document's scopes deny is
+refused with `Forbidden: <tool> needs the "write" scope` and recorded as one `mcp.denied` line in
+`<config>/admin-audit.jsonl`, because it is a call the door authenticated and then denied; a call
+with no readable document answers `Unauthorized` and is not recorded, because there is nothing to
+attribute it to.
+
+The mode also needs `admin.enabled: true` in the settings (else every call answers `Not Found`).
+`SECRET` is **not** a prerequisite: the door derives no session key. The console's own HTTP
+surface is unchanged and still authenticates with `SECRET` and `POST /admin/login` sessions.
+
+Run it from the directory that holds `resources/` — the daemon reads its default settings from
+`resources/default-settings.yaml`, resolved against the working directory — and from nowhere else:
+
+```sh
+install -m 0600 /dev/null /etc/nostream/admin-token.json
+printf '{"scopes": ["write"]}\n' > /etc/nostream/admin-token.json
+nostreamd --config-dir /etc/nostream --mcp-stdio --admin-token-file /etc/nostream/admin-token.json
+```
 
 ## I2P
 

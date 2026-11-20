@@ -38,6 +38,49 @@ struct Cli {
     /// Override the log level (info, debug, warn, error).
     #[arg(long)]
     log_level: Option<String>,
+
+    /// Serve the admin MCP server on stdin/stdout and exit when stdin closes. Binds no socket.
+    ///
+    /// Every call is decided by a scoped token document, delivered either by a regular file
+    /// (`--admin-token-file <path>`, re-read on every call, so deleting or rewriting it revokes
+    /// or narrows the credential) or on an inherited descriptor
+    /// (`--admin-token-fd <n>`, read once at start and valid for the life of the process).
+    /// Exactly one of the two is required. Either way the target must be a regular file that
+    /// carries no group or other permission — 0600 is the usual mode; a 0644 file refuses the
+    /// start — and at most 4 KiB.
+    ///
+    /// The document is `{"scopes": ["write"]}`; a document with no scopes grants the read tools
+    /// (`settings_get`, `list_events`, `get_event`), and the "write" scope adds `settings_set`.
+    /// An unknown scope refuses to start, naming it. The mode also needs `admin.enabled: true` in
+    /// the settings.
+    ///
+    /// NOSTREAM_ADMIN_TOKEN is retired: a console session token does not authenticate this mode,
+    /// and setting the variable makes the mode refuse to start.
+    #[arg(long)]
+    mcp_stdio: bool,
+
+    /// The token document the MCP mode reads, on every call. A regular file of at most 4 KiB that
+    /// carries no group or other permission (0600 is the usual mode) or the mode refuses to
+    /// start; deleting or rewriting the file is the revocation.
+    #[arg(
+        long,
+        value_name = "PATH",
+        requires = "mcp_stdio",
+        conflicts_with = "admin_token_fd"
+    )]
+    admin_token_file: Option<PathBuf>,
+
+    /// The same token document on an inherited descriptor (conventionally 3), read once at
+    /// start: the credential then lives as long as the process. The descriptor's target is held
+    /// to the same rule as `--admin-token-file`: a regular file of at most 4 KiB with no group or
+    /// other permission.
+    #[arg(
+        long,
+        value_name = "N",
+        requires = "mcp_stdio",
+        conflicts_with = "admin_token_file"
+    )]
+    admin_token_fd: Option<i32>,
 }
 
 fn main() -> ExitCode {
@@ -75,18 +118,26 @@ fn run(cli: Cli) -> Result<ExitCode, DaemonError> {
 
     let settings = outcome.settings;
 
-    // R9: payments cannot be enabled without a usable SECRET. This is the capture's one
-    // startup refusal (`src/app/app.ts:86-94`) and it exits 1, not `InvalidSettings`' 2.
-    if payments_enabled(&settings) && secret_missing() {
-        return Err(DaemonError::MissingSecret);
-    }
+    // R9's payments refusal belongs to the relay path only, and is checked below, after the
+    // `--mcp-stdio` branch returns: the stdio door serves no payments, and D19 retired `SECRET`
+    // as a prerequisite for it, so a payment-enabled instance without one can still open it.
 
+    let writer = if cli.mcp_stdio {
+        telemetry::LogWriter::Stderr
+    } else {
+        telemetry::LogWriter::Stdout
+    };
     telemetry::init(
         &settings,
         telemetry::resolve_filter(cli.log_level.as_deref()),
+        writer,
     )
     .map_err(|error| DaemonError::Setup(error.to_string()))?;
 
+    let config_dir = paths.config_base_dir;
+
+    // R17: the MCP mode serves stdin/stdout and returns; it binds no socket and opens no
+    // store of its own, so `--listen-port` is not read on this path.
     let port = cli
         .listen_port
         .or_else(|| {
@@ -101,7 +152,6 @@ fn run(cli: Cli) -> Result<ExitCode, DaemonError> {
         })
         .unwrap_or(8008u16);
     let listen = SocketAddr::from((Ipv4Addr::UNSPECIFIED, port));
-    let config_dir = paths.config_base_dir;
 
     // R4: `WORKER_COUNT`, then `workers.count`, then the CPU count.
     let worker_threads = nostream_services::scheduler::resolve_worker_count(
@@ -118,6 +168,27 @@ fn run(cli: Cli) -> Result<ExitCode, DaemonError> {
         .enable_all()
         .build()
         .map_err(|error| DaemonError::Setup(format!("tokio runtime: {error}")))?;
+
+    if cli.mcp_stdio {
+        // R26, R27: the credential is resolved before the pipe is served, so a retired variable
+        // or a document this door cannot accept fails the start rather than every call.
+        let credential = nostreamd::mcp_stdio::resolve_credential(
+            cli.admin_token_file.as_deref(),
+            cli.admin_token_fd,
+        )?;
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        return runtime.block_on(async move {
+            nostreamd::mcp_stdio::serve(cwd, config_dir, credential).await?;
+            Ok(ExitCode::SUCCESS)
+        });
+    }
+
+    // R9: payments cannot be enabled without a usable `SECRET`. This is the capture's one
+    // startup refusal (`src/app/app.ts:86-94`) and it exits 1, not `InvalidSettings`' 2. It is
+    // checked here, after the stdio mode has returned, because that door serves no payments.
+    if payments_enabled(&settings) && secret_missing() {
+        return Err(DaemonError::MissingSecret);
+    }
 
     runtime.block_on(async move { serve(listen, settings, config_dir, port).await })
 }

@@ -1,0 +1,31 @@
+[package]
+name = "nostream-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The admin MCP server: the tool router, the credential gate and the audit sink"
+
+[dependencies]
+nostream-admin.workspace = true
+nostream-config.workspace = true
+nostream-core.workspace = true
+nostream-storage.workspace = true
+rmcp.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+futures-core.workspace = true
+futures-util.workspace = true
+nostream-services.workspace = true
+rmcp = { workspace = true, features = ["client"] }
+serde_yaml.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

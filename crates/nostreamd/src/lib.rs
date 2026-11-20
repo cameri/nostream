@@ -37,12 +37,17 @@
 //! service the moment the connection that created it closes. The relay-monitor worker
 //! belongs to #865 and is not registered here.
 //!
-//! The MCP server named in the issue is Phase 5 and has no TS counterpart at the capture; it
-//! has no module here either.
+//! The MCP server named in the issue has no TS counterpart at the capture. It is the
+//! `crates/nostream-mcp` crate, which owns the tools, the credential and its scopes, and the
+//! audit sink; this crate serves it inside the daemon's own process through `--mcp-stdio`
+//! ([`mcp_stdio`]), on stdin/stdout and with no socket of its own, and it hands the mode its
+//! credential from `--admin-token-file` or `--admin-token-fd` — never the console's session token
+//! and never `NOSTREAM_ADMIN_TOKEN`, which is retired (ADR 0014 D19).
 
 pub mod acceptor;
 pub mod admin_http;
 pub mod error;
+pub mod mcp_stdio;
 pub mod settings_gate;
 pub mod telemetry;
 pub mod workers;

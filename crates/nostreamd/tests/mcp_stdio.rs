@@ -1,0 +1,751 @@
+//! AC5, AC29, AC30, AC33, AC36, AC37 — the stdio mode in the real binary: the flag, the JSON-RPC
+//! stream, the banner's stream, the absent socket, the exit code, the unwired store's answer, the
+//! ways the mode refuses to start with a credential it cannot accept, and the payments refusal
+//! that belongs to the relay path rather than to this door.
+//!
+//! | case | what it proves |
+//! |---|---|
+//! | `the_banner_is_on_stderr_and_stdout_is_json_rpc` | stdout carries only JSON-RPC, and the one INFO line is on stderr |
+//! | `initialize_names_the_daemon` | `protocolVersion`, `serverInfo.name` and the daemon's version |
+//! | `settings_get_answers_redacted_over_stdio` | a real call answers the redacted document |
+//! | `the_mode_binds_no_socket` | the dialogue completes while the port the flag names is held by the test |
+//! | `the_process_exits_zero_on_stdin_eof` | closing stdin ends the process with `0` |
+//! | `the_store_backed_tools_report_the_unwired_store` | `list_events` answers the store's own `NotImplemented` message, not an empty list |
+//! | `the_help_text_names_the_credential` | `--help` names the two flags, the document's shape and scopes, the file rule and the retired variable |
+//! | `a_console_session_token_in_the_environment_refuses_to_start` | the retired variable is named rather than ignored, even when it carries a token the console would accept |
+//! | `a_group_readable_token_file_refuses_to_start` | mode 0644 fails the start, and the message names both modes |
+//! | `a_fifo_token_file_refuses_to_start` | a FIFO in the token file's place is refused, not opened: a read of one would stall the door |
+//! | `the_mode_needs_one_credential_flag` | neither flag is an error naming both, and both is an error naming both |
+//! | `an_inherited_descriptor_authenticates` | a document delivered on descriptor 3 answers `tools/list` and a read, with nothing on the command line or in the environment |
+//! | `a_caller_chosen_name_cannot_size_or_forge_the_log` | the one arm reached before any credential cuts and escapes the caller's name, so the log cannot be sized or forged by it |
+//!
+//! The dialogue is hand-written JSON-RPC over the child's pipes: this target proves a property
+//! of the process, so it spawns the binary the way an MCP client does.
+
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::time::Duration;
+
+use nostream_admin::utils::session;
+use serde_json::{Value, json};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout};
+
+/// The literal `SECRET` the daemon is composed with here; the MCP credential does not use it.
+const SECRET: &str = "a-test-secret";
+
+/// The fixture password hash `hashAdminPassword` writes for `hunter2`.
+const PASSWORD_HASH: &str = "scrypt:BwcHBwcHBwcHBwcHBwcHBw==:r5daXU05UJ9EUDu45YoHMWUoQCmkVbwINYNntY1/dwrJPOt3fTi/1IWw1wp9+YXRj1Vm6IpFi+gSU0JdqZvWIw==";
+
+/// A session token the console's own gate would accept, minted the way `POST /admin/login` does —
+/// which this mode must not treat as a credential (R26).
+fn session_token() -> String {
+    let now: i64 = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        .try_into()
+        .unwrap();
+    session::create_token(&session::session_key(SECRET.as_bytes()), now + 3_600)
+}
+
+/// The repository root, which the mode reads its `resources/` tree from.
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+/// The token document's text: `{"scopes": [...]}` (R27).
+fn token_document(scopes: &[&str]) -> String {
+    serde_json::to_string(&json!({ "scopes": scopes })).unwrap()
+}
+
+/// Writes `contents` to `path` at mode 0600: no group or other permission, which is what the
+/// credential requires (R27).
+fn write_private(path: &Path, contents: &str) {
+    std::fs::write(path, contents).unwrap();
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+}
+
+/// One config dir with the fixture settings, and the token file the mode is started with.
+struct Prepared {
+    _temp: tempfile::TempDir,
+    config_dir: PathBuf,
+    token: PathBuf,
+}
+
+impl Prepared {
+    fn new() -> Self {
+        let temp = tempfile::tempdir().unwrap();
+        let config_dir = temp.path().join("config");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(
+            config_dir.join("settings.yaml"),
+            format!(
+                "info:\n  name: Example\n  relay_url: ws://127.0.0.1:8008\nadmin:\n  enabled: true\n  passwordHash: \"{PASSWORD_HASH}\"\n"
+            ),
+        )
+        .unwrap();
+        let token = temp.path().join("admin-token.json");
+        write_private(&token, &token_document(&["write"]));
+        Self {
+            _temp: temp,
+            config_dir,
+            token,
+        }
+    }
+
+    /// The same fixture with payments turned on: the relay path refuses to start without `SECRET`
+    /// (`src/app/app.ts:86-94`), and the stdio door, which serves no payments, must not inherit
+    /// that refusal (D19: `SECRET` is not a prerequisite for this door).
+    fn with_payments() -> Self {
+        let prepared = Self::new();
+        let settings = prepared.config_dir.join("settings.yaml");
+        let mut document = std::fs::read_to_string(&settings).unwrap();
+        document.push_str("payments:\n  enabled: true\n");
+        std::fs::write(&settings, document).unwrap();
+        prepared
+    }
+
+    /// The mode's arguments for a dialogue: the config dir, the log level, the mode flag and the
+    /// token file.
+    fn arguments(&self, extra: &[String]) -> Vec<String> {
+        let mut arguments = vec![
+            "--config-dir".to_owned(),
+            self.config_dir.display().to_string(),
+            "--log-level".to_owned(),
+            "info".to_owned(),
+            "--mcp-stdio".to_owned(),
+            "--admin-token-file".to_owned(),
+            self.token.display().to_string(),
+        ];
+        arguments.extend_from_slice(extra);
+        arguments
+    }
+}
+
+/// One spawned `nostreamd --mcp-stdio`, and every stdout line it wrote.
+struct Daemon {
+    child: Child,
+    stdin: Option<ChildStdin>,
+    stdout: BufReader<ChildStdout>,
+    stderr: ChildStderr,
+    lines: Vec<String>,
+    next_id: u64,
+}
+
+/// What a finished dialogue left behind.
+struct Outcome {
+    status: std::process::ExitStatus,
+    stdout: Vec<String>,
+    stderr: String,
+}
+
+impl Drop for Daemon {
+    fn drop(&mut self) {
+        let _ = self.child.start_kill();
+    }
+}
+
+impl Daemon {
+    /// Spawns the binary on the prepared config dir and token file.
+    fn start(prepared: &Prepared, extra: &[String]) -> Self {
+        let mut command = base_command();
+        command.args(prepared.arguments(extra));
+        Self::spawn(command)
+    }
+
+    /// The same, from a command a case built itself — the descriptor case runs the binary under
+    /// `sh`, so its parent can open the document as descriptor 3.
+    fn spawn(mut command: tokio::process::Command) -> Self {
+        let mut child = command.spawn().expect("the daemon starts");
+        let stdin = child.stdin.take();
+        let stdout = BufReader::new(child.stdout.take().expect("stdout is piped"));
+        let stderr = child.stderr.take().expect("stderr is piped");
+        Self {
+            child,
+            stdin,
+            stdout,
+            stderr,
+            lines: Vec::new(),
+            next_id: 0,
+        }
+    }
+
+    async fn send(&mut self, message: Value) {
+        let stdin = self.stdin.as_mut().expect("stdin is open");
+        stdin
+            .write_all(format!("{message}\n").as_bytes())
+            .await
+            .expect("the child reads");
+        stdin.flush().await.expect("the child reads");
+    }
+
+    /// One stdout line, recorded so the banner case can hold every one of them to JSON.
+    async fn read_line(&mut self) -> String {
+        let mut line = String::new();
+        let read = tokio::time::timeout(Duration::from_secs(15), self.stdout.read_line(&mut line))
+            .await
+            .expect("a reply within fifteen seconds")
+            .expect("the pipe reads");
+        assert!(read > 0, "the child closed stdout mid-dialogue");
+        self.lines.push(line.clone());
+        line
+    }
+
+    /// The response carrying `id`, skipping anything else the server sends.
+    async fn response(&mut self, id: u64) -> Value {
+        loop {
+            let line = self.read_line().await;
+            let message: Value = serde_json::from_str(&line)
+                .unwrap_or_else(|error| panic!("stdout carried a non-JSON line ({error}): {line}"));
+            assert_eq!(message["jsonrpc"], "2.0", "{message}");
+            if message["id"] == json!(id) {
+                return message;
+            }
+        }
+    }
+
+    async fn request(&mut self, method: &str, params: Value) -> Value {
+        self.next_id += 1;
+        let id = self.next_id;
+        self.send(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": params,
+        }))
+        .await;
+        self.response(id).await
+    }
+
+    /// The `initialize` handshake every dialogue starts with.
+    async fn initialize(&mut self) -> Value {
+        let result = self
+            .request(
+                "initialize",
+                json!({
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": { "name": "mcp-stdio-test", "version": "0" },
+                }),
+            )
+            .await;
+        self.send(json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }))
+            .await;
+        result
+    }
+
+    async fn call(&mut self, tool: &str, arguments: Value) -> Value {
+        self.request(
+            "tools/call",
+            json!({ "name": tool, "arguments": arguments }),
+        )
+        .await
+    }
+
+    /// Closes stdin, waits for the exit, and drains both pipes.
+    async fn finish(mut self) -> Outcome {
+        drop(self.stdin.take());
+        let status = tokio::time::timeout(Duration::from_secs(5), self.child.wait())
+            .await
+            .expect("the child exits within five seconds when stdin closes")
+            .expect("the child is reaped");
+        let mut rest = String::new();
+        self.stdout
+            .read_to_string(&mut rest)
+            .await
+            .expect("stdout drains");
+        let mut stderr = String::new();
+        self.stderr
+            .read_to_string(&mut stderr)
+            .await
+            .expect("stderr drains");
+        let mut stdout = std::mem::take(&mut self.lines);
+        stdout.extend(
+            rest.lines()
+                .filter(|line| !line.trim().is_empty())
+                .map(str::to_owned),
+        );
+        Outcome {
+            status,
+            stdout,
+            stderr,
+        }
+    }
+}
+
+/// The binary, with the ambient environment removed and the fixture's set: the retired variable
+/// must not decide whether a case is authenticated (R26).
+fn base_command() -> tokio::process::Command {
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_nostreamd"));
+    command
+        .current_dir(workspace_root())
+        .env("SECRET", SECRET)
+        .env("WORKER_COUNT", "1")
+        .env_remove("NOSTREAM_ADMIN_TOKEN")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    command
+}
+
+/// Spawns the mode with these arguments and environment, and waits for it to exit without a
+/// dialogue: for the cases whose point is that it refuses to start.
+async fn refusal(arguments: &[String], environment: &[(&str, &str)]) -> (Option<i32>, String) {
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_nostreamd"));
+    command
+        .args(arguments)
+        .current_dir(workspace_root())
+        .env("SECRET", SECRET)
+        .env("WORKER_COUNT", "1")
+        .env_remove("NOSTREAM_ADMIN_TOKEN")
+        .envs(environment.iter().copied())
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let output = command.output().await.expect("the binary runs");
+    (
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
+/// The binary, bounded, for the cases whose bug would be a process that neither refuses nor exits:
+/// a build that lost the payments refusal would serve a relay, and a FIFO token file that is not
+/// refused yields no open at all. Twenty seconds. `secret: None` removes `SECRET`.
+async fn bounded(arguments: &[String], secret: Option<&str>) -> (Option<i32>, String) {
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_nostreamd"));
+    command
+        .args(arguments)
+        .current_dir(workspace_root())
+        .env("WORKER_COUNT", "1")
+        .env_remove("NOSTREAM_ADMIN_TOKEN")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    match secret {
+        Some(secret) => command.env("SECRET", secret),
+        None => command.env_remove("SECRET"),
+    };
+    let mut child = command.spawn().expect("the binary runs");
+    let mut pipe = child.stderr.take().expect("stderr is piped");
+    let status = match tokio::time::timeout(Duration::from_secs(20), child.wait()).await {
+        Ok(status) => status.expect("the child is reaped"),
+        Err(_) => {
+            let _ = child.start_kill();
+            panic!("the process neither refused nor exited within twenty seconds");
+        }
+    };
+    let mut stderr = String::new();
+    pipe.read_to_string(&mut stderr)
+        .await
+        .expect("stderr drains");
+    (status.code(), stderr)
+}
+
+#[tokio::test]
+async fn the_banner_is_on_stderr_and_stdout_is_json_rpc() {
+    let prepared = Prepared::new();
+    let mut daemon = Daemon::start(&prepared, &[]);
+    daemon.initialize().await;
+    daemon.request("tools/list", json!({})).await;
+    let outcome = daemon.finish().await;
+
+    assert!(
+        outcome
+            .stderr
+            .lines()
+            .any(|line| line.contains("mcp server on stdio")),
+        "the banner is on stderr: {}",
+        outcome.stderr
+    );
+    assert!(!outcome.stdout.is_empty(), "the dialogue answered");
+    for line in &outcome.stdout {
+        let message: Value = serde_json::from_str(line)
+            .unwrap_or_else(|error| panic!("stdout carried {line:?}: {error}"));
+        assert_eq!(message["jsonrpc"], "2.0", "{message}");
+    }
+}
+
+#[tokio::test]
+async fn initialize_names_the_daemon() {
+    let prepared = Prepared::new();
+    let mut daemon = Daemon::start(&prepared, &[]);
+    let result = daemon.initialize().await;
+    let outcome = daemon.finish().await;
+
+    assert_eq!(result["result"]["protocolVersion"], "2025-06-18");
+    assert_eq!(result["result"]["serverInfo"]["name"], "nostream");
+    assert_eq!(
+        result["result"]["serverInfo"]["version"],
+        env!("CARGO_PKG_VERSION")
+    );
+    assert!(outcome.status.success(), "{}", outcome.stderr);
+}
+
+#[tokio::test]
+async fn settings_get_answers_redacted_over_stdio() {
+    let prepared = Prepared::new();
+    let mut daemon = Daemon::start(&prepared, &[]);
+    daemon.initialize().await;
+    let response = daemon.call("settings_get", json!({})).await;
+    let outcome = daemon.finish().await;
+
+    assert_eq!(response["result"]["isError"], false, "{response}");
+    assert_eq!(
+        response["result"]["structuredContent"]["settings"]["admin"]["passwordHash"], "***",
+        "{response}"
+    );
+    assert!(outcome.status.success(), "{}", outcome.stderr);
+}
+
+#[tokio::test]
+async fn the_mode_binds_no_socket() {
+    // Held open for the whole dialogue: the child never binds it.
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("an ephemeral port");
+    let port = listener.local_addr().expect("addr").port();
+
+    let prepared = Prepared::new();
+    let mut daemon = Daemon::start(&prepared, &["--listen-port".to_owned(), port.to_string()]);
+    daemon.initialize().await;
+    let listed = daemon.request("tools/list", json!({})).await;
+    let outcome = daemon.finish().await;
+
+    assert_eq!(
+        listed["result"]["tools"].as_array().map(Vec::len),
+        Some(4),
+        "{listed}"
+    );
+    assert!(outcome.status.success(), "{}", outcome.stderr);
+    drop(listener);
+}
+
+#[tokio::test]
+async fn the_process_exits_zero_on_stdin_eof() {
+    let prepared = Prepared::new();
+    let daemon = Daemon::start(&prepared, &[]);
+    let outcome = daemon.finish().await;
+    assert_eq!(outcome.status.code(), Some(0), "{}", outcome.stderr);
+}
+
+#[tokio::test]
+async fn the_store_backed_tools_report_the_unwired_store() {
+    let prepared = Prepared::new();
+    let mut daemon = Daemon::start(&prepared, &[]);
+    daemon.initialize().await;
+    let response = daemon.call("list_events", json!({})).await;
+    let outcome = daemon.finish().await;
+
+    assert_eq!(response["result"]["isError"], true, "{response}");
+    let text = response["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        text.contains("not implemented in Phase 1 (job 005): storage::backend::wiring"),
+        "{text}"
+    );
+    assert!(outcome.status.success(), "{}", outcome.stderr);
+}
+
+#[tokio::test]
+async fn the_help_text_names_the_credential() {
+    let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_nostreamd"))
+        .arg("--help")
+        .output()
+        .await
+        .expect("the binary answers --help");
+    assert!(output.status.success(), "--help exits 0");
+    // Clap wraps at the terminal width, so a phrase needle is matched against the flattened text.
+    let help = String::from_utf8_lossy(&output.stdout)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    // The mode rule, not only its usual mode: `0600` is the example, and a `0400` document is
+    // accepted, so the help has to state the rule the door enforces (R27, R30).
+    for needle in [
+        "--mcp-stdio",
+        "--admin-token-file",
+        "--admin-token-fd",
+        "NOSTREAM_ADMIN_TOKEN",
+        "regular file",
+        "no group or other permission",
+        "0600",
+        "scopes",
+        "write",
+        "admin.enabled",
+    ] {
+        assert!(help.contains(needle), "the help names `{needle}`: {help}");
+    }
+    // The size rule is asserted inside each flag entry's own slice, not against the page: one
+    // `4 KiB` anywhere satisfies a page-wide needle, and the mode paragraph carried it alone while
+    // both flag entries omitted it. The labels include clap's value name, so the mode paragraph's
+    // mention of a flag is not mistaken for that flag's entry.
+    let labels = [
+        "--mcp-stdio",
+        "--admin-token-file <PATH>",
+        "--admin-token-fd <N>",
+    ];
+    for (index, label) in labels.iter().enumerate() {
+        let start = help
+            .find(*label)
+            .unwrap_or_else(|| panic!("the help names `{label}`: {help}"));
+        let end = labels
+            .get(index + 1)
+            .and_then(|next| help[start..].find(*next))
+            .map_or(help.len(), |offset| start + offset);
+        let entry = &help[start..end];
+        assert!(
+            entry.contains("4 KiB"),
+            "the `{label}` entry states the size rule: {entry}"
+        );
+    }
+    assert!(
+        !help.contains("must be mode 0600"),
+        "the help states the rule rather than an example of it: {help}"
+    );
+}
+
+/// Proof 1: a console session token in the retired variable does not start the door — the mode
+/// names the variable and the flag that replaces it, rather than serving and refusing every call
+/// (R26).
+#[tokio::test]
+async fn a_console_session_token_in_the_environment_refuses_to_start() {
+    let prepared = Prepared::new();
+    let session_token = session_token();
+    let (code, stderr) = refusal(
+        &prepared.arguments(&[]),
+        &[("NOSTREAM_ADMIN_TOKEN", session_token.as_str())],
+    )
+    .await;
+
+    assert_eq!(
+        code,
+        Some(1),
+        "the mode exits 1 rather than serving: {stderr}"
+    );
+    assert!(stderr.contains("NOSTREAM_ADMIN_TOKEN"), "{stderr}");
+    assert!(stderr.contains("retired"), "{stderr}");
+    assert!(stderr.contains("--admin-token-file"), "{stderr}");
+}
+
+/// Proof 2: a token file anyone in the file's group can read is refused at start, and the message
+/// names the mode it found and the mode it needs (R27).
+#[tokio::test]
+async fn a_group_readable_token_file_refuses_to_start() {
+    let prepared = Prepared::new();
+    std::fs::set_permissions(&prepared.token, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let (code, stderr) = refusal(&prepared.arguments(&[]), &[]).await;
+
+    assert_eq!(code, Some(1), "{stderr}");
+    assert!(stderr.contains("0644"), "the mode it found: {stderr}");
+    assert!(stderr.contains("0600"), "the usual mode: {stderr}");
+    // The rule, not only one example of it: `0400` is accepted, so the refusal has to say what it
+    // enforces (R27).
+    assert!(
+        stderr.contains("no group or other permission"),
+        "the rule it enforces: {stderr}"
+    );
+}
+
+/// A FIFO in the token file's place is refused rather than opened: the door re-reads the document
+/// on every call, and opening a FIFO read-only waits for a writer that never comes (R27).
+#[tokio::test]
+async fn a_fifo_token_file_refuses_to_start() {
+    let prepared = Prepared::new();
+    let fifo = prepared.token.with_file_name("admin-token.fifo");
+    let made = std::process::Command::new("mkfifo")
+        .args(["-m", "0600"])
+        .arg(&fifo)
+        .status()
+        .expect("mkfifo runs");
+    assert!(made.success(), "the fixture writes the FIFO at 0600");
+
+    let arguments = vec![
+        "--config-dir".to_owned(),
+        prepared.config_dir.display().to_string(),
+        "--log-level".to_owned(),
+        "info".to_owned(),
+        "--mcp-stdio".to_owned(),
+        "--admin-token-file".to_owned(),
+        fifo.display().to_string(),
+    ];
+    let (code, stderr) = bounded(&arguments, Some(SECRET)).await;
+
+    assert_eq!(code, Some(1), "{stderr}");
+    assert!(stderr.contains("not a regular file"), "{stderr}");
+}
+
+#[tokio::test]
+async fn the_mode_needs_one_credential_flag() {
+    let prepared = Prepared::new();
+    let neither = vec![
+        "--config-dir".to_owned(),
+        prepared.config_dir.display().to_string(),
+        "--mcp-stdio".to_owned(),
+    ];
+    let (code, stderr) = refusal(&neither, &[]).await;
+    assert_eq!(code, Some(1), "{stderr}");
+    assert!(stderr.contains("--admin-token-file"), "{stderr}");
+    assert!(stderr.contains("--admin-token-fd"), "{stderr}");
+
+    let mut both = prepared.arguments(&[]);
+    both.extend(["--admin-token-fd".to_owned(), "3".to_owned()]);
+    let (code, stderr) = refusal(&both, &[]).await;
+    assert_eq!(code, Some(2), "clap refuses the pair: {stderr}");
+    assert!(stderr.contains("--admin-token-file"), "{stderr}");
+    assert!(stderr.contains("--admin-token-fd"), "{stderr}");
+
+    // A credential flag on the relay path is refused rather than ignored: a daemon started with
+    // one and no `--mcp-stdio` would look configured and serve the console. `--check` is there so
+    // that a silently accepted flag validates the settings and exits rather than binding a socket.
+    let mut without_mode = vec![
+        "--config-dir".to_owned(),
+        prepared.config_dir.display().to_string(),
+        "--admin-token-file".to_owned(),
+        prepared.token.display().to_string(),
+    ];
+    without_mode.push("--check".to_owned());
+    let (code, stderr) = refusal(&without_mode, &[]).await;
+    assert_eq!(code, Some(2), "{stderr}");
+    assert!(stderr.contains("--mcp-stdio"), "{stderr}");
+}
+
+/// Proof 5: the descriptor form, end to end — the parent opens the document as descriptor 3 and
+/// the mode inherits it, so the secret is on neither the command line nor the environment.
+#[tokio::test]
+async fn an_inherited_descriptor_authenticates() {
+    let prepared = Prepared::new();
+    let mut shell = tokio::process::Command::new("sh");
+    shell
+        .arg("-c")
+        .arg(
+            "exec 3<\"$TOKEN\"; exec \"$BIN\" --config-dir \"$CFG\" --log-level info \
+             --mcp-stdio --admin-token-fd 3",
+        )
+        .current_dir(workspace_root())
+        .env("TOKEN", &prepared.token)
+        .env("BIN", env!("CARGO_BIN_EXE_nostreamd"))
+        .env("CFG", &prepared.config_dir)
+        .env("SECRET", SECRET)
+        .env("WORKER_COUNT", "1")
+        .env_remove("NOSTREAM_ADMIN_TOKEN")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut daemon = Daemon::spawn(shell);
+    daemon.initialize().await;
+    let listed = daemon.request("tools/list", json!({})).await;
+    let read = daemon.call("settings_get", json!({})).await;
+    let outcome = daemon.finish().await;
+
+    assert_eq!(
+        listed["result"]["tools"].as_array().map(Vec::len),
+        Some(4),
+        "{listed}"
+    );
+    assert_eq!(read["result"]["isError"], false, "{read}");
+    assert_eq!(outcome.status.code(), Some(0), "{}", outcome.stderr);
+}
+
+/// The payments refusal is the relay path's, not the door's: a payment-enabled instance with no
+/// `SECRET` still opens the stdio door when its token document is good (D19).
+#[tokio::test]
+async fn payments_without_a_secret_do_not_stop_the_door() {
+    let prepared = Prepared::with_payments();
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_nostreamd"));
+    command
+        .args(prepared.arguments(&[]))
+        .current_dir(workspace_root())
+        .env_remove("SECRET")
+        .env("WORKER_COUNT", "1")
+        .env_remove("NOSTREAM_ADMIN_TOKEN")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut daemon = Daemon::spawn(command);
+    let result = daemon.initialize().await;
+    let outcome = daemon.finish().await;
+
+    assert_eq!(
+        result["result"]["serverInfo"]["name"], "nostream",
+        "{result}"
+    );
+    assert!(
+        outcome
+            .stderr
+            .lines()
+            .any(|line| line.contains("mcp server on stdio")),
+        "the mode reached its banner: {}",
+        outcome.stderr
+    );
+    assert_eq!(outcome.status.code(), Some(0), "{}", outcome.stderr);
+}
+
+/// The counterpart: moving the refusal must not be deleting it. The relay path with the same
+/// settings and no `SECRET` still refuses, with the capture's own message and exit code `1`.
+#[tokio::test]
+async fn the_relay_path_still_needs_a_secret_for_payments() {
+    let prepared = Prepared::with_payments();
+    let arguments = vec![
+        "--config-dir".to_owned(),
+        prepared.config_dir.display().to_string(),
+    ];
+    let (code, stderr) = bounded(&arguments, None).await;
+
+    assert_eq!(code, Some(1), "{stderr}");
+    assert!(
+        stderr.contains("Please configure the secret using the SECRET environment variable."),
+        "{stderr}"
+    );
+}
+
+/// The log line an unauthenticated call reaches carries a cut and escaped name. That arm runs
+/// before any credential is checked, so the caller chooses the only text on it: the line must
+/// neither take its length from that text nor let a newline in it start a line of the log's own
+/// (R28 leaves the name unbounded, and the audit file's own caller-text sink was closed the same
+/// way — `record_denial` takes a table constant).
+#[tokio::test]
+async fn a_caller_chosen_name_cannot_size_or_forge_the_log() {
+    let prepared = Prepared::new();
+    let mut daemon = Daemon::start(&prepared, &[]);
+    daemon.initialize().await;
+    // Deleting the document is the revocation (R29), and it is what puts these calls on the arm
+    // that logs before it refuses.
+    std::fs::remove_file(&prepared.token).expect("the token file is the fixture's");
+
+    // Wide enough that a line carrying it is unmistakably the caller's, short enough that the
+    // write itself cannot fill an undrained stderr pipe: at 200 000 characters the log write
+    // blocks the daemon before it answers at all, which is the same sink measured a second way.
+    let long = "n".repeat(4_000);
+    let refused = daemon.call(&long, json!({})).await;
+    let forged = "probe\nWARN forged line";
+    let injected = daemon.call(forged, json!({})).await;
+    let outcome = daemon.finish().await;
+
+    for response in [&refused, &injected] {
+        assert_eq!(response["result"]["isError"], true, "{response}");
+        assert_eq!(
+            response["result"]["content"][0]["text"], "Unauthorized",
+            "{response}"
+        );
+    }
+    assert!(
+        !outcome.stderr.contains(&long),
+        "the log carries a prefix of the name, not the name: {} bytes of stderr",
+        outcome.stderr.len()
+    );
+    assert!(
+        !outcome.stderr.contains("\nWARN forged line"),
+        "a newline in the name cannot start a line of the log's own: {}",
+        outcome.stderr
+    );
+    assert!(
+        outcome.stderr.lines().all(|line| line.len() < 1024),
+        "every log line is a line, not a payload: {:?}",
+        outcome.stderr.lines().max_by_key(|line| line.len())
+    );
+}

@@ -109,19 +109,41 @@ pub enum StreamedEvent {
 ///
 /// This is the helper for every call site that does not account for vanished slots: the marker
 /// is a fact about the page, not a row, so a consumer that only wants rows cannot inherit it.
+/// A call site that decides anything from the page's size — "is there another page", "was the
+/// `limit` honoured" — uses [`collect_page`] instead, because the rows alone undercount a page
+/// that lost a slot.
 pub fn collect_records<'a>(
-    mut stream: QueryStream<'a, StreamedEvent>,
+    stream: QueryStream<'a, StreamedEvent>,
 ) -> StorageFuture<'a, Vec<EventRecord>> {
+    Box::pin(async move { Ok(collect_page(stream).await?.0) })
+}
+
+/// Drains a filter read into the rows it yielded and the number of slots the page spent.
+///
+/// The two differ exactly when the backend selected a key it could not read:
+/// [`StreamedEvent::Vanished`] spends its slot and yields no row, so a page that lost a row to a
+/// concurrent replacement or a retention pass reads as `slots == limit` with `rows == limit - 1`.
+/// The marker is dropped from the rows because a payload has no row to carry, and the slot is
+/// kept in the count because that is the unit
+/// [`EventRepository::find_by_filters`] states the page obligation in.
+pub fn collect_page<'a>(
+    mut stream: QueryStream<'a, StreamedEvent>,
+) -> StorageFuture<'a, (Vec<EventRecord>, usize)> {
     Box::pin(async move {
         let mut records = Vec::new();
+        let mut slots = 0usize;
         while let Some(item) =
             std::future::poll_fn(|context| stream.as_mut().poll_next(context)).await
         {
-            if let StreamedEvent::Record(record) = item? {
-                records.push(record);
+            match item? {
+                StreamedEvent::Record(record) => {
+                    slots = slots.saturating_add(1);
+                    records.push(record);
+                }
+                StreamedEvent::Vanished => slots = slots.saturating_add(1),
             }
         }
-        Ok(records)
+        Ok((records, slots))
     })
 }
 
@@ -898,5 +920,23 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(contents, vec!["one", "two"]);
+    }
+
+    /// The page's size is its slots, not its rows: one vanished slot reads as two rows out of
+    /// three spent, and a caller that counted rows would call that page short.
+    #[tokio::test]
+    async fn collect_page_counts_the_slots_the_marker_spent() {
+        let items = vec![
+            Ok(StreamedEvent::Record(record("one"))),
+            Ok(StreamedEvent::Vanished),
+            Ok(StreamedEvent::Record(record("two"))),
+            Ok(StreamedEvent::Vanished),
+        ];
+        let stream: QueryStream<'_, StreamedEvent> = Box::pin(Items(items.into_iter()));
+
+        let (rows, slots) = collect_page(stream).await.expect("the read drains");
+
+        assert_eq!(rows.len(), 2, "two rows survived");
+        assert_eq!(slots, 4, "four slots were spent, two of them on markers");
     }
 }

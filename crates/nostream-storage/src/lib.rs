@@ -75,3 +75,15 @@ pub use postgres::{PostgresBackend, PostgresTransaction};
 /// above this constant leaves Postgres able to serve more than the relay will believe, which
 /// suppresses `finish` where it could have been proved and never claims it where it should not.
 pub const MAX_PAGE_ROWS: u64 = 5_000;
+
+/// The page a read materialises when its filter carries no `limit`: the capture's own default,
+/// `DEFAULT_FILTER_LIMIT` in both shipped backends: LMDB reads this constant (`lmdb::events`)
+/// and Postgres aliases it as its `DEFAULT_FILTER_LIMIT` (`postgres/mod.rs`), so neither backend
+/// can carry a second number.
+///
+/// It is also the ceiling on an **ascending** page, because a backend picks its direction from
+/// whether the filter carries a limit at all — LMDB walks newest-first only when one does
+/// (`lmdb/events.rs:1166`) — so a caller that wants the first rows in time order, rather than
+/// the newest, compares the rows it received against this value to know whether the page was
+/// full.
+pub const DEFAULT_PAGE_ROWS: u64 = 500;

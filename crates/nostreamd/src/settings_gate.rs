@@ -7,8 +7,9 @@
 //!
 //! This module is also the workspace's one library-position writer to stdout/stderr *outside
 //! the `tracing` subscriber*: every other write a library crate makes goes through `tracing`
-//! and `telemetry::init`'s `tracing_subscriber::fmt()` layer (whose writer is stdout, and
-//! whose output the `EnvFilter` governs). These three bypass that filter, so the rule that
+//! and `telemetry::init`'s `tracing_subscriber::fmt()` layer (whose writer the mode chooses —
+//! stdout for the relay path, stderr for `--mcp-stdio` — and whose output the `EnvFilter`
+//! governs). These three bypass that filter, so the rule that
 //! keeps them honest is worth stating: output belongs to a process's entry point, and a
 //! library that writes to a stream the caller does not drain can block it — a per-record
 //! write stalls a whole subscription behind a full pipe. These writes are the operator report
