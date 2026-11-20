@@ -756,10 +756,12 @@ fn selected_kinds(criteria: &EventCleanCriteria) -> Result<Option<Vec<i32>>, Sto
 
     let mut selected = Vec::with_capacity(kinds.len());
     for kind in kinds {
-        selected.push(i32::try_from(kind.0).map_err(|_| StorageError::ValueOutOfRange {
-            column: "event_kind",
-            value: kind.0.to_string(),
-        })?);
+        selected.push(
+            i32::try_from(kind.0).map_err(|_| StorageError::ValueOutOfRange {
+                column: "event_kind",
+                value: kind.0.to_string(),
+            })?,
+        );
     }
 
     Ok(Some(selected))

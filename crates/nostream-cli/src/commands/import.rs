@@ -46,7 +46,10 @@ pub enum ParsedArgs {
 /// `--help` as clap renders it for this subcommand. The program name is `nostream`, as on every
 /// other page (R4): `nostream-cli` is the binary's file name only.
 #[derive(Debug, clap::Parser)]
-#[command(name = "nostream import", about = "Import events from a .jsonl or .json file")]
+#[command(
+    name = "nostream import",
+    about = "Import events from a .jsonl or .json file"
+)]
 struct ImportHelp {
     /// The .jsonl or .json file to import.
     file: Option<PathBuf>,

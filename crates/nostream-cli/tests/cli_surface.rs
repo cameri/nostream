@@ -414,7 +414,8 @@ fn a_closed_reader_ends_config_list_without_a_panic() {
     let config = work.path().join("config");
     fs::create_dir_all(&config).expect("the config directory");
 
-    let mut document = String::from("eventStore:\n  backend: lmdb\nlimits:\n  rateLimiter:\n    whitelist:\n");
+    let mut document =
+        String::from("eventStore:\n  backend: lmdb\nlimits:\n  rateLimiter:\n    whitelist:\n");
     for index in 0..4_000 {
         document.push_str(&format!(
             "      - 1{index}abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123\n"
