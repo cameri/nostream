@@ -157,4 +157,5 @@ Then('it contains the held invoice and the current budget', function (this: Worl
   const payload = this.parameters.adminResponse.send.firstCall.args[0]
   expect(payload.invoices.some((invoice: any) => invoice.paymentHash === this.parameters.adminPayHash)).to.equal(true)
   expect(payload.budgets.some((budget: any) => budget.scope === 'peer')).to.equal(true)
+  expect(payload.peers[0].relationship).to.equal('free')
 })

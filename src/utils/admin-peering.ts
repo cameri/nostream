@@ -1,4 +1,4 @@
-import { PeeringPayment, PeeringPeerSyncState } from '../@types/peering'
+import { PeeringPayment, PeeringPaymentStatus, PeeringPeerSyncState } from '../@types/peering'
 import { Settings } from '../@types/settings'
 import { parsePeeringPeerPubkey } from './peering-auth'
 import { PeeringRequestStats } from './peering-request-stats'
@@ -17,12 +17,21 @@ export interface AdminPeeringBilling {
   lastError?: string | null
 }
 
+export type AdminPeeringRelationship = 'active' | 'suspended' | 'lapsed' | 'unpaid' | 'free' | 'removed'
+
+export interface AdminPeeringTerms {
+  amountMsats: string
+  periodSeconds: number
+}
+
 export interface AdminPeeringRow {
   pubkey: string
   relayUrl: string
   configured: boolean
   enabled: boolean
   stale: boolean
+  relationship: AdminPeeringRelationship
+  terms?: AdminPeeringTerms
   state?: PeeringPeerSyncState
   requests?: PeeringRequestStats
   billing?: AdminPeeringBilling
@@ -40,6 +49,41 @@ const toAdminBilling = (payment: PeeringPayment): AdminPeeringBilling => ({
   lastCheckedAt: payment.lastCheckedAt,
   lastError: payment.lastError,
 })
+
+const relationshipFor = (
+  configured: boolean,
+  enabled: boolean,
+  billing: AdminPeeringBilling | undefined,
+): AdminPeeringRelationship => {
+  if (billing?.status === PeeringPaymentStatus.LAPSED) {
+    return 'lapsed'
+  }
+  if (!configured) {
+    return 'removed'
+  }
+  if (!enabled) {
+    return 'suspended'
+  }
+  if (
+    billing?.status === PeeringPaymentStatus.ACTIVE ||
+    billing?.status === PeeringPaymentStatus.RENEWAL_PENDING
+  ) {
+    return 'active'
+  }
+  if (
+    billing?.status === PeeringPaymentStatus.UNPAID ||
+    billing?.status === PeeringPaymentStatus.INVOICED
+  ) {
+    return 'unpaid'
+  }
+
+  return 'free'
+}
+
+const termsFor = (billing: AdminPeeringBilling | undefined): AdminPeeringTerms | undefined =>
+  billing?.termAmountMsats && billing.termPeriodSeconds
+    ? { amountMsats: billing.termAmountMsats, periodSeconds: billing.termPeriodSeconds }
+    : undefined
 
 export const mergePeeringRows = (
   settings: Settings,
@@ -62,15 +106,20 @@ export const mergePeeringRows = (
     const enabled = peer.enabled !== false
 
     matched.add(normalized)
+    const billing = billingByPubkey.get(normalized)
+      ? toAdminBilling(billingByPubkey.get(normalized)!)
+      : undefined
     rows.push({
       pubkey,
       relayUrl: peer.relayUrl,
       configured: true,
       enabled,
       stale: enabled && (!state || isPeeringSyncStateStale(state.updatedAt, staleAfterSeconds)),
+      relationship: relationshipFor(true, enabled, billing),
+      terms: termsFor(billing),
       state,
       requests: requestsByPubkey.get(normalized),
-      billing: billingByPubkey.get(normalized) ? toAdminBilling(billingByPubkey.get(normalized)!) : undefined,
+      billing,
     })
   }
 
@@ -81,17 +130,20 @@ export const mergePeeringRows = (
       continue
     }
 
+    const billing = billingByPubkey.get(state.pubkey.toLowerCase())
+      ? toAdminBilling(billingByPubkey.get(state.pubkey.toLowerCase())!)
+      : undefined
     rows.push({
       pubkey: state.pubkey,
       relayUrl: state.relayUrl,
       configured: false,
       enabled: false,
       stale: isPeeringSyncStateStale(state.updatedAt, staleAfterSeconds),
+      relationship: relationshipFor(false, false, billing),
+      terms: termsFor(billing),
       state,
       requests: requestsByPubkey.get(state.pubkey.toLowerCase()),
-      billing: billingByPubkey.get(state.pubkey.toLowerCase())
-        ? toAdminBilling(billingByPubkey.get(state.pubkey.toLowerCase())!)
-        : undefined,
+      billing,
     })
   }
 
@@ -105,13 +157,16 @@ export const mergePeeringRows = (
       continue
     }
 
+    const billing = toAdminBilling(payment)
     rows.push({
       pubkey: payment.peerPubkey,
       relayUrl: '',
       configured: false,
       enabled: false,
       stale: true,
-      billing: toAdminBilling(payment),
+      relationship: relationshipFor(false, false, billing),
+      terms: termsFor(billing),
+      billing,
     })
   }
 
