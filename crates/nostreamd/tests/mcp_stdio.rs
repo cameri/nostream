@@ -463,9 +463,7 @@ async fn the_help_text_names_the_credential() {
         .collect::<Vec<_>>()
         .join(" ");
     // The mode rule, not only its usual mode: `0600` is the example, and a `0400` document is
-    // accepted, so the help has to state the rule the door enforces (R27, R30). `4 KiB` is there
-    // for the same reason: the size rule is a refusal an operator meets, and the flag entries
-    // state it beside the mode rule rather than leaving it to the mode's paragraph.
+    // accepted, so the help has to state the rule the door enforces (R27, R30).
     for needle in [
         "--mcp-stdio",
         "--admin-token-file",
@@ -474,12 +472,34 @@ async fn the_help_text_names_the_credential() {
         "regular file",
         "no group or other permission",
         "0600",
-        "4 KiB",
         "scopes",
         "write",
         "admin.enabled",
     ] {
         assert!(help.contains(needle), "the help names `{needle}`: {help}");
+    }
+    // The size rule is asserted inside each flag entry's own slice, not against the page: one
+    // `4 KiB` anywhere satisfies a page-wide needle, and the mode paragraph carried it alone while
+    // both flag entries omitted it. The labels include clap's value name, so the mode paragraph's
+    // mention of a flag is not mistaken for that flag's entry.
+    let labels = [
+        "--mcp-stdio",
+        "--admin-token-file <PATH>",
+        "--admin-token-fd <N>",
+    ];
+    for (index, label) in labels.iter().enumerate() {
+        let start = help
+            .find(*label)
+            .unwrap_or_else(|| panic!("the help names `{label}`: {help}"));
+        let end = labels
+            .get(index + 1)
+            .and_then(|next| help[start..].find(*next))
+            .map_or(help.len(), |offset| start + offset);
+        let entry = &help[start..end];
+        assert!(
+            entry.contains("4 KiB"),
+            "the `{label}` entry states the size rule: {entry}"
+        );
     }
     assert!(
         !help.contains("must be mode 0600"),
