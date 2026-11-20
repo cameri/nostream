@@ -62,15 +62,25 @@ impl CommandOutput {
 /// dislikes still loads, which is what lets `info`, `invite` and `export` read a store the
 /// operator has not finished configuring. `config validate` is the command that says so.
 pub fn merged_documents(paths: &SettingsPaths) -> Result<(Value, Value), CliError> {
-    let defaults = load_defaults(&paths.default_settings_file)
-        .map_err(|error| CliError::Config(error.to_string()))?;
-    let user = load_user_settings(&paths.config_base_dir)
-        .map_err(|error| CliError::Config(error.to_string()))?;
+    let defaults = load_defaults(&paths.default_settings_file).map_err(settings_failure)?;
+    let user = load_user_settings(&paths.config_base_dir).map_err(settings_failure)?;
     let merged = match &user {
         Some(user) => merge(&defaults, user),
         None => defaults.clone(),
     };
     Ok((defaults, merged))
+}
+
+/// A settings file that could not be read or parsed is the **thrown** class:
+/// `Error: <message>` on stderr at exit 1, the shape the capture's own handler gives a failure
+/// thrown out of an action (`src/cli/index.ts:40-42`, C3's fourth row). Round 2's ux finding 2
+/// measured `config list` and `config set` reporting it bare while `info`, `export`, `seed`,
+/// `invite` and `clean-db` prefixed the same failure; one class, one shape.
+///
+/// Only the file's own failure moves: a document that loads but fails validation stays the
+/// reported class (`Config update rejected by validation:`, D9's exit 2 for `config validate`).
+fn settings_failure(error: nostream_config::ConfigError) -> CliError {
+    CliError::command(error.to_string())
 }
 
 /// The merged document as typed settings, which is what a command that opens a store needs.
@@ -102,15 +112,10 @@ pub fn validate(
     paths: &SettingsPaths,
     config_file: Option<&Path>,
 ) -> Result<CommandOutput, CliError> {
-    let defaults = load_defaults(&paths.default_settings_file)
-        .map_err(|error| CliError::Config(error.to_string()))?;
+    let defaults = load_defaults(&paths.default_settings_file).map_err(settings_failure)?;
     let user = match config_file {
-        Some(file) => Some(
-            nostream_config::load_document(file)
-                .map_err(|error| CliError::Config(error.to_string()))?,
-        ),
-        None => load_user_settings(&paths.config_base_dir)
-            .map_err(|error| CliError::Config(error.to_string()))?,
+        Some(file) => Some(nostream_config::load_document(file).map_err(settings_failure)?),
+        None => load_user_settings(&paths.config_base_dir).map_err(settings_failure)?,
     };
     let merged = match user {
         Some(user) => merge(&defaults, &user),
@@ -202,8 +207,7 @@ pub fn set(
     value_type: ValueType,
     validate_before_write: bool,
 ) -> Result<CommandOutput, CliError> {
-    let defaults = load_defaults(&paths.default_settings_file)
-        .map_err(|error| CliError::Config(error.to_string()))?;
+    let defaults = load_defaults(&paths.default_settings_file).map_err(settings_failure)?;
 
     let path_issues = nostream_config::path::validate_path_against_defaults(&defaults, path)
         .map_err(|error| CliError::Config(error.to_string()))?;
@@ -217,7 +221,7 @@ pub fn set(
     };
 
     let user = load_user_settings(&paths.config_base_dir)
-        .map_err(|error| CliError::Config(error.to_string()))?
+        .map_err(settings_failure)?
         .unwrap_or(Value::Mapping(Default::default()));
     let next =
         set_by_path(&user, path, value).map_err(|error| CliError::Config(error.to_string()))?;

@@ -756,6 +756,39 @@ fn a_legacy_settings_json_survives_the_bootstrap() {
     );
 }
 
+/// A settings file that cannot be parsed is one class everywhere in this surface: the capture's
+/// `loadMergedSettings` throws inside the action, so its handler prefixes it
+/// (`src/cli/index.ts:40-42`). Round 2 measured `config list` and `config set` reporting it bare
+/// while `info`, `export`, `seed`, `invite` and `clean-db` prefixed the same failure.
+#[test]
+fn a_broken_settings_file_is_prefixed_everywhere() {
+    let work = Work::new();
+    let config = work.path().join("config");
+    fs::create_dir_all(&config).expect("the config directory");
+    fs::write(
+        config.join("settings.yaml"),
+        "eventStore:\n  backend: [lmdb\n",
+    )
+    .expect("the settings write");
+    let env = [("NOSTR_CONFIG_DIR", config.to_str().expect("a utf-8 path"))];
+
+    for args in [
+        &["config", "list"][..],
+        &["config", "get", "info.name"][..],
+        &["config", "set", "info.name", "changed"][..],
+        &["config", "validate"][..],
+        &["info"][..],
+    ] {
+        let output = run_env(work.path(), args, &env);
+        let reported = stderr(&output);
+        assert_eq!(code(&output), 1, "{args:?}: {reported}");
+        assert!(
+            reported.starts_with("Error: failed to parse"),
+            "{args:?}: {reported}"
+        );
+    }
+}
+
 #[test]
 fn ac17_the_port_override_file_is_named_then_removed() {
     let (work, log) = compose_work();
