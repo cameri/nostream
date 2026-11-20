@@ -479,10 +479,7 @@ export class PeeringBuyerService implements IPeeringBuyerService {
         })
       } catch (error) {
         logger('unable to persist the reserved budget for %s: %o', invoice.paymentHash, error)
-        const released = await this.release(invoice, current, now)
-        return released
-          ? this.hold(invoice, PeeringInvoiceReason.PAYMENT_FAILED)
-          : { ...invoice, status: PeeringInvoiceStatus.PAYING, reason: PeeringInvoiceReason.PAYMENT_FAILED }
+        return this.failAndHold(invoice, current, PeeringInvoiceReason.PAYMENT_FAILED, termPeriodSeconds, now)
       }
     }
 
@@ -495,23 +492,7 @@ export class PeeringBuyerService implements IPeeringBuyerService {
         error instanceof PaymentsProcessorCannotPayError
           ? PeeringInvoiceReason.UNSUPPORTED_PROCESSOR
           : PeeringInvoiceReason.PAYMENT_FAILED
-      const released = await this.release(invoice, current, now)
-      if (!released) {
-        await this.invoiceRepository.update(invoice.paymentHash, {
-          status: PeeringInvoiceStatus.PAYING,
-          reason,
-          autoPaid: false,
-          termPeriodSeconds,
-        })
-        return { ...invoice, status: PeeringInvoiceStatus.PAYING, reason, autoPaid: false }
-      }
-
-      const held = await this.invoiceRepository.update(invoice.paymentHash, {
-        status: PeeringInvoiceStatus.HELD,
-        reason,
-        autoPaid: false,
-        termPeriodSeconds,
-      })
+      const held = await this.failAndHold(invoice, current, reason, termPeriodSeconds, now)
 
       await this.notify(OperatorNotificationEventType.PEERING_INVOICE_FAILED, {
         paymentHash: invoice.paymentHash,
@@ -520,12 +501,7 @@ export class PeeringBuyerService implements IPeeringBuyerService {
         reason,
       })
 
-      return held ?? {
-        ...invoice,
-        status: PeeringInvoiceStatus.HELD,
-        reason,
-        autoPaid: false,
-      }
+      return held
     }
 
     if (paidHash.toLowerCase() !== invoice.paymentHash.toLowerCase()) {
@@ -565,6 +541,70 @@ export class PeeringBuyerService implements IPeeringBuyerService {
       // recover() can finish the row instead of releasing spent money.
       logger('wallet settled peering invoice %s but the invoice update failed: %o', invoice.paymentHash, error)
       return { ...invoice, status: PeeringInvoiceStatus.PAYING, reason: null, autoPaid: auto, paidAt: now }
+    }
+  }
+
+  private async failAndHold(
+    invoice: PeeringInvoice,
+    reservation: ReserveResult,
+    reason: PeeringInvoiceReason,
+    termPeriodSeconds: number | null,
+    now: Date,
+  ): Promise<PeeringInvoice> {
+    const transaction = new Transaction(this.dbClient)
+    let started = false
+
+    try {
+      await transaction.begin()
+      started = true
+      const claimed = await this.invoiceRepository.claim(
+        invoice.paymentHash,
+        [PeeringInvoiceStatus.PAYING],
+        PeeringInvoiceStatus.HELD,
+        transaction.transaction,
+      )
+      if (!claimed) {
+        await transaction.rollback()
+        return (await this.invoiceRepository.findByHash(invoice.paymentHash)) ?? invoice
+      }
+
+      if (reservation.peerWindow) {
+        await this.invoiceRepository.releaseBudget(
+          `peer:${invoice.peerPubkey.toLowerCase()}`,
+          reservation.peerWindow.start,
+          invoice.amountMsats,
+          transaction.transaction,
+        )
+      }
+      if (reservation.globalWindow) {
+        await this.invoiceRepository.releaseBudget(
+          'global',
+          reservation.globalWindow.start,
+          invoice.amountMsats,
+          transaction.transaction,
+        )
+      }
+
+      const held = await this.invoiceRepository.update(
+        invoice.paymentHash,
+        { reason, autoPaid: false, termPeriodSeconds },
+        transaction.transaction,
+      )
+      await transaction.commit()
+      started = false
+
+      return {
+        ...(held ?? claimed),
+        status: PeeringInvoiceStatus.HELD,
+        reason,
+        autoPaid: false,
+      }
+    } catch (error) {
+      if (started) {
+        await transaction.rollback()
+      }
+      logger('unable to release and hold failed invoice %s: %o', invoice.paymentHash, error)
+      return { ...invoice, status: PeeringInvoiceStatus.PAYING, reason, autoPaid: false }
     }
   }
 
