@@ -243,9 +243,13 @@ fn read_file(path: &Path) -> Result<Scopes, McpError> {
 /// between the `stat` and the read. `take` stops one byte past the cap, so the read is bounded
 /// whatever the path answers, and a document that outgrew its metadata is refused naming the cap
 /// rather than read whole.
+///
+/// The buffer is reserved once, at the bound, because the `take` alone would let the read grow it
+/// to fit: a bare `String` is a doubling sequence above the first 32 bytes — 8 reallocations and 9
+/// `read` calls for a 4 KiB document, against 0 and 2 reserved here.
 fn read_bounded(source: impl Read, location: &str) -> Result<String, McpError> {
     let cap = usize::try_from(MAX_TOKEN_DOCUMENT_BYTES).unwrap_or(usize::MAX);
-    let mut text = String::new();
+    let mut text = String::with_capacity(cap + 1);
     source
         .take(MAX_TOKEN_DOCUMENT_BYTES + 1)
         .read_to_string(&mut text)
@@ -253,7 +257,7 @@ fn read_bounded(source: impl Read, location: &str) -> Result<String, McpError> {
     if text.len() > cap {
         return Err(McpError::Credential(format!(
             "{location} carries more than {MAX_TOKEN_DOCUMENT_BYTES} bytes: a token document is at \
-             most that many — it lists scope names and carries nothing else"
+             most {MAX_TOKEN_DOCUMENT_BYTES} bytes — it lists scope names and carries nothing else"
         )));
     }
     Ok(text)
@@ -336,5 +340,20 @@ mod tests {
         let cap = usize::try_from(MAX_TOKEN_DOCUMENT_BYTES).unwrap();
         let document = Cursor::new(vec![b' '; cap]);
         assert_eq!(read_bounded(document, "the document").unwrap().len(), cap);
+    }
+
+    /// The bound is the buffer as well as the refusal: the read reserves `cap + 1` once, so a
+    /// document it accepts is one allocation and two reads. A bare `String` grew to fit instead —
+    /// 256 bytes of capacity for a 100-byte document, and a doubling sequence above that.
+    #[test]
+    fn the_read_reserves_the_buffer_once() {
+        let cap = usize::try_from(MAX_TOKEN_DOCUMENT_BYTES).unwrap();
+        let document = Cursor::new(vec![b' '; 100]);
+        let text = read_bounded(document, "the document").unwrap();
+        assert_eq!(
+            text.capacity(),
+            cap + 1,
+            "the read reserves the bound once rather than growing to fit"
+        );
     }
 }
