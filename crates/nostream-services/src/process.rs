@@ -186,7 +186,7 @@ pub async fn capture(argv: &[String], timeout: Option<Duration>) -> CapturedResu
         };
     }
 
-    let mut child = match command(argv, &[])
+    let child = match command(argv, &[])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

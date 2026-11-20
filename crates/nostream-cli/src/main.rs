@@ -7,8 +7,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
+use nostream_cli::app::{self, Context};
+use nostream_cli::commands;
 use nostream_cli::config::CommandOutput;
-use nostream_cli::{CliError, commands};
 
 // `import` parses its own arguments, so clap's `help` subcommand would render a second,
 // contradictory page for it; `--help` is the single help surface.
@@ -59,9 +60,58 @@ enum Command {
     /// Run the first-time setup flow.
     Setup,
     /// Start the relay stack.
-    Start,
+    Start {
+        /// Enable Tor hidden service
+        #[arg(long)]
+        tor: bool,
+        /// Enable I2P hidden service
+        #[arg(long)]
+        i2p: bool,
+        /// Enable nginx reverse proxy
+        #[arg(long)]
+        nginx: bool,
+        /// Enable debug logging
+        #[arg(long)]
+        debug: bool,
+        /// Run in detached mode
+        #[arg(short = 'd', long)]
+        detach: bool,
+        /// Host port for the relay
+        #[arg(long, value_name = "port")]
+        port: Option<String>,
+        /// Additional arguments passed to docker compose
+        #[arg(
+            value_name = "ARGS",
+            trailing_var_arg = true,
+            allow_hyphen_values = true
+        )]
+        args: Vec<String>,
+    },
     /// Stop the relay stack.
-    Stop,
+    Stop {
+        /// Stop the Tor overlay
+        #[arg(long)]
+        tor: bool,
+        /// Stop the I2P overlay
+        #[arg(long)]
+        i2p: bool,
+        /// Stop the nginx overlay
+        #[arg(long)]
+        nginx: bool,
+        /// Stop the local overlay
+        #[arg(long)]
+        local: bool,
+        /// Stop every overlay
+        #[arg(long)]
+        all: bool,
+        /// Additional arguments passed to docker compose
+        #[arg(
+            value_name = "ARGS",
+            trailing_var_arg = true,
+            allow_hyphen_values = true
+        )]
+        args: Vec<String>,
+    },
     /// Update the deployment.
     Update,
     /// Run the interactive settings editor.
@@ -165,34 +215,45 @@ fn main() -> ExitCode {
         },
         Command::Seed => commands::seed::run().map(|_| CommandOutput::default()),
         Command::Setup => commands::setup::run().map(|_| CommandOutput::default()),
-        Command::Start => commands::start::run().map(|_| CommandOutput::default()),
-        Command::Stop => commands::stop::run().map(|_| CommandOutput::default()),
+        Command::Start {
+            tor,
+            i2p,
+            nginx,
+            debug,
+            detach,
+            port,
+            args,
+        } => {
+            let options = commands::start::StartOptions {
+                tor,
+                i2p,
+                nginx,
+                debug,
+                detach,
+                port,
+            };
+            Context::at(cwd).and_then(|context| commands::start::run(&context, &options, &args))
+        }
+        Command::Stop {
+            tor,
+            i2p,
+            nginx,
+            local,
+            all,
+            args,
+        } => {
+            let options = commands::stop::StopOptions {
+                tor,
+                i2p,
+                nginx,
+                local,
+                all,
+            };
+            Context::at(cwd).and_then(|context| commands::stop::run(&context, &options, &args))
+        }
         Command::Update => commands::update::run().map(|_| CommandOutput::default()),
         Command::Tui => nostream_cli::tui::run().map(|_| CommandOutput::default()),
     };
 
-    match result {
-        Ok(output) => {
-            for line in &output.lines {
-                println!("{line}");
-            }
-            output.exit_code()
-        }
-        Err(CliError::NotImplemented { module }) => {
-            eprintln!("not implemented in Phase 1 (job 005): {module}");
-            ExitCode::from(1)
-        }
-        Err(CliError::Config(message)) => {
-            eprintln!("{message}");
-            ExitCode::from(1)
-        }
-        Err(CliError::Import(message)) => {
-            eprintln!("Import failed: {message}");
-            ExitCode::from(1)
-        }
-        Err(CliError::Migrate(message)) => {
-            eprintln!("Migration failed: {message}");
-            ExitCode::from(1)
-        }
-    }
+    app::render(result)
 }

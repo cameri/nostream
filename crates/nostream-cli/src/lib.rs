@@ -11,11 +11,17 @@
 //! Phase 1 implements `config validate` and `config get` end to end; the remaining commands,
 //! the TUI and the docker/process supervisors are labelled stubs (Phase 2).
 
+pub mod app;
+pub mod bootstrap;
 pub mod commands;
+pub mod compose;
+pub mod compression;
 pub mod config;
 pub mod docker;
+pub mod env_file;
 pub mod error;
 pub mod process;
+pub mod store;
 pub mod tui;
 
 pub use error::CliError;
