@@ -217,6 +217,40 @@ fn the_help_route_does_not_print_a_second_import_page() {
     );
 }
 
+/// `import` reaches Postgres through the one assembly and the CLI's own environment, so a
+/// `DB_*` value in `.env` is configured for it exactly as it is for every other store command.
+/// Before this the command called `PostgresBackend::from_env`, which reads the process
+/// environment alone: the file layer was invisible and the run dialled the default host
+/// (round 2, the architecture review's note).
+#[test]
+fn the_database_settings_are_read_from_the_env_file() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    fs::write(
+        directory.path().join(".env"),
+        "DB_HOST=127.0.0.1\nDB_PORT=abc\n",
+    )
+    .expect("the env file writes");
+    fs::write(
+        directory.path().join("events.jsonl"),
+        format!("{}\n", an_event_line()),
+    )
+    .expect("the events write");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["import", "events.jsonl"])
+        .current_dir(directory.path())
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .output()
+        .expect("the binary runs");
+
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert_eq!(
+        stderr(&output),
+        "Import failed: invalid argument: a database port must be a valid TCP port"
+    );
+}
+
 #[tokio::test]
 async fn a_successful_import_prints_progress_then_the_summary() {
     let directory = tempfile::tempdir().expect("tempdir");

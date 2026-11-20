@@ -279,7 +279,7 @@ fn dispatch(command: Command, context: &Context) -> Result<CommandOutput, CliErr
         }
         Command::Import { args } => {
             let mut stdout = std::io::stdout().lock();
-            commands::import::run(&args, &context.cwd, &mut stdout)
+            commands::import::run(&args, &context.cwd, &context.env, &mut stdout)
         }
         Command::Info {
             tor_hostname,
