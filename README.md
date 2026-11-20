@@ -573,37 +573,39 @@ pnpm db:verify-index-impact
 It seeds ~200k synthetic events, drops the hot-path indexes, runs EXPLAIN (ANALYZE, BUFFERS) for each hot query, recreates the indexes, and prints a BEFORE/AFTER table. See the *Database indexes and benchmarking* section of [CONFIGURATION.md](CONFIGURATION.md).
 ## Relay Maintenance
 
-Use `nostream dev db:clean` to wipe or prune `events` table data. This also removes
-corresponding data from the derived `event_tags` table when present.
+Use `nostream clean-db` to wipe or prune stored events. This also removes the
+corresponding tags. It runs against whichever store the settings select — LMDB under
+`--data-dir`, or the Postgres database the `DB_*` variables name — and `nostream clean-db --help`
+lists the same options the capture's `dev db:clean` took.
 
 Dry run (no deletion):
 
 ```
-nostream dev db:clean --all --dry-run
+nostream clean-db --all --dry-run
 ```
 
 Full wipe:
 
 ```
-nostream dev db:clean --all --force
+nostream clean-db --all --force
 ```
 
 Delete events older than N days:
 
 ```
-nostream dev db:clean --older-than=30 --force
+nostream clean-db --older-than=30 --force
 ```
 
 Delete only selected kinds:
 
 ```
-nostream dev db:clean --kinds=1,7,4 --force
+nostream clean-db --kinds=1,7,4 --force
 ```
 
 Delete only selected kinds older than N days:
 
 ```
-nostream dev db:clean --older-than=30 --kinds=1,7,4 --force
+nostream clean-db --older-than=30 --kinds=1,7,4 --force
 ```
 
 By default, the command asks for explicit confirmation (`Type 'DELETE' to confirm`).

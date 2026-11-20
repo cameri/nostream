@@ -13,9 +13,10 @@ returning `CliError::NotImplemented` and exit 1, and three commands worked (`con
 eight command modules, and the two halves disagree on the things a script sees: the help page,
 the stream each failure writes to, and the exit code per class.
 
-The nine decisions below are the ones a reader would otherwise have to reconstruct from the
+The twelve decisions below are the ones a reader would otherwise have to reconstruct from the
 diff. Each is recorded with its cost, because every one of them buys something by giving up
-something else.
+something else. D10 and D11 were added by the job's first review round: the `--older-than`
+bound and the spawn seam were each decided in the code and had no decision to point at.
 
 ## Decisions
 
@@ -144,3 +145,46 @@ match a command the issue does not name.
 recorded here so the difference is a decision rather than a drift. `config get`'s not-found
 message does move, to the capture's `Path not found: <path>` with no prefix: no test pinned the
 old spelling.
+
+### D10 — The `--older-than` cutoff saturates; it never becomes "no bound"
+
+A day count past `MAX_SAFE_INTEGER` is refused at the parser with the capture's
+`--older-than must be a positive integer`, because the capture refuses anything that is not a
+safe positive integer (`src/clean-db.ts:54-65`). A value that is safe but too large to express as
+a cutoff — `MAX_SAFE_INTEGER` days, about 2.5 × 10^14 years — is **saturated** to the earliest
+representable instant (`i64::MIN`, via `checked_mul`/`checked_sub`) rather than refused with a
+message the capture does not have. Saturating selects nothing, which is what the capture's own
+comparison would do against a value no row's `created_at` is below.
+
+**Cost:** the saturated cutoff is a value the capture would have to fail on rather than compare,
+so the port's behaviour is a defensible reading of an unreachable branch rather than a measured
+one. The alternative — a sixth parser message — was considered and rejected as a divergence from
+a parser the criterion holds "case for case". The dangerous shape is neither: an unrepresentable
+value must never become an *absent* bound, which is the defect this decision replaces.
+
+### D11 — Child processes are opened in `nostream-services::process`, not in the CLI
+
+The capture's CLI shells `docker`, `git`, `openssl` and `pnpm` itself (`src/cli/utils/process.ts`,
+`docker.ts`). The rewrite's rule is that only `nostream-services` opens child processes and
+sockets (`CLAUDE.md`'s crate table), so the seam lives there — `nostream_services::process::{run,
+capture}` with five failure classes and a caller-owned runtime — and the CLI calls it. `start`,
+`stop`, `update` and `info` are its only callers, and every argument reaches a child as one whole
+argv element: no call site builds a shell string.
+
+**Cost:** a dependency edge `nostream-cli → nostream-services` that the crate did not have, and a
+seam whose shape is the services crate's rather than the CLI's. The gain is that the rule stays
+true as the CLI grows, and that a reviewer can check one file instead of ten.
+
+### D12 — An out-of-range `--kinds` value is refused where it becomes unrepresentable
+
+`--kinds=4294967296` is a safe, non-negative integer, so the capture's parser accepts it and the
+failure only arrives from its query; the port refuses it at the store, with
+`event_kind is out of range: 4294967296` and exit 1, deleting nothing. The parser is not the
+place: it cannot tell an out-of-range kind from a legitimate one, and the capture does not refuse
+it there either. The port refuses at the point where the value would have to be coerced — which
+is the defect this replaced, since coercing it to `i32::MAX` selected a kind the caller never
+asked for and hard-deleted the rows carrying it.
+
+**Cost:** a message the capture does not print, and one exit code (1) where the capture would
+eventually fail from its own query. Refusing early is the choice because the alternative on LMDB
+was a fabricated key, and because a kind beyond `u16`'s range cannot exist in a NIP-01 event.
