@@ -325,17 +325,20 @@ directory is outside ADR 0012 D9 — `admin-audit.jsonl` (whose compaction is a 
 rename on a shared staging path, `crates/nostream-admin/src/state.rs:715-733`) and the settings
 write both assume one writer per configuration.
 
-**The audit table is total.** Every tool the router registers has its own entry in
-`crates/nostream-mcp`'s `TOOL_ARGUMENTS` table, and the dispatch path looks a name up there
-instead of defaulting: a tool added without an entry fails
-`every_registered_tool_is_in_the_audit_table`, which reads the router's own list, so no call can
-execute unaudited. "One line per executed call" therefore means what it says — a call the
-router's own deserialiser refuses, and a call to a name the router does not register, reach no
-tool and write nothing, and every other call writes its line before the handler runs. The rule an
-entry keeps is *no stricter than that deserialiser*, not "the shape the `inputSchema` states":
-the line is written before the dispatch, which is unconditional, so a stricter check would let a
-call run unaudited. `settings_set`'s entry is therefore vacuous by design — its arguments are a
-raw map and its schema is the half that refuses.
+**The table is total, and it carries both dispatch-time facts.** Every tool the router registers
+has one row in `crates/nostream-mcp`'s `TOOLS` table: its name, the check that says whether the
+router can deserialise a call's arguments (R9), and the scope the call needs (R28). The dispatch
+path looks a name up there instead of defaulting, and `every_registered_tool_has_a_table_row`
+reads the router's own list, so no call can execute unaudited and none can execute ungated. The
+scope column names the read tools explicitly and keeps `settings_set` as the only `write`; a name
+the table does not carry is answered as `write`, which is the failure-closed default the next
+slice's tool meets before its row lands. "One line per executed call" therefore means what it
+says — a call the router's own deserialiser refuses, and a call to a name the router does not
+register, reach no tool and write nothing, and every other call writes its line before the handler
+runs. The rule the argument check keeps is *no stricter than that deserialiser*, not "the shape
+the `inputSchema` states": the line is written before the dispatch, which is unconditional, so a
+stricter check would let a call run unaudited. `settings_set`'s check is therefore vacuous by
+design — its arguments are a raw map and its schema is the half that refuses.
 
 ### D19 — The stdio door's credential is a scoped token document of its own
 
@@ -357,8 +360,8 @@ The credential is now the mode's own artifact, a **token document** delivered on
 
 | flag | delivery | lifetime |
 |---|---|---|
-| `--admin-token-file <path>` | a regular file, which must be mode `0600` (`mode & 0o077 == 0`) | **the file's**: it is re-read on the path that decides every call, so deleting or rewriting it is the revocation |
-| `--admin-token-fd <n>` | a descriptor the parent passed, conventionally `3` | **the process's**: it is read once at start, so a rewrite of its source changes nothing until a restart |
+| `--admin-token-file <path>` | a regular file that carries **no group or other permission** (`mode & 0o077 == 0`; `0600` is the usual mode, and a read-only `0400` is accepted) | **the file's**: it is re-read on the path that decides every call, so deleting or rewriting it is the revocation |
+| `--admin-token-fd <n>` | a descriptor the parent passed, conventionally `3`, whose target is held to the same rules as the file form's | **the process's**: it is read once at start, so a rewrite of its source changes nothing until a restart |
 
 **One shape: a regular file.** The type is checked on the path before the open and again on the
 descriptor it was opened as, so a FIFO, a device or a directory is refused rather than opened: a
@@ -366,6 +369,13 @@ FIFO's open waits for a writer, and this door re-opens the file on every call, s
 place would stall a call instead of failing it. The pre-open check is the one check made by path;
 a FIFO swapped in between it and the open stalls one call, which is the same writer who could
 drop in their own `0600` document — the boundary below.
+
+**One size, too.** A token document names scopes and carries nothing else, so it is bounded at
+4 KiB (`MAX_TOKEN_DOCUMENT_BYTES`) and refused above that, naming the size it found and the cap.
+The bound is one comparison on metadata both forms already read: without it the file form's
+per-call read would be an amount of work the path chooses, and the descriptor form's single read
+could be asked for a `/dev/zero` that never ends — the type check above is what refuses the
+device, and the bound is what keeps a wrong path from being simply a large one.
 
 Exactly one of the two is required; both is a refusal, and neither is a refusal naming both.
 `NOSTREAM_ADMIN_TOKEN` is retired: a mode started with it **refuses to start**, naming the variable
@@ -383,17 +393,21 @@ document's scopes deny is refused **and audited**: action `mcp.denied`, `detail`
 `{"tool", "scope"}`, no argument values. A call with no readable document answers `Unauthorized`
 and appends nothing, because there is nothing to attribute it to — that is D18's rule, unchanged.
 
-**What is deliberately not checked, and why.** Beyond the mode the file must carry, no ownership
-check is made: the process's own effective uid is not readable through `std` without adding
-`libc`, and `0600` is already the rule that decides who can read the file — including the group
-and other *write* bits, which is what would let another user replace the document. A symlink is
+**What is deliberately not checked, and why.** Beyond the mode the document must carry, no
+ownership check is made: the process's own effective uid is not readable through `std` without
+adding `libc`, and the mode rule is already what decides who can rewrite the file — the group and
+other *write* bits, which is what would let another user replace the document. A symlink is
 followed, so a `0600` link to a `0644` target is refused on the target's mode. The descriptor form
-has no mode to check: the parent already opened it.
+is checked rather than excused: `stat` on `/proc/self/fd/<n>` answers the target's type, mode and
+size, so a `0644` document on a descriptor is refused exactly as the same file by path is. Its
+mode rule does guard less than the file form's, though — the document is read once at start, so a
+mode change afterwards can neither escalate nor revoke the grant the process already holds.
 
-**Revocation is the file's lifetime, with no server-side store.** The file form opens the path,
-fstats **the descriptor it just opened** for the mode and the type, and reads the document from
-that same handle — `File::open`, `File::metadata()`, `File::read_to_string` and a small JSON parse
-**per call** — measured at `10.6 µs` for a 20-byte document over 10 000 grants in a debug build
+**Revocation is the file's lifetime, with no server-side store.** The file form stats the path for
+the type, opens it, then fstats **the descriptor it just opened** for the type, the mode and the
+size, and reads the document from that same handle — `std::fs::metadata` by path, `File::open`,
+`File::metadata()`, `File::read_to_string` and a small JSON parse **per call** — measured at
+`10.6 µs` for a 20-byte document over 10 000 grants in a debug build
 (`crates/nostream-mcp`'s `Credential::grant`, the same path `call_tool` takes), against a tool call
 that reaches an LMDB read or a settings write. That is the price of a revocation that
 needs no session store, no notification path and no restart: narrowing a running door is

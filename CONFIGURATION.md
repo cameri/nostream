@@ -84,8 +84,8 @@ an environment variable. Deliver it one of two ways; exactly one is required:
 
 | Flag | What it reads |
 |---|---|
-| `--admin-token-file <path>` | The document in a **regular** file. It must be mode `0600` (owner read and write, nothing for group or other) or the mode refuses to start, naming the mode it found and the mode it needs; a FIFO, a device or a directory there is refused the same way, because the mode re-opens the file on every call and opening a FIFO waits for a writer. It is re-read on **every call**, so deleting or rewriting it is the revocation: narrowing it to reads takes effect on the next call, with nothing restarted. |
-| `--admin-token-fd <n>` | The same document on an inherited descriptor, conventionally `3` (`exec 3<token.json`). It is read **once at start**, so its lifetime is the process's — a rewrite of the file it came from changes nothing until the process is restarted. |
+| `--admin-token-file <path>` | The document in a **regular** file that carries **no group or other permission** — `mode & 0o077 == 0`, which `0600` satisfies and a read-only `0400` does too — of at most 4 KiB. Anything else refuses the start, naming what it found: a group- or world-accessible mode, a FIFO, a device or a directory there (the mode re-opens the file on every call, and opening a FIFO waits for a writer), or a file too large to be a document. It is re-read on **every call**, so deleting or rewriting it is the revocation: narrowing it to reads takes effect on the next call, with nothing restarted. |
+| `--admin-token-fd <n>` | The same document on an inherited descriptor, conventionally `3` (`exec 3<token.json`). It is read **once at start**, so its lifetime is the process's — a rewrite of the file it came from changes nothing until the process is restarted. The descriptor's target is held to the same rules as the file form's: a regular file, no group or other permission, at most 4 KiB. |
 
 The document is JSON, and `scopes` is optional:
 
@@ -108,6 +108,9 @@ attribute it to.
 The mode also needs `admin.enabled: true` in the settings (else every call answers `Not Found`).
 `SECRET` is **not** a prerequisite: the door derives no session key. The console's own HTTP
 surface is unchanged and still authenticates with `SECRET` and `POST /admin/login` sessions.
+
+Run it from the directory that holds `resources/` — the daemon reads its default settings from
+`resources/default-settings.yaml` beside the working directory — and from nowhere else:
 
 ```sh
 install -m 0600 /dev/null /etc/nostream/admin-token.json
