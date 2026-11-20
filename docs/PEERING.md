@@ -273,6 +273,9 @@ peering notification switches, so the operator can subscribe to
 
 Auto-pay uses the configured payments processor as the wallet. LNbits and NWC
 can pay BOLT11 invoices; receive-only adapters hold every invoice because they
-have no way to spend. The buyer never credits a user balance and never touches
+have no way to spend. The LNbits key must allow
+**outgoing payments**, not only invoice creation/read access. An Invoice/read
+key can create the relay's own invoices but cannot spend, so every buyer
+invoice is held instead of paid. The buyer never credits a user balance and never touches
 the seller's payment processor: the payment is a normal Lightning payment from
 this relay's wallet to the BOLT11 invoice in the peer's signed event.

@@ -70,7 +70,8 @@ const setup = (world: World<Record<string, any>>) => {
   )
 
   world.parameters.adminDb = db
-  world.parameters.adminPeers = [peerPubkey]
+  world.parameters.adminPeers = world.parameters.adminPeers ?? []
+  world.parameters.adminPeers.push(peerPubkey)
   world.parameters.adminRepository = repository
   world.parameters.adminService = service
   world.parameters.adminSettings = settings
