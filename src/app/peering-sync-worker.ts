@@ -845,7 +845,7 @@ export class PeeringSyncWorker implements IRunnable {
 
   private async recoverPayingInvoices(): Promise<void> {
     try {
-      const changed = await this.options.buyerService?.recover()
+      const changed = await this.options.buyerService?.recover?.()
       if (changed) {
         logger('recovered %d paying peering invoice(s)', changed)
       }

@@ -156,6 +156,10 @@ export class PeeringBuyerService implements IPeeringBuyerService {
       throw new Error(`peering invoice ${paymentHash} not found`)
     }
 
+    if (invoice.paymentHash.startsWith('invalid:') || invoice.amountMsats <= 0n) {
+      throw new Error('peering invoice has no decodable payment')
+    }
+
     if (invoice.status === PeeringInvoiceStatus.PAYING) {
       invoice = await this.recoverInvoice(invoice, now)
     }

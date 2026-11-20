@@ -183,7 +183,10 @@ describe('PeeringSyncWorker', () => {
   interface StartWorkerOptions {
     scopes?: { kinds: number[]; windowSeconds?: number }[]
     terms?: { amount: number; unit: string; period: number }[]
-    buyerService?: { handleInvoice: (...args: any[]) => Promise<unknown> }
+    buyerService?: {
+      handleInvoice?: (...args: any[]) => Promise<unknown>
+      recover?: (now?: Date) => Promise<number>
+    }
     reconcileIntervalMs?: number
     peerRefreshMs?: number
     stateHeartbeatMs?: number
