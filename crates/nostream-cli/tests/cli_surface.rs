@@ -896,6 +896,10 @@ fn ac23_info_json_is_the_same_data() {
     assert_eq!(payload["relay"]["name"], "nostream.your-domain.com");
     assert_eq!(payload["relay"]["url"], "wss://nostream.your-domain.com");
     assert_eq!(payload["relay"]["paymentsEnabled"], false);
+    // `resources/default-settings.yaml:17` sets `payments.processor: zebedee`, so the field the
+    // capture reads as `settings.payments?.processor ?? null` (`src/cli/commands/info.ts:141`)
+    // prints, rather than falling back to null.
+    assert_eq!(payload["relay"]["paymentProcessor"], "zebedee");
     assert!(payload["relay"]["signingPubkey"].is_null());
     assert!(payload["tor"]["hostname"].is_null());
     assert_eq!(
