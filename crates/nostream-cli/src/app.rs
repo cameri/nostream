@@ -176,17 +176,16 @@ fn port_without_a_value(argv: &[String]) -> bool {
 /// The process entry point, from the arguments after the binary's own name.
 pub fn run(argv: Vec<String>) -> ExitCode {
     match pre_parse(&argv) {
-        Invocation::Help => print_page(0),
-        Invocation::Version => {
-            println!("{}", version_line());
-            ExitCode::SUCCESS
-        }
+        Invocation::Help => print_page(&page_lines(), 0),
+        // The version line is data like the page, so a write that fails answers the same way:
+        // one line on stderr and exit 1, never `println!`'s panic at 101 (V1).
+        Invocation::Version => print_page(&[version_line()], 0),
         Invocation::Port => render(Err(CliError::command(commands::start::PORT_MESSAGE))),
         Invocation::Unknown(word) => {
             // The marker is the error and the page is the help: the capture writes the first
             // with `logError` (stderr) and the second with `outputHelp` (stdout) (V46).
-            eprintln!("Unknown command: {word}");
-            print_page(2)
+            let _ = print_error_lines(&[format!("Unknown command: {word}")]);
+            print_page(&page_lines(), 2)
         }
         Invocation::Command => {
             let cli = Cli::parse_from(std::iter::once(PROGRAM.to_owned()).chain(argv));
@@ -199,16 +198,21 @@ pub fn run(argv: Vec<String>) -> ExitCode {
     }
 }
 
-/// Prints the help page and answers the caller's own code, with `render`'s rule for a write that
-/// failed: a closed reader ends the output at that code rather than at exit 101, and any other
-/// error is reported at 1.
-fn print_page(code: u8) -> ExitCode {
-    match print_lines(&page_lines()) {
+/// Prints `lines` on stdout and answers `code`, with `render`'s rule for a write that failed: a
+/// closed reader ends the output at that code rather than at exit 101, and any other error is one
+/// line on stderr.
+///
+/// The code a caller passes is the answer it already has. A page that could not be written is a
+/// failure when the page *was* the answer (`--help`, `--version`: 0 becomes 1), and stays the
+/// answer when the page was a failure's decoration (`Unknown command:` keeps 2) — a write the
+/// stream refused does not re-code what the command decided.
+fn print_page(lines: &[String], code: u8) -> ExitCode {
+    match print_lines(lines) {
         Ok(()) => ExitCode::from(code),
         Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => ExitCode::from(code),
         Err(error) => {
-            eprintln!("Error: unable to write output: {error}");
-            ExitCode::from(1)
+            let _ = print_error_lines(&[format!("Error: unable to write output: {error}")]);
+            ExitCode::from(if code == 0 { 1 } else { code })
         }
     }
 }
@@ -720,74 +724,85 @@ pub fn render(result: Result<CommandOutput, CliError>) -> ExitCode {
             // outside the surface's 0/1/2 vocabulary (V1).
             Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => output.exit_code(),
             Err(error) => {
-                eprintln!("Error: unable to write output: {error}");
+                let _ = print_error_lines(&[format!("Error: unable to write output: {error}")]);
                 ExitCode::from(1)
             }
         },
         Err(error) => {
-            let code = match error {
-                CliError::Usage(message) => {
-                    eprintln!("Error: {message}");
-                    2
-                }
-                CliError::Command(message) => {
-                    eprintln!("Error: {message}");
-                    1
-                }
-                CliError::Config(line) => {
-                    eprintln!("{line}");
-                    1
-                }
-                CliError::Reported { lines, exit_code } => {
-                    for line in lines {
-                        eprintln!("{line}");
-                    }
-                    exit_code
-                }
-                CliError::ReportedAfter {
+            let (code, lines) = match failure_lines(error) {
+                Failure::ReportedFirst {
                     output,
                     lines,
-                    exit_code,
+                    code,
                 } => {
                     // The data was earned before the failure happened, so it keeps the stream a
                     // successful run writes it to; only the failure goes to stderr.
                     let _ = print_lines(&output);
-                    for line in lines {
-                        eprintln!("{line}");
-                    }
-                    exit_code
+                    (code, lines)
                 }
-                CliError::Json { message, code } => {
-                    let envelope = ErrorEnvelope {
-                        error: ErrorBody {
-                            message: &message,
-                            code,
-                        },
-                    };
-                    match serde_json::to_string(&envelope) {
-                        Ok(rendered) => eprintln!("{rendered}"),
-                        Err(_) => {
-                            eprintln!("{{\"error\":{{\"message\":\"error\",\"code\":{code}}}}}");
-                        }
-                    }
-                    code
-                }
-                CliError::NotImplemented { module } => {
-                    eprintln!("not implemented in Phase 1 (job 005): {module}");
-                    1
-                }
-                CliError::Import(message) => {
-                    eprintln!("Import failed: {message}");
-                    1
-                }
-                CliError::Migrate(message) => {
-                    eprintln!("Migration failed: {message}");
-                    1
-                }
+                Failure::Lines { lines, code } => (code, lines),
             };
+            // A write failure on the stream a failure goes to is not a panic and does not
+            // re-code the answer: there is nowhere left to report it, so the command's code
+            // stands. `eprintln!` here panicked at 101 on a full disk, which is the defect.
+            let _ = print_error_lines(&lines);
             ExitCode::from(code)
         }
     }
+}
+
+/// One failure, as the lines it renders to and the code it answers.
+enum Failure {
+    /// The capture's three shapes and the two the binary shipped (`Import`, `Migrate`) — every
+    /// line goes to stderr.
+    Lines { lines: Vec<String>, code: u8 },
+    /// [`CliError::ReportedAfter`]: data the command earned on stdout first, then the failure.
+    ReportedFirst {
+        output: Vec<String>,
+        lines: Vec<String>,
+        code: u8,
+    },
+}
+
+/// Renders one failure: the single place a class becomes a stream's bytes and a code.
+fn failure_lines(error: CliError) -> Failure {
+    let (lines, code) = match error {
+        CliError::Usage(message) => (vec![format!("Error: {message}")], 2),
+        CliError::Command(message) => (vec![format!("Error: {message}")], 1),
+        CliError::Config(line) => (vec![line], 1),
+        CliError::Reported { lines, exit_code } => (lines, exit_code),
+        CliError::ReportedAfter {
+            output,
+            lines,
+            exit_code,
+        } => {
+            return Failure::ReportedFirst {
+                output,
+                lines,
+                code: exit_code,
+            };
+        }
+        CliError::Json { message, code } => {
+            let envelope = ErrorEnvelope {
+                error: ErrorBody {
+                    message: &message,
+                    code,
+                },
+            };
+            let rendered = serde_json::to_string(&envelope).unwrap_or_else(|_| {
+                format!("{{\"error\":{{\"message\":\"error\",\"code\":{code}}}}}")
+            });
+            (vec![rendered], code)
+        }
+        CliError::NotImplemented { module } => (
+            vec![format!("not implemented in Phase 1 (job 005): {module}")],
+            1,
+        ),
+        CliError::Import(message) => (vec![format!("Import failed: {message}")], 1),
+        CliError::Migrate(message) => (vec![format!("Migration failed: {message}")], 1),
+    };
+
+    Failure::Lines { lines, code }
 }
 
 /// Prints lines on stdout, one per line.
@@ -796,6 +811,18 @@ fn print_lines(lines: &[String]) -> std::io::Result<()> {
 
     for line in lines {
         writeln!(stdout, "{line}")?;
+    }
+
+    Ok(())
+}
+
+/// Prints lines on stderr, one per line, answering the write's result for the same reason
+/// [`print_lines`] does: a full disk is the write's failure, not a panic.
+fn print_error_lines(lines: &[String]) -> std::io::Result<()> {
+    let mut stderr = std::io::stderr().lock();
+
+    for line in lines {
+        writeln!(stderr, "{line}")?;
     }
 
     Ok(())

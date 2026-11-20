@@ -825,6 +825,62 @@ fn a_json_settings_failure_takes_the_envelope() {
     }
 }
 
+/// A write that fails is the write's failure, not a panic. `/dev/full` answers `ENOSPC` to every
+/// write; `println!`/`eprintln!` turned that into exit 101 with a backtrace where the message
+/// belonged — the defect round 2 measured on `--version` and on every error line — and a page
+/// that failed to write re-coded an unknown word's answer from 2 to 1. The answer keeps its code
+/// and the failure is one line.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_full_disk_does_not_panic_or_recode_the_answer() {
+    let full = || {
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open("/dev/full")
+            .expect("/dev/full is a writable device")
+    };
+    let run = |args: &[&str], full_stdout: bool, full_stderr: bool| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_nostream-cli"));
+        command.args(args);
+        if full_stdout {
+            command.stdout(full());
+        }
+        if full_stderr {
+            command.stderr(full());
+        }
+        command.output().expect("the binary runs")
+    };
+
+    // The version line is data: a write that failed answers 1, with the line that says why.
+    let output = run(&["--version"], true, false);
+    assert_eq!(code(&output), 1, "{}", stderr(&output));
+    assert!(
+        stderr(&output).starts_with("Error: unable to write output:"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(!stderr(&output).contains("panicked"), "{}", stderr(&output));
+
+    // An error line whose stream refused it keeps the failure's own code.
+    let output = run(&["clean-db", "--older-than=abc"], false, true);
+    assert_eq!(code(&output), 1);
+
+    // A page that could not be written keeps the failure's code: 2 was the answer, and the
+    // write's own failure is a second stderr line rather than a new code.
+    let output = run(&["wobble"], true, false);
+    assert_eq!(code(&output), 2, "{}", stderr(&output));
+    assert!(
+        stderr(&output).starts_with("Unknown command: wobble\n"),
+        "{}",
+        stderr(&output)
+    );
+
+    // And the marker's own stream failing does not lose the page.
+    let output = run(&["wobble"], false, true);
+    assert_eq!(code(&output), 2);
+    assert!(stdout(&output).contains("Usage:"), "{output:?}");
+}
+
 #[test]
 fn ac17_the_port_override_file_is_named_then_removed() {
     let (work, log) = compose_work();
