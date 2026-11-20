@@ -11,10 +11,11 @@
 use nostream_core::{EventId, Filter, Kind, Pubkey};
 use nostream_storage::StorageError;
 use nostream_storage::repositories::{
-    ActionableTarget, CreateInviteCodeOptions, DvmJob, DvmJobUpdate, EventPurgeCounts, EventRecord,
-    EventRepository, EventRetentionOptions, InviteCode, InviteCodeRepository, Nip05Verification,
-    Nip05VerificationRepository, QueryStream, ReconciliationItem, Report, ReportRepository,
-    StorageFuture, StreamedEvent, User, UserPatch, UserRepository,
+    ActionableTarget, CreateInviteCodeOptions, DvmJob, DvmJobUpdate, EventCleanCriteria,
+    EventPurgeCounts, EventRecord, EventRepository, EventRetentionOptions, InviteCode,
+    InviteCodeRepository, Nip05Verification, Nip05VerificationRepository, QueryStream,
+    ReconciliationItem, Report, ReportRepository, ScanCursor, StorageFuture, StreamedEvent, User,
+    UserPatch, UserRepository,
 };
 
 use crate::handlers::Stores;
@@ -138,6 +139,32 @@ impl EventRepository for UnavailableEventRepository {
         &'a self,
         _options: &'a EventRetentionOptions,
     ) -> StorageFuture<'a, EventPurgeCounts> {
+        Box::pin(async { Err(unavailable()) })
+    }
+
+    fn scan_live<'a>(
+        &'a self,
+        _after: Option<ScanCursor>,
+        _limit: u64,
+    ) -> StorageFuture<'a, QueryStream<'a, EventRecord>> {
+        Box::pin(async { Err(unavailable()) })
+    }
+
+    fn count_by_criteria<'a>(
+        &'a self,
+        _criteria: &'a EventCleanCriteria,
+    ) -> StorageFuture<'a, u64> {
+        Box::pin(async { Err(unavailable()) })
+    }
+
+    fn delete_by_criteria<'a>(
+        &'a self,
+        _criteria: &'a EventCleanCriteria,
+    ) -> StorageFuture<'a, u64> {
+        Box::pin(async { Err(unavailable()) })
+    }
+
+    fn delete_all_events(&self) -> StorageFuture<'_, ()> {
         Box::pin(async { Err(unavailable()) })
     }
 }

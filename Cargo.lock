@@ -1539,6 +1539,7 @@ dependencies = [
  "chrono",
  "clap",
  "futures-core",
+ "futures-util",
  "heed",
  "nostream-config",
  "nostream-core",

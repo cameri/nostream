@@ -35,12 +35,12 @@ use crate::backend::LmdbEnv;
 use crate::error::StorageError;
 use crate::repositories::{
     ActionableTarget, CreateInviteCodeOptions, DeliveryLogEntry, DeliveryLogFilters, DvmJob,
-    DvmJobRepository, DvmJobUpdate, EmptyTagRule, EventPurgeCounts, EventRecord, EventRepository,
-    EventRetentionOptions, InviteCode, InviteCodeRepository, Invoice, InvoiceRepository,
-    InvoiceStatus, NewDeliveryLogEntry, NewReport, Nip05Verification, Nip05VerificationRepository,
-    NotificationDeliveryLogRepository, NotificationOutboxRepository, OutboxMessage, OutboxPayload,
-    QueryStream, ReconciliationItem, Report, ReportRepository, SearchRule, StorageFuture,
-    StreamedEvent, User, UserPatch, UserRepository,
+    DvmJobRepository, DvmJobUpdate, EmptyTagRule, EventCleanCriteria, EventPurgeCounts,
+    EventRecord, EventRepository, EventRetentionOptions, InviteCode, InviteCodeRepository, Invoice,
+    InvoiceRepository, InvoiceStatus, NewDeliveryLogEntry, NewReport, Nip05Verification,
+    Nip05VerificationRepository, NotificationDeliveryLogRepository, NotificationOutboxRepository,
+    OutboxMessage, OutboxPayload, QueryStream, ReconciliationItem, Report, ReportRepository,
+    ScanCursor, SearchRule, StorageFuture, StreamedEvent, User, UserPatch, UserRepository,
 };
 
 /// The fixed map size every environment is opened with: `Env::resize` is `unsafe` and this
@@ -655,6 +655,45 @@ impl EventRepository for LmdbBackend {
             })
             .await
         })
+    }
+
+    fn scan_live<'a>(
+        &'a self,
+        after: Option<ScanCursor>,
+        limit: u64,
+    ) -> StorageFuture<'a, QueryStream<'a, EventRecord>> {
+        Box::pin(async move {
+            let now = Utc::now().timestamp();
+            let records = self
+                .read(move |txn, databases| events::scan_live(txn, databases, after, limit, now))
+                .await?;
+            let stream: QueryStream<'a, EventRecord> =
+                Box::pin(futures_util::stream::iter(records.into_iter().map(Ok)));
+            Ok(stream)
+        })
+    }
+
+    fn count_by_criteria<'a>(&'a self, criteria: &'a EventCleanCriteria) -> StorageFuture<'a, u64> {
+        Box::pin(async move {
+            let criteria = criteria.clone();
+            self.read(move |txn, databases| events::count_by_criteria(txn, databases, &criteria))
+                .await
+        })
+    }
+
+    fn delete_by_criteria<'a>(
+        &'a self,
+        criteria: &'a EventCleanCriteria,
+    ) -> StorageFuture<'a, u64> {
+        Box::pin(async move {
+            let criteria = criteria.clone();
+            self.write(move |txn, databases| events::delete_by_criteria(txn, databases, &criteria))
+                .await
+        })
+    }
+
+    fn delete_all_events(&self) -> StorageFuture<'_, ()> {
+        Box::pin(async move { self.write(events::delete_all_events).await })
     }
 }
 

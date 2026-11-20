@@ -15,8 +15,8 @@ use super::{Arg, Args, EventQuery, Gates, RETENTION_BATCH_SIZE};
 use crate::error::StorageError;
 use crate::records::distinct_replacements;
 use crate::repositories::{
-    EventPurgeCounts, EventRecord, EventRetentionOptions, QueryStream, ReconciliationItem,
-    StreamedEvent,
+    EventCleanCriteria, EventPurgeCounts, EventRecord, EventRetentionOptions, QueryStream,
+    ReconciliationItem, ScanCursor, StreamedEvent,
 };
 
 /// The conflict target of every replaceable write, exactly as the capture spells it.
@@ -180,6 +180,148 @@ pub(crate) fn find_by_filters<'a>(
     Ok(Box::pin(EventStream {
         inner: query.into_query().fetch(reader),
     }))
+}
+
+/// `scan_live`: the live rows after the cursor, oldest first, at most `min(limit, MAX_PAGE_ROWS)`.
+///
+/// The liveness predicate and the keyset comparison run in the statement, before its `LIMIT`, so
+/// a page cannot come up short while live rows remain: the server never spends a slot on a row
+/// the caller would not be given.
+pub(crate) fn scan_live<'a>(
+    reader: &'a sqlx::PgPool,
+    after: Option<ScanCursor>,
+    limit: u64,
+    now: i64,
+) -> Result<QueryStream<'a, EventRecord>, StorageError> {
+    let mut args = Args::default();
+    let now_slot = args.push(Arg::BigInt(now));
+    let mut text = format!(
+        "SELECT {} FROM events WHERE events.deleted_at IS NULL \
+         AND (events.expires_at IS NULL OR events.expires_at > {now_slot})",
+        sql::EVENT_COLUMNS
+    );
+
+    if let Some(cursor) = after {
+        let created_slot = args.push(Arg::BigInt(cursor.created_at));
+        let id_slot = args.push(Arg::Bytes(cursor.event_id.as_bytes().to_vec()));
+        text.push_str(&format!(
+            " AND (events.event_created_at, events.event_id) > ({created_slot}, {id_slot})"
+        ));
+    }
+
+    let limit = limit.min(crate::MAX_PAGE_ROWS);
+    let limit_slot = args.push(Arg::BigInt(i64::try_from(limit).unwrap_or(i64::MAX)));
+    text.push_str(&format!(
+        " ORDER BY events.event_created_at ASC, events.event_id ASC LIMIT {limit_slot}"
+    ));
+
+    let query = EventQuery { sql: text, args };
+    Ok(Box::pin(RecordStream {
+        inner: query.into_query().fetch(reader),
+    }))
+}
+
+/// The two conditions of [`EventCleanCriteria`], as SQL, appended to `text` with their binds.
+///
+/// A kind list that is set and empty is `= ANY('{}')`, which selects nothing — the same answer
+/// knex's `whereIn` over an empty list gives, so a caller that filters every kind out counts and
+/// deletes zero rather than everything.
+fn push_criteria(
+    text: &mut String,
+    args: &mut Args,
+    criteria: &EventCleanCriteria,
+) -> Result<(), StorageError> {
+    if let Some(before) = criteria.before {
+        let slot = args.push(Arg::BigInt(before));
+        text.push_str(&format!(" AND events.event_created_at < {slot}"));
+    }
+
+    if let Some(kinds) = &criteria.kinds {
+        let mut values = Vec::with_capacity(kinds.len());
+        for kind in kinds {
+            let kind = i32::try_from(kind.0).map_err(|_| StorageError::ValueOutOfRange {
+                column: "event_kind",
+                value: kind.0.to_string(),
+            })?;
+            values.push(kind);
+        }
+        let slot = args.push(Arg::IntList(values));
+        text.push_str(&format!(" AND events.event_kind = ANY({slot})"));
+    }
+
+    Ok(())
+}
+
+/// `count_by_criteria`: the rows the delete would remove, soft-deleted rows included.
+pub(crate) async fn count_by_criteria<'e, E>(
+    executor: E,
+    criteria: &EventCleanCriteria,
+) -> Result<u64, StorageError>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let mut args = Args::default();
+    let mut text = String::from("SELECT count(*) AS count FROM events WHERE 1 = 1");
+    push_criteria(&mut text, &mut args, criteria)?;
+
+    let row = EventQuery { sql: text, args }
+        .into_query()
+        .fetch_one(executor)
+        .await?;
+    let count: i64 = row.try_get("count")?;
+    u64::try_from(count).map_err(|_| StorageError::ValueOutOfRange {
+        column: "count",
+        value: count.to_string(),
+    })
+}
+
+/// `delete_by_criteria`: the hard delete, then the `VACUUM ANALYZE events` the capture runs
+/// after it (`src/clean-db.ts:211-216`).
+///
+/// The vacuum is why this takes the pool rather than any executor: `VACUUM` cannot run inside a
+/// transaction, so a caller that has one open must not reach this. The capture's clean-up is a
+/// one-shot process and this is a one-shot statement.
+pub(crate) async fn delete_by_criteria(
+    pool: &sqlx::PgPool,
+    criteria: &EventCleanCriteria,
+) -> Result<u64, StorageError> {
+    let mut args = Args::default();
+    let mut text = String::from("DELETE FROM events WHERE 1 = 1");
+    push_criteria(&mut text, &mut args, criteria)?;
+
+    let deleted = EventQuery { sql: text, args }
+        .into_query()
+        .execute(pool)
+        .await?
+        .rows_affected();
+
+    EventQuery {
+        sql: "VACUUM ANALYZE events".to_owned(),
+        args: Args::default(),
+    }
+    .into_query()
+    .execute(pool)
+    .await?;
+
+    Ok(deleted)
+}
+
+/// `delete_all_events`: `TRUNCATE` of both event tables, and of nothing else.
+///
+/// `event_tags` is truncated beside `events` because the trigger that fills it does not fire on
+/// `TRUNCATE`, and `CASCADE` reaches no further: nothing in the schema references `events`.
+pub(crate) async fn delete_all_events<'e, E>(executor: E) -> Result<(), StorageError>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    EventQuery {
+        sql: "TRUNCATE TABLE events, event_tags RESTART IDENTITY CASCADE".to_owned(),
+        args: Args::default(),
+    }
+    .into_query()
+    .execute(executor)
+    .await?;
+    Ok(())
 }
 
 /// `find_reconciliation_items`: the live `(created_at, event_id)` pairs, limit ignored.
@@ -526,6 +668,26 @@ impl Stream for ReconciliationStream<'_> {
         let this = self.get_mut();
         match this.inner.as_mut().poll_next(context) {
             Poll::Ready(Some(Ok(row))) => Poll::Ready(Some(super::rows::reconciliation_item(&row))),
+            Poll::Ready(Some(Err(error))) => Poll::Ready(Some(Err(StorageError::Database(error)))),
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+/// A stream of whole stored rows, mapping each driver row (`scan_live`'s item type: a slot this
+/// query selected is a row by the time the server answered, so there is no marker to carry).
+struct RecordStream<'a> {
+    inner: Pin<Box<dyn Stream<Item = Result<PgRow, sqlx::Error>> + Send + 'a>>,
+}
+
+impl Stream for RecordStream<'_> {
+    type Item = Result<EventRecord, StorageError>;
+
+    fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        match this.inner.as_mut().poll_next(context) {
+            Poll::Ready(Some(Ok(row))) => Poll::Ready(Some(super::rows::event_record(&row))),
             Poll::Ready(Some(Err(error))) => Poll::Ready(Some(Err(StorageError::Database(error)))),
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,

@@ -130,6 +130,32 @@ impl EventRepository for UnavailableEventRepository {
     ) -> StoreFuture<'a, nostream_storage::repositories::EventPurgeCounts> {
         Box::pin(async { Err(unavailable()) })
     }
+
+    fn scan_live<'a>(
+        &'a self,
+        _after: Option<nostream_storage::repositories::ScanCursor>,
+        _limit: u64,
+    ) -> StoreFuture<'a, QueryStream<'a, nostream_storage::repositories::EventRecord>> {
+        Box::pin(async { Err(unavailable()) })
+    }
+
+    fn count_by_criteria<'a>(
+        &'a self,
+        _criteria: &'a nostream_storage::repositories::EventCleanCriteria,
+    ) -> StoreFuture<'a, u64> {
+        Box::pin(async { Err(unavailable()) })
+    }
+
+    fn delete_by_criteria<'a>(
+        &'a self,
+        _criteria: &'a nostream_storage::repositories::EventCleanCriteria,
+    ) -> StoreFuture<'a, u64> {
+        Box::pin(async { Err(unavailable()) })
+    }
+
+    fn delete_all_events(&self) -> StoreFuture<'_, ()> {
+        Box::pin(async { Err(unavailable()) })
+    }
 }
 
 /// The user store.

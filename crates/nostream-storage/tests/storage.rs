@@ -47,13 +47,13 @@ async fn the_repository_traits_are_dyn_compatible() {
     use nostream_storage::StorageError;
     use nostream_storage::repositories::{
         ActionableTarget, CreateInviteCodeOptions, DeliveryLogEntry, DeliveryLogFilters, DvmJob,
-        DvmJobRepository, DvmJobUpdate, EventPurgeCounts, EventRecord, EventRepository,
-        EventRetentionOptions, InviteCode, InviteCodeRepository, Invoice, InvoiceRepository,
-        InvoiceStatus, NewDeliveryLogEntry, NewReport, Nip05Verification,
+        DvmJobRepository, DvmJobUpdate, EventCleanCriteria, EventPurgeCounts, EventRecord,
+        EventRepository, EventRetentionOptions, InviteCode, InviteCodeRepository, Invoice,
+        InvoiceRepository, InvoiceStatus, NewDeliveryLogEntry, NewReport, Nip05Verification,
         Nip05VerificationRepository, NotificationDeliveryLogRepository,
         NotificationOutboxRepository, OutboxMessage, OutboxPayload, QueryStream,
-        ReconciliationItem, Report, ReportRepository, StorageFuture, StreamedEvent, User,
-        UserPatch, UserRepository,
+        ReconciliationItem, Report, ReportRepository, ScanCursor, StorageFuture, StreamedEvent,
+        User, UserPatch, UserRepository,
     };
 
     struct Noop;
@@ -134,6 +134,32 @@ async fn the_repository_traits_are_dyn_compatible() {
             _options: &'a EventRetentionOptions,
         ) -> StorageFuture<'a, EventPurgeCounts> {
             unsupported("noop::events::delete_expired_and_retained")
+        }
+
+        fn scan_live<'a>(
+            &'a self,
+            _after: Option<ScanCursor>,
+            _limit: u64,
+        ) -> StorageFuture<'a, QueryStream<'a, EventRecord>> {
+            unsupported("noop::events::scan_live")
+        }
+
+        fn count_by_criteria<'a>(
+            &'a self,
+            _criteria: &'a EventCleanCriteria,
+        ) -> StorageFuture<'a, u64> {
+            unsupported("noop::events::count_by_criteria")
+        }
+
+        fn delete_by_criteria<'a>(
+            &'a self,
+            _criteria: &'a EventCleanCriteria,
+        ) -> StorageFuture<'a, u64> {
+            unsupported("noop::events::delete_by_criteria")
+        }
+
+        fn delete_all_events(&self) -> StorageFuture<'_, ()> {
+            unsupported("noop::events::delete_all_events")
         }
     }
 

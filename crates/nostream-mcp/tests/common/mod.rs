@@ -601,4 +601,30 @@ impl EventRepository for VanishingRepository {
     ) -> StorageFuture<'a, nostream_storage::repositories::EventPurgeCounts> {
         self.inner.delete_expired_and_retained(options)
     }
+
+    fn scan_live<'a>(
+        &'a self,
+        after: Option<nostream_storage::repositories::ScanCursor>,
+        limit: u64,
+    ) -> StorageFuture<'a, QueryStream<'a, nostream_storage::repositories::EventRecord>> {
+        self.inner.scan_live(after, limit)
+    }
+
+    fn count_by_criteria<'a>(
+        &'a self,
+        criteria: &'a nostream_storage::repositories::EventCleanCriteria,
+    ) -> StorageFuture<'a, u64> {
+        self.inner.count_by_criteria(criteria)
+    }
+
+    fn delete_by_criteria<'a>(
+        &'a self,
+        criteria: &'a nostream_storage::repositories::EventCleanCriteria,
+    ) -> StorageFuture<'a, u64> {
+        self.inner.delete_by_criteria(criteria)
+    }
+
+    fn delete_all_events(&self) -> StorageFuture<'_, ()> {
+        self.inner.delete_all_events()
+    }
 }

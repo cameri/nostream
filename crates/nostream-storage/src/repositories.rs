@@ -60,6 +60,35 @@ pub struct EventRetentionOptions {
     pub pubkey_whitelist: Option<Vec<SettingsPubkey>>,
 }
 
+/// A position in the live `(created_at, event_id)` order that
+/// [`EventRepository::scan_live`] resumes strictly after.
+///
+/// The pair is the whole key: `created_at` alone cannot order two events of one second, and an
+/// id alone cannot be compared with a timestamp, so a caller that pages a full scan carries
+/// both fields of the last row it read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScanCursor {
+    pub created_at: i64,
+    pub event_id: EventId,
+}
+
+/// The predicate a `clean-db` run selects rows with (`src/clean-db.ts:161-173`).
+///
+/// A row is selected when `created_at < before` (when set) **and** its kind is in `kinds` (when
+/// set). Neither field is a liveness filter: [`Default::default`] selects every stored row,
+/// soft-deleted ones included, because the capture's `count(*)`/`DELETE` carry no `deleted_at`
+/// condition and a clean-up run that quietly skipped soft-deleted rows would leave them behind
+/// while reporting a clean store.
+///
+/// The predicate is a **delete** list, not the retention API's keep list
+/// ([`EventRetentionOptions`]): the two are opposite questions, and the count and the delete
+/// share this one type so a `--dry-run` and the run that follows it select the same rows.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EventCleanCriteria {
+    pub before: Option<i64>,
+    pub kinds: Option<Vec<Kind>>,
+}
+
 /// One stored event row: the seven wire fields plus the five columns that are storage
 /// state rather than wire data (`src/@types/event.ts` `DBEvent`, and the two insert-time
 /// Symbols in `src/constants/base.ts`).
@@ -651,6 +680,55 @@ pub trait EventRepository: Send + Sync {
         &'a self,
         options: &'a EventRetentionOptions,
     ) -> StorageFuture<'a, EventPurgeCounts>;
+
+    /// Streams every live row in ascending `(created_at, event_id)` order, resuming strictly
+    /// after `after`.
+    ///
+    /// This is the full-scan read a caller needs when a filter read is the wrong shape:
+    /// [`find_by_filters`](Self::find_by_filters) is bounded by each filter's `limit` and
+    /// clamped to the backend's page, so nothing built on it can enumerate a store.
+    ///
+    /// **The contract**, in four parts, each of which is a claim a backend can fail:
+    ///
+    /// - rows are **live** — not soft-deleted, and not expired — by the store's own live
+    ///   predicate, so a scan yields nothing every other reader hides;
+    /// - rows ascend by `(created_at, event_id)`, the order a stable export writes;
+    /// - rows come **strictly after** `after`, so a caller that passes the last row it read
+    ///   pages without repeating one, and `None` starts at the oldest row;
+    /// - a call yields **at most** `min(limit, page_bound())` rows, and fewer only when the
+    ///   store holds no more live rows past the cursor. A backend that selected a key and
+    ///   found it gone when it came to read it continues to the next live row instead of
+    ///   spending the page slot: a short page is the caller's signal that the scan is done.
+    fn scan_live<'a>(
+        &'a self,
+        after: Option<ScanCursor>,
+        limit: u64,
+    ) -> StorageFuture<'a, QueryStream<'a, EventRecord>>;
+
+    /// Counts the rows [`delete_by_criteria`](Self::delete_by_criteria) would remove.
+    ///
+    /// The two read one [`EventCleanCriteria`], so a `--dry-run`'s number is the delete's, row
+    /// for row, including soft-deleted rows the predicate does not exclude.
+    fn count_by_criteria<'a>(&'a self, criteria: &'a EventCleanCriteria) -> StorageFuture<'a, u64>;
+
+    /// Hard-deletes every row the criteria select, returning how many it removed.
+    ///
+    /// **Hard**, like [`delete_expired_and_retained`](Self::delete_expired_and_retained) and
+    /// unlike every other delete in the store: the capture's `clean-db` runs `DELETE FROM
+    /// events`, which is what makes a second `--dry-run` report 0 rather than repeating the
+    /// count. The row's index entries go with it, so no read path can still find it.
+    fn delete_by_criteria<'a>(&'a self, criteria: &'a EventCleanCriteria)
+    -> StorageFuture<'a, u64>;
+
+    /// Empties the event store and nothing else.
+    ///
+    /// Every event-backed index is cleared with the rows — on Postgres `TRUNCATE TABLE events,
+    /// event_tags RESTART IDENTITY CASCADE`, on LMDB every event database in one write
+    /// transaction — while the metadata stores (users, invite codes, invoices, reports and the
+    /// rest) are left untouched. It returns no count because `TRUNCATE` reports none; a caller
+    /// that needs the number counts first with [`count_by_criteria`](Self::count_by_criteria)
+    /// over [`EventCleanCriteria::default`].
+    fn delete_all_events(&self) -> StorageFuture<'_, ()>;
 }
 
 /// Invoice storage (`src/@types/repositories.ts` `IInvoiceRepository`).

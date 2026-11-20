@@ -9,12 +9,12 @@ use super::{
 use crate::error::StorageError;
 use crate::repositories::{
     ActionableTarget, CreateInviteCodeOptions, DeliveryLogEntry, DeliveryLogFilters, DvmJob,
-    DvmJobRepository, DvmJobUpdate, EmptyTagRule, EventPurgeCounts, EventRecord, EventRepository,
-    EventRetentionOptions, InviteCode, InviteCodeRepository, Invoice, InvoiceRepository,
-    InvoiceStatus, NewDeliveryLogEntry, NewReport, Nip05Verification, Nip05VerificationRepository,
-    NotificationDeliveryLogRepository, NotificationOutboxRepository, OutboxMessage, OutboxPayload,
-    QueryStream, ReconciliationItem, Report, ReportRepository, SearchRule, StorageFuture,
-    StreamedEvent, User, UserPatch, UserRepository,
+    DvmJobRepository, DvmJobUpdate, EmptyTagRule, EventCleanCriteria, EventPurgeCounts,
+    EventRecord, EventRepository, EventRetentionOptions, InviteCode, InviteCodeRepository, Invoice,
+    InvoiceRepository, InvoiceStatus, NewDeliveryLogEntry, NewReport, Nip05Verification,
+    Nip05VerificationRepository, NotificationDeliveryLogRepository, NotificationOutboxRepository,
+    OutboxMessage, OutboxPayload, QueryStream, ReconciliationItem, Report, ReportRepository,
+    ScanCursor, SearchRule, StorageFuture, StreamedEvent, User, UserPatch, UserRepository,
 };
 
 impl EventRepository for PostgresBackend {
@@ -119,6 +119,31 @@ impl EventRepository for PostgresBackend {
         options: &'a EventRetentionOptions,
     ) -> StorageFuture<'a, EventPurgeCounts> {
         Box::pin(async move { events::delete_expired_and_retained(&self.master, options).await })
+    }
+
+    fn scan_live<'a>(
+        &'a self,
+        after: Option<ScanCursor>,
+        limit: u64,
+    ) -> StorageFuture<'a, QueryStream<'a, EventRecord>> {
+        Box::pin(async move {
+            events::scan_live(&self.reader, after, limit, chrono::Utc::now().timestamp())
+        })
+    }
+
+    fn count_by_criteria<'a>(&'a self, criteria: &'a EventCleanCriteria) -> StorageFuture<'a, u64> {
+        Box::pin(async move { events::count_by_criteria(&self.reader, criteria).await })
+    }
+
+    fn delete_by_criteria<'a>(
+        &'a self,
+        criteria: &'a EventCleanCriteria,
+    ) -> StorageFuture<'a, u64> {
+        Box::pin(async move { events::delete_by_criteria(&self.master, criteria).await })
+    }
+
+    fn delete_all_events(&self) -> StorageFuture<'_, ()> {
+        Box::pin(async move { events::delete_all_events(&self.master).await })
     }
 }
 

@@ -20,6 +20,7 @@ lmdb = ["dep:heed", "dep:uuid", "dep:tracing"]
 [dependencies]
 chrono.workspace = true
 futures-core.workspace = true
+futures-util.workspace = true
 heed = { workspace = true, optional = true }
 nostream-config.workspace = true
 nostream-core.workspace = true

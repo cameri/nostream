@@ -30,7 +30,8 @@ use crate::DEFAULT_PAGE_ROWS;
 use crate::error::StorageError;
 use crate::records::{distinct_replacements, replaces_fields};
 use crate::repositories::{
-    EventPurgeCounts, EventRecord, EventRetentionOptions, ReconciliationItem, StreamedEvent,
+    EventCleanCriteria, EventPurgeCounts, EventRecord, EventRetentionOptions, ReconciliationItem,
+    ScanCursor, StreamedEvent,
 };
 
 /// The kind of the capture's `REQUEST_TO_VANISH`, which every retention whitelist keeps and
@@ -693,6 +694,185 @@ fn kind_of(record: &EventRecord) -> Result<i32, StorageError> {
         column: "event_kind",
         value: record.event.kind.0.to_string(),
     })
+}
+
+// ---------------------------------------------------------------------------------------
+// Clean-up paths: the full scan and the delete-by-predicate `clean-db` runs on.
+// ---------------------------------------------------------------------------------------
+
+/// Rows one `delete_by_criteria` batch holds before it deletes and resumes, so the run's memory
+/// is a batch rather than a whole store's id list.
+const CLEAN_BATCH_ROWS: usize = 1_000;
+
+/// The live rows after `after`, oldest first, at most `min(limit, MAX_PAGE_ROWS)` of them.
+///
+/// Every key in `events_by_created_at` is `created_at ‖ event_id`, so the range's own order is
+/// the contract's order and the cursor is a key. A key whose row is gone, soft-deleted or
+/// expired is skipped **without** spending a page slot: the caller reads a short page as the
+/// end of the store, and a vanished or hidden row between two live ones must not say that.
+pub(crate) fn scan_live(
+    txn: &RoTxn<'_>,
+    databases: &Databases,
+    after: Option<ScanCursor>,
+    limit: u64,
+    now: i64,
+) -> Result<Vec<EventRecord>, StorageError> {
+    let limit = usize::try_from(limit.min(crate::MAX_PAGE_ROWS)).unwrap_or(0);
+    let mut records = Vec::new();
+    let start = after.map(|cursor| encoding::created_at_key(cursor.created_at, &cursor.event_id));
+    let bounds = encoding::resume_bounds(start.as_deref(), &[], &[]);
+
+    for entry in databases.events_by_created_at.range(txn, &bounds)? {
+        if records.len() >= limit {
+            break;
+        }
+        let (key, _) = entry?;
+        let id = header_id(key, 8, "events_by_created_at")?;
+        let Some(value) = databases.events.get(txn, id.as_bytes())? else {
+            continue;
+        };
+        let header = rows::event_header(value)?;
+        if header.deleted
+            || header
+                .expires_at
+                .is_some_and(|expires_at| expires_at <= now)
+        {
+            continue;
+        }
+        records.push(rows::decode_event(value)?);
+    }
+
+    Ok(records)
+}
+
+/// Whether one row's kind is in the criteria's kind list, which is a whitelist when set and an
+/// empty selection when set to no kinds at all (`whereIn` over an empty list).
+fn selected_kind(kind: i32, criteria: &EventCleanCriteria) -> bool {
+    match &criteria.kinds {
+        None => true,
+        Some(kinds) => kinds
+            .iter()
+            .any(|candidate| i32::try_from(candidate.0).unwrap_or(i32::MAX) == kind),
+    }
+}
+
+/// The range one criteria walks: every key, or every key whose `created_at` is below `before`.
+///
+/// The upper bound is exclusive at the eight-byte `created_at` prefix: a forty-byte key that
+/// starts with the same prefix sorts after it, so every row at exactly `before` is left out.
+fn criteria_upper(criteria: &EventCleanCriteria) -> Option<[u8; 8]> {
+    criteria.before.map(encoding::i64_key)
+}
+
+/// `count_by_criteria`: the rows the delete would remove, soft-deleted rows included.
+pub(crate) fn count_by_criteria(
+    txn: &RoTxn<'_>,
+    databases: &Databases,
+    criteria: &EventCleanCriteria,
+) -> Result<u64, StorageError> {
+    let upper = criteria_upper(criteria);
+    let bounds = (
+        Bound::Unbounded,
+        upper
+            .as_ref()
+            .map_or(Bound::Unbounded, |key| Bound::Excluded(&key[..])),
+    );
+
+    let mut count = 0u64;
+    for entry in databases.events_by_created_at.range(txn, &bounds)? {
+        let (key, _) = entry?;
+        key_evaluated();
+        let id = header_id(key, 8, "events_by_created_at")?;
+        let Some(value) = databases.events.get(txn, id.as_bytes())? else {
+            continue;
+        };
+        let header = rows::event_header(value)?;
+        if selected_kind(header.kind, criteria) {
+            count += 1;
+        }
+    }
+
+    Ok(count)
+}
+
+/// `delete_by_criteria`: the hard delete of every row the predicate selects, one batch at a
+/// time so the id list of a whole store is never resident.
+///
+/// A batch's keys are collected and its range iterator dropped before anything is deleted: an
+/// iterator over a database the same transaction is removing from is not a shape heed offers.
+pub(crate) fn delete_by_criteria(
+    txn: &mut RwTxn<'_>,
+    databases: &Databases,
+    criteria: &EventCleanCriteria,
+) -> Result<u64, StorageError> {
+    let upper = criteria_upper(criteria);
+    let mut deleted = 0u64;
+    let mut after: Option<Vec<u8>> = None;
+
+    loop {
+        let mut batch: Vec<EventId> = Vec::new();
+        let mut examined_to: Option<Vec<u8>> = None;
+        {
+            let bounds = (
+                after.as_deref().map_or(Bound::Unbounded, Bound::Excluded),
+                upper
+                    .as_ref()
+                    .map_or(Bound::Unbounded, |key| Bound::Excluded(&key[..])),
+            );
+            for entry in databases.events_by_created_at.range(txn, &bounds)? {
+                if batch.len() >= CLEAN_BATCH_ROWS {
+                    break;
+                }
+                let (key, _) = entry?;
+                examined_to = Some(key.to_vec());
+                key_evaluated();
+                let id = header_id(key, 8, "events_by_created_at")?;
+                let Some(value) = databases.events.get(txn, id.as_bytes())? else {
+                    continue;
+                };
+                let header = rows::event_header(value)?;
+                if selected_kind(header.kind, criteria) {
+                    batch.push(id);
+                }
+            }
+        }
+
+        let Some(examined_to) = examined_to else {
+            return Ok(deleted);
+        };
+
+        for id in batch {
+            let Some(value) = databases.events.get(txn, id.as_bytes())? else {
+                continue;
+            };
+            let record = rows::decode_event(value)?;
+            hard_delete(txn, databases, &record)?;
+            deleted += 1;
+        }
+
+        after = Some(examined_to);
+    }
+}
+
+/// `delete_all_events`: every event-backed database cleared in one write transaction, and the
+/// metadata databases untouched.
+pub(crate) fn delete_all_events(
+    txn: &mut RwTxn<'_>,
+    databases: &Databases,
+) -> Result<(), StorageError> {
+    for database in [
+        databases.events,
+        databases.events_by_created_at,
+        databases.events_by_author,
+        databases.events_deleted,
+        databases.events_expiring,
+        databases.replaceable,
+        databases.tags,
+        databases.events_by_term,
+    ] {
+        database.clear(txn)?;
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------------------
