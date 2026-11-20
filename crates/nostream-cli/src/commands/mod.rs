@@ -1,5 +1,6 @@
-//! The CLI commands. `config` is implemented; the rest are labelled stubs for the Phase-2
-//! process supervisor.
+//! The CLI commands, one module per group the capture names: `config` (all six variants),
+//! `start`/`stop`/`update` over the compose seam, `info`, `export`, `clean-db`, `clean`, `seed`,
+//! `invite`, `setup` and `import`. Only `tui` remains a labelled stub.
 
 pub mod clean;
 pub mod clean_db;
