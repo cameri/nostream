@@ -736,6 +736,11 @@ pub trait EventRepository: Send + Sync {
     /// unlike every other delete in the store: the capture's `clean-db` runs `DELETE FROM
     /// events`, which is what makes a second `--dry-run` report 0 rather than repeating the
     /// count. The row's index entries go with it, so no read path can still find it.
+    ///
+    /// The delete is a **delete-list**, and it is not atomic across backends by design: LMDB
+    /// commits one batch at a time so a relay sharing the store keeps its writer between
+    /// batches, and a failure part-way leaves the batches already committed deleted. The count
+    /// is the rows this call removed; a re-run removes only what is left.
     fn delete_by_criteria<'a>(&'a self, criteria: &'a EventCleanCriteria)
     -> StorageFuture<'a, u64>;
 

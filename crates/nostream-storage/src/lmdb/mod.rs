@@ -687,8 +687,40 @@ impl EventRepository for LmdbBackend {
     ) -> StorageFuture<'a, u64> {
         Box::pin(async move {
             let criteria = criteria.clone();
-            self.write(move |txn, databases| events::delete_by_criteria(txn, databases, &criteria))
-                .await
+            let mut deleted = 0u64;
+            let mut after: Option<Vec<u8>> = None;
+
+            // A read transaction collects one batch's ids and a write transaction deletes them,
+            // so the single writer is held for a batch rather than for the whole run — the shape
+            // retention already uses. A failure leaves the batches already committed deleted,
+            // which the capture's `clean-db` tolerates: `--dry-run` still counts first.
+            loop {
+                let batch = {
+                    let criteria = criteria.clone();
+                    let after = after.clone();
+                    self.read(move |txn, databases| {
+                        events::collect_criteria_batch(txn, databases, &criteria, after.as_deref())
+                    })
+                    .await?
+                };
+
+                let Some(batch) = batch else {
+                    return Ok(deleted);
+                };
+
+                after = Some(batch.examined_to);
+
+                if batch.ids.is_empty() {
+                    continue;
+                }
+
+                let ids = batch.ids;
+                deleted += self
+                    .write(move |txn, databases| {
+                        events::delete_criteria_batch(txn, databases, &ids)
+                    })
+                    .await?;
+            }
         })
     }
 

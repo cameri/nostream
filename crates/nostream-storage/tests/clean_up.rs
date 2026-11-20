@@ -26,7 +26,7 @@ use nostream_storage::repositories::{
     InviteCodeRepository, Invoice, InvoiceRepository, InvoiceStatus, InvoiceUnit, QueryStream,
     ScanCursor, UserPatch, UserRepository,
 };
-use nostream_storage::{DEFAULT_PAGE_ROWS, LmdbBackend, MAX_PAGE_ROWS};
+use nostream_storage::{DEFAULT_PAGE_ROWS, LmdbBackend, MAX_PAGE_ROWS, StorageError};
 
 /// A signed note by the key `secret`, at `created_at`, with the given kind and tags.
 fn note(secret: u8, kind: u64, created_at: i64, content: &str, tags: Vec<Vec<String>>) -> Event {
@@ -325,6 +325,86 @@ async fn the_criteria_count_and_delete_the_same_rows() {
             .expect("a count"),
         3,
         "the surviving rows keep their tag entries"
+    );
+}
+
+/// AC51's kind selection: a kind the store's header cannot hold names no row. The LMDB header
+/// keeps a kind as `i32`, and the criteria used to coerce anything above it onto `i32::MAX`,
+/// which selected — and hard-deleted — a row the criteria never named. The Postgres arm already
+/// refused the same input, so this pins the two backends to one answer.
+#[tokio::test]
+async fn an_out_of_range_kind_is_refused_and_deletes_nothing() {
+    let (_directory, backend) = store().await;
+
+    let top = EventRecord::from_event(&note(
+        11,
+        i32::MAX as u64,
+        1_700_000_000,
+        "the top kind",
+        Vec::new(),
+    ));
+    backend
+        .create_many(std::slice::from_ref(&top))
+        .await
+        .expect("the row is written");
+
+    let criteria = EventCleanCriteria {
+        before: None,
+        kinds: Some(vec![Kind(4_294_967_296)]),
+    };
+
+    let counted = backend.count_by_criteria(&criteria).await;
+    assert!(
+        matches!(counted, Err(StorageError::ValueOutOfRange { .. })),
+        "an out-of-range kind is refused, not coerced: {counted:?}"
+    );
+
+    let deleted = backend.delete_by_criteria(&criteria).await;
+    assert!(
+        matches!(deleted, Err(StorageError::ValueOutOfRange { .. })),
+        "the delete refuses the same input the count refuses: {deleted:?}"
+    );
+    assert_eq!(
+        backend
+            .count_by_criteria(&EventCleanCriteria::default())
+            .await
+            .expect("a count"),
+        1,
+        "the i32::MAX kind survives a criteria that never named it"
+    );
+}
+
+/// AC51's transaction boundary: LMDB allows one writer per environment, so a delete that
+/// collected and removed every batch inside one transaction held the writer for the whole run.
+/// One batch is collected in a read transaction and deleted in its own write transaction, so the
+/// environment commits once per batch and a second writer gets in between them.
+///
+/// `last_txn_id` counts committed write transactions, so the assertion is the boundary itself
+/// rather than a timing: 8 500 rows at `CLEAN_BATCH_ROWS` = 1 000 is eight full batches and a
+/// 500-row tail, one commit each.
+#[tokio::test]
+async fn the_writer_is_released_between_batches() {
+    let (_directory, backend) = store().await;
+
+    let total = 8_500i64;
+    let rows: Vec<EventRecord> = (0..total).map(|step| plain(1_700_000_000 + step)).collect();
+    backend
+        .create_many(&rows)
+        .await
+        .expect("the rows are written");
+
+    let before = backend.env().info().last_txn_id;
+    let deleted = backend
+        .delete_by_criteria(&EventCleanCriteria::default())
+        .await
+        .expect("a delete");
+    let committed = backend.env().info().last_txn_id - before;
+
+    assert_eq!(deleted, total as u64, "the delete removes every row");
+    assert!(
+        committed >= 9,
+        "the delete committed {committed} write transaction(s) for {total} rows: one batch per \
+         transaction is what releases the writer, one transaction for the run is the defect"
     );
 }
 

@@ -745,15 +745,30 @@ pub(crate) fn scan_live(
     Ok(records)
 }
 
+/// The criteria's kind list in the store's own space: `None` is every kind, and a value the
+/// header cannot hold is a refusal, with the error the Postgres arm returns for the same input
+/// (`postgres/events.rs`'s `push_criteria`). Coercing it onto `i32::MAX` would select a row the
+/// criteria never named.
+fn selected_kinds(criteria: &EventCleanCriteria) -> Result<Option<Vec<i32>>, StorageError> {
+    let Some(kinds) = &criteria.kinds else {
+        return Ok(None);
+    };
+
+    let mut selected = Vec::with_capacity(kinds.len());
+    for kind in kinds {
+        selected.push(i32::try_from(kind.0).map_err(|_| StorageError::ValueOutOfRange {
+            column: "event_kind",
+            value: kind.0.to_string(),
+        })?);
+    }
+
+    Ok(Some(selected))
+}
+
 /// Whether one row's kind is in the criteria's kind list, which is a whitelist when set and an
 /// empty selection when set to no kinds at all (`whereIn` over an empty list).
-fn selected_kind(kind: i32, criteria: &EventCleanCriteria) -> bool {
-    match &criteria.kinds {
-        None => true,
-        Some(kinds) => kinds
-            .iter()
-            .any(|candidate| i32::try_from(candidate.0).unwrap_or(i32::MAX) == kind),
-    }
+fn selected_kind(kind: i32, kinds: Option<&[i32]>) -> bool {
+    kinds.is_none_or(|kinds| kinds.contains(&kind))
 }
 
 /// The range one criteria walks: every key, or every key whose `created_at` is below `before`.
@@ -770,6 +785,7 @@ pub(crate) fn count_by_criteria(
     databases: &Databases,
     criteria: &EventCleanCriteria,
 ) -> Result<u64, StorageError> {
+    let kinds = selected_kinds(criteria)?;
     let upper = criteria_upper(criteria);
     let bounds = (
         Bound::Unbounded,
@@ -787,7 +803,7 @@ pub(crate) fn count_by_criteria(
             continue;
         };
         let header = rows::event_header(value)?;
-        if selected_kind(header.kind, criteria) {
+        if selected_kind(header.kind, kinds.as_deref()) {
             count += 1;
         }
     }
@@ -795,63 +811,80 @@ pub(crate) fn count_by_criteria(
     Ok(count)
 }
 
-/// `delete_by_criteria`: the hard delete of every row the predicate selects, one batch at a
-/// time so the id list of a whole store is never resident.
+/// What one batch of a criteria delete selected: the ids to remove, and the last key the walk
+/// examined — the next batch's exclusive lower bound.
+pub(crate) struct CriteriaBatch {
+    pub ids: Vec<EventId>,
+    pub examined_to: Vec<u8>,
+}
+
+/// One batch of a criteria delete: up to `CLEAN_BATCH_ROWS` ids selected after `after`, read
+/// only.
 ///
-/// A batch's keys are collected and its range iterator dropped before anything is deleted: an
-/// iterator over a database the same transaction is removing from is not a shape heed offers.
-pub(crate) fn delete_by_criteria(
-    txn: &mut RwTxn<'_>,
+/// Nothing is deleted here, which is what lets the caller run this outside a write transaction:
+/// LMDB allows one writer per environment, so a delete that collected and removed every batch
+/// inside one transaction held the writer for the whole run (`clean-db --older-than` measured
+/// 18.53 s at 160 001 rows). `None` means the walk found no key past `after`.
+pub(crate) fn collect_criteria_batch(
+    txn: &RoTxn<'_>,
     databases: &Databases,
     criteria: &EventCleanCriteria,
-) -> Result<u64, StorageError> {
+    after: Option<&[u8]>,
+) -> Result<Option<CriteriaBatch>, StorageError> {
+    let kinds = selected_kinds(criteria)?;
     let upper = criteria_upper(criteria);
-    let mut deleted = 0u64;
-    let mut after: Option<Vec<u8>> = None;
+    let bounds = (
+        after.map_or(Bound::Unbounded, Bound::Excluded),
+        upper
+            .as_ref()
+            .map_or(Bound::Unbounded, |key| Bound::Excluded(&key[..])),
+    );
 
-    loop {
-        let mut batch: Vec<EventId> = Vec::new();
-        let mut examined_to: Option<Vec<u8>> = None;
-        {
-            let bounds = (
-                after.as_deref().map_or(Bound::Unbounded, Bound::Excluded),
-                upper
-                    .as_ref()
-                    .map_or(Bound::Unbounded, |key| Bound::Excluded(&key[..])),
-            );
-            for entry in databases.events_by_created_at.range(txn, &bounds)? {
-                if batch.len() >= CLEAN_BATCH_ROWS {
-                    break;
-                }
-                let (key, _) = entry?;
-                examined_to = Some(key.to_vec());
-                key_evaluated();
-                let id = header_id(key, 8, "events_by_created_at")?;
-                let Some(value) = databases.events.get(txn, id.as_bytes())? else {
-                    continue;
-                };
-                let header = rows::event_header(value)?;
-                if selected_kind(header.kind, criteria) {
-                    batch.push(id);
-                }
-            }
+    let mut ids: Vec<EventId> = Vec::new();
+    let mut examined_to: Option<Vec<u8>> = None;
+
+    for entry in databases.events_by_created_at.range(txn, &bounds)? {
+        if ids.len() >= CLEAN_BATCH_ROWS {
+            break;
         }
 
-        let Some(examined_to) = examined_to else {
-            return Ok(deleted);
+        let (key, _) = entry?;
+        examined_to = Some(key.to_vec());
+        key_evaluated();
+        let id = header_id(key, 8, "events_by_created_at")?;
+        let Some(value) = databases.events.get(txn, id.as_bytes())? else {
+            continue;
         };
-
-        for id in batch {
-            let Some(value) = databases.events.get(txn, id.as_bytes())? else {
-                continue;
-            };
-            let record = rows::decode_event(value)?;
-            hard_delete(txn, databases, &record)?;
-            deleted += 1;
+        let header = rows::event_header(value)?;
+        if selected_kind(header.kind, kinds.as_deref()) {
+            ids.push(id);
         }
-
-        after = Some(examined_to);
     }
+
+    Ok(examined_to.map(|examined_to| CriteriaBatch { ids, examined_to }))
+}
+
+/// One collected batch's hard deletes, inside the caller's write transaction.
+///
+/// The iterator that selected these ids was dropped with the read transaction, because an
+/// iterator over a database the write transaction is removing from is not a shape heed offers.
+pub(crate) fn delete_criteria_batch(
+    txn: &mut RwTxn<'_>,
+    databases: &Databases,
+    ids: &[EventId],
+) -> Result<u64, StorageError> {
+    let mut deleted = 0u64;
+
+    for id in ids {
+        let Some(value) = databases.events.get(txn, id.as_bytes())? else {
+            continue;
+        };
+        let record = rows::decode_event(value)?;
+        hard_delete(txn, databases, &record)?;
+        deleted += 1;
+    }
+
+    Ok(deleted)
 }
 
 /// `delete_all_events`: every event-backed database cleared in one write transaction, and the
