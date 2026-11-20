@@ -166,21 +166,18 @@ fn option_value(
     }
 }
 
-/// The capture's numeric bound, `Number.isSafeInteger` (`src/clean-db.ts:54-65`): above it the
-/// parser refuses, and nothing downstream has to guess what the value meant (Amendment 3).
-const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
-
 /// `parseOlderThanDays`: digits only, then a positive **safe** integer, one message for both.
 ///
-/// The safe-integer bound is the capture's, not a nicety: an unrepresentable value used to reach
-/// the criteria builder, where it became `before: None` — the unfiltered delete.
+/// The bound is the capture's ([`crate::MAX_SAFE_INTEGER`]), and it is not a nicety: an
+/// unrepresentable value used to reach the criteria builder, where it became `before: None` —
+/// the unfiltered delete.
 fn parse_older_than_days(value: &str) -> Result<u64, CliError> {
     let days = value
         .bytes()
         .all(|byte| byte.is_ascii_digit())
         .then(|| value.parse::<u64>().ok())
         .flatten()
-        .filter(|days| (1..=MAX_SAFE_INTEGER).contains(days));
+        .filter(|days| (1..=crate::MAX_SAFE_INTEGER).contains(days));
 
     days.ok_or_else(|| CliError::reported_line("--older-than must be a positive integer"))
 }
@@ -214,7 +211,7 @@ fn parse_kinds(value: &str) -> Result<Vec<Kind>, CliError> {
         let Some(kind) = part
             .parse::<u64>()
             .ok()
-            .filter(|kind| *kind <= MAX_SAFE_INTEGER)
+            .filter(|kind| *kind <= crate::MAX_SAFE_INTEGER)
         else {
             return Err(CliError::reported_line(
                 "--kinds must contain valid integers",

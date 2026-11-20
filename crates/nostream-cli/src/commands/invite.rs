@@ -67,7 +67,18 @@ struct MintedCode {
 }
 
 /// Runs `invite create` on a runtime the command owns.
+///
+/// The envelope wraps the whole command, validations included: the capture decides JSON mode
+/// from the options object before it runs anything, so a refused `--uses` is enveloped too.
 pub fn run(context: &Context, options: &InviteOptions) -> Result<CommandOutput, CliError> {
+    create_from_arguments(context, options).map_err(|error| envelope(options.json, error))
+}
+
+/// The command's body before the envelope: the two argument checks, then `runInviteCreate`.
+fn create_from_arguments(
+    context: &Context,
+    options: &InviteOptions,
+) -> Result<CommandOutput, CliError> {
     let uses = positive(&options.uses, "--uses must be a positive integer")?;
     let expires_in = positive(
         &options.expires_in,
@@ -77,8 +88,10 @@ pub fn run(context: &Context, options: &InviteOptions) -> Result<CommandOutput, 
     context.block_on(create(context, options, uses, expires_in))
 }
 
-/// The capture's two argument checks (`src/cli/index.ts:316-321`): a safe integer of at least
-/// one, one message for every refusal.
+/// The capture's two argument checks (`src/cli/index.ts:316-321`): a **safe** integer of at
+/// least one, one message for every refusal. Above `Number.MAX_SAFE_INTEGER` the capture refuses
+/// before its arithmetic, and so does this: the value used to reach `Duration::seconds`, which
+/// panics past its own bound (Amendment 3).
 fn positive(raw: &Option<String>, message: &str) -> Result<Option<u64>, CliError> {
     let Some(raw) = raw else {
         return Ok(None);
@@ -89,9 +102,38 @@ fn positive(raw: &Option<String>, message: &str) -> Result<Option<u64>, CliError
         .all(|byte| byte.is_ascii_digit())
         .then(|| raw.parse::<u64>().ok())
         .flatten()
-        .filter(|value| *value >= 1);
+        .filter(|value| (1..=crate::MAX_SAFE_INTEGER).contains(value));
 
     digits.map(Some).ok_or_else(|| CliError::usage(message))
+}
+
+/// A failure of a command that accepted `--json`, in the capture's envelope: its handler derives
+/// JSON mode from the options object, so a thrown usage failure is `code: 2` and a thrown plain
+/// one `code: 1` (`src/cli/index.ts:116-135`).
+fn envelope(json: bool, error: CliError) -> CliError {
+    if !json {
+        return error;
+    }
+
+    match error {
+        CliError::Usage(message) => CliError::json(message, 2),
+        CliError::Command(message) | CliError::Config(message) => CliError::json(message, 1),
+        CliError::Json { .. } => error,
+        other => other,
+    }
+}
+
+/// `now + seconds`, refused with the capture's usage message when no instant can hold it.
+/// `Duration`'s constructors panic past their own bound, so the value is turned into one that
+/// fits before it is added (an `i64::MAX` `--expires-in` used to exit 101 here).
+fn expiry(now: DateTime<Utc>, seconds: u64) -> Result<DateTime<Utc>, CliError> {
+    let message = "--expires-in must be a positive integer (seconds)";
+
+    i64::try_from(seconds)
+        .ok()
+        .and_then(chrono::Duration::try_seconds)
+        .and_then(|duration| now.checked_add_signed(duration))
+        .ok_or_else(|| CliError::usage(message))
 }
 
 /// `runInviteCreate`.
@@ -123,9 +165,7 @@ async fn create(
     };
 
     let expires_at = match expires_in {
-        Some(seconds) => {
-            Some(now + chrono::Duration::seconds(i64::try_from(seconds).unwrap_or(i64::MAX)))
-        }
+        Some(seconds) => Some(expiry(now, seconds)?),
         None => limits
             .expires_at
             .map(|seconds| DateTime::<Utc>::from_timestamp(seconds, 0))
@@ -269,6 +309,72 @@ mod tests {
                 .expect_err("refused");
             assert_eq!(error.to_string(), "--uses must be a positive integer");
         }
+    }
+
+    /// `Number.isSafeInteger` is the bound (`src/cli/index.ts:316-321`); past it the value used
+    /// to reach `Duration::seconds` and panicked (Amendment 3).
+    #[test]
+    fn the_bounds_are_the_captures_safe_integers() {
+        for bad in [
+            "9007199254740992",
+            "9223372036854775807",
+            "18446744073709551615",
+        ] {
+            let error = positive(
+                &Some(bad.to_owned()),
+                "--expires-in must be a positive integer (seconds)",
+            )
+            .expect_err("refused");
+            assert_eq!(
+                error.to_string(),
+                "--expires-in must be a positive integer (seconds)"
+            );
+        }
+
+        assert_eq!(
+            positive(
+                &Some("9007199254740991".to_owned()),
+                "--expires-in must be a positive integer (seconds)"
+            )
+            .unwrap(),
+            Some(9_007_199_254_740_991)
+        );
+    }
+
+    /// A value past what a date can hold is the capture's usage refusal, not a panic.
+    #[test]
+    fn an_expiry_no_date_can_hold_is_refused() {
+        let now = DateTime::<Utc>::from_timestamp(1_700_000_000, 0).expect("a date");
+
+        assert_eq!(
+            expiry(now, 600).unwrap(),
+            now + chrono::Duration::seconds(600)
+        );
+
+        for seconds in [9_007_199_254_740_991, 9_223_372_036_854_775_807] {
+            let error = expiry(now, seconds).expect_err("refused");
+            assert_eq!(
+                error.to_string(),
+                "--expires-in must be a positive integer (seconds)"
+            );
+        }
+    }
+
+    /// The envelope is the class's: a usage failure is code 2, a thrown command one code 1, and
+    /// without `--json` the error is untouched (`src/cli/index.ts:116-135`).
+    #[test]
+    fn a_json_failure_takes_the_envelope_with_its_classs_code() {
+        let usage = envelope(true, CliError::usage("a usage failure"));
+        assert!(matches!(usage, CliError::Json { code: 2, .. }), "{usage:?}");
+
+        let command = envelope(true, CliError::command("a thrown failure"));
+        assert!(
+            matches!(command, CliError::Json { code: 1, .. }),
+            "{command:?}"
+        );
+
+        let plain = envelope(false, CliError::usage("a usage failure"));
+        assert!(matches!(plain, CliError::Usage(_)), "{plain:?}");
     }
 
     #[test]

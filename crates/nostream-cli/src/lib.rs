@@ -8,8 +8,16 @@
 //! - `src/scripts/{benchmark-queries,export-events}.ts`
 //! - `src/import-events.ts`, `src/clean-db.ts`
 //!
-//! Phase 1 implements `config validate` and `config get` end to end; the remaining commands,
-//! the TUI and the docker/process supervisors are labelled stubs (Phase 2).
+//! The surface is `app.rs` — the pre-parse, the capture's page, the renderer and the dispatch —
+//! over `commands/`, the seams a command drives (`compose`, `store`, `env_file`, `bootstrap`,
+//! `compression`, `process` in `nostream-services`), and the settings reader in `config.rs`.
+//! Only `tui` and `CliError::NotImplemented` are still labelled stubs.
+
+/// The capture's numeric bound, `Number.isSafeInteger`: the largest integer a JavaScript number
+/// holds exactly. The commands that take a number from the command line refuse anything above it
+/// with the capture's own message, because past it the capture's parser refuses too (V22, V39,
+/// Amendment 3).
+pub const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
 pub mod app;
 pub mod bootstrap;

@@ -1210,6 +1210,55 @@ fn ac31_invite_create_mints_and_prints_two_ways() {
     assert!(lines[2].starts_with("expires: "), "{lines:?}");
 }
 
+/// AC31's `--json` failures: the capture's handler takes JSON mode from the options object, so a
+/// command that accepted `--json` answers every failure with the envelope and the class's code —
+/// not the human `Error: …` line (`src/cli/index.ts:116-135`).
+#[test]
+fn the_invite_json_failures_carry_the_envelope() {
+    let (work, config, _data) = info_work();
+
+    let output = run_env(
+        work.path(),
+        &["invite", "create", "--json", "--uses", "0"],
+        &[("NOSTR_CONFIG_DIR", &config)],
+    );
+    assert_eq!(code(&output), 2, "{}", stderr(&output));
+    assert_eq!(
+        stderr(&output),
+        "{\"error\":{\"message\":\"--uses must be a positive integer\",\"code\":2}}\n"
+    );
+
+    // A safe integer no instant can hold is refused rather than panicking (Amendment 3).
+    let output = run_env(
+        work.path(),
+        &[
+            "invite",
+            "create",
+            "--json",
+            "--expires-in",
+            "9223372036854775807",
+        ],
+        &[("NOSTR_CONFIG_DIR", &config)],
+    );
+    assert_eq!(code(&output), 2, "{}", stderr(&output));
+    assert_eq!(
+        stderr(&output),
+        "{\"error\":{\"message\":\"--expires-in must be a positive integer (seconds)\",\"code\":2}}\n"
+    );
+
+    // The store refusal is the thrown class: error 1, enveloped.
+    let output = run_env(
+        work.path(),
+        &["invite", "create", "--json"],
+        &[("NOSTR_CONFIG_DIR", &config)],
+    );
+    assert_eq!(code(&output), 1, "{}", stderr(&output));
+    assert_eq!(
+        stderr(&output),
+        "{\"error\":{\"message\":\"the lmdb backend needs --data-dir <path>\",\"code\":1}}\n"
+    );
+}
+
 #[test]
 fn ac32_info_self_is_hex_or_npub_and_a_bad_npub_is_refused() {
     let (work, config, data) = info_work();
@@ -1247,6 +1296,20 @@ fn ac32_info_self_is_hex_or_npub_and_a_bad_npub_is_refused() {
     )
     .expect("the settings write");
 
+    // AC32's bytes: the thrown failure, prefixed, at exit 1. The invocation names no `--json`,
+    // which is the class the criterion pins.
+    let output = run_env(
+        work.path(),
+        &["invite", "create", "--data-dir", &data],
+        &[("NOSTR_CONFIG_DIR", &config)],
+    );
+    assert_eq!(code(&output), 1);
+    assert_eq!(
+        stderr(&output),
+        "Error: info.self npub did not decode to a 32-byte pubkey\n"
+    );
+
+    // The same failure under `--json` is the envelope, with the class's code (R3).
     let output = run_env(
         work.path(),
         &["invite", "create", "--json", "--data-dir", &data],
@@ -1255,7 +1318,7 @@ fn ac32_info_self_is_hex_or_npub_and_a_bad_npub_is_refused() {
     assert_eq!(code(&output), 1);
     assert_eq!(
         stderr(&output),
-        "Error: info.self npub did not decode to a 32-byte pubkey\n"
+        "{\"error\":{\"message\":\"info.self npub did not decode to a 32-byte pubkey\",\"code\":1}}\n"
     );
 }
 
