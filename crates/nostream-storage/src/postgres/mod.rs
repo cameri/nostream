@@ -196,7 +196,10 @@ impl PostgresBackend {
         Gates { nip50, nip56 }
     }
 
-    async fn from_lookup<F>(lookup: &F) -> Result<Self, StorageError>
+    /// Connects the master pool, and the replica pool when `READ_REPLICA_ENABLED=true`, from a
+    /// settings lookup: the one assembly of a connection string the workspace has. `from_env`
+    /// passes the process environment; the CLI passes its `.env`-layered one.
+    pub async fn from_lookup<F>(lookup: &F) -> Result<Self, StorageError>
     where
         F: Fn(&str) -> Option<String> + Sync,
     {

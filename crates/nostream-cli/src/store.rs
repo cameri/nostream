@@ -66,45 +66,15 @@ pub fn selected_backend(settings: &Settings) -> EventStoreBackend {
     nostream_storage::event_store::configured_backend(settings)
 }
 
-/// The Postgres connection string the environment describes, or `None` when neither `DB_URI` nor
-/// `DB_HOST` is set.
+/// Whether the environment names a Postgres server at all: `DB_URI` or `DB_HOST`, the two keys
+/// whose absence the capture reads as "not configured".
 ///
-/// `DB_URI` wins. Otherwise the parts are assembled into a URL, with the user and the password
-/// percent-encoded: a password holding `@` or `/` is common, and a URL that mis-parses it fails
-/// as a wrong host rather than as a wrong password.
-pub fn postgres_url(env: &Environment) -> Option<String> {
-    if let Some(uri) = env.get("DB_URI") {
-        return Some(uri);
-    }
-
-    let host = env.get("DB_HOST")?;
-    let port = env.get("DB_PORT").unwrap_or_else(|| "5432".to_owned());
-    let user = env.get("DB_USER").unwrap_or_else(|| "postgres".to_owned());
-    let database = env.get("DB_NAME").unwrap_or_else(|| "postgres".to_owned());
-
-    let credentials = match env.get("DB_PASSWORD") {
-        Some(password) => format!("{}:{}@", encode_userinfo(&user), encode_userinfo(&password)),
-        None => format!("{}@", encode_userinfo(&user)),
-    };
-
-    Some(format!(
-        "postgres://{credentials}{host}:{port}/{}",
-        encode_userinfo(&database)
-    ))
-}
-
-/// Percent-encodes the characters that would end a userinfo or a path segment.
-fn encode_userinfo(value: &str) -> String {
-    let mut encoded = String::with_capacity(value.len());
-    for byte in value.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b':' => {
-                encoded.push(char::from(byte));
-            }
-            other => encoded.push_str(&format!("%{other:02X}")),
-        }
-    }
-    encoded
+/// The connection itself is assembled once, in
+/// `nostream_storage::postgres`'s `master_options` — `DB_URI` winning over the `DB_*` parts, the
+/// capture's defaults for the parts, percent-encoded credentials — and reached through
+/// `PostgresBackend::from_lookup`. This is the presence rule alone, which is the CLI's decision.
+pub fn postgres_configured(env: &Environment) -> bool {
+    env.get("DB_URI").is_some() || env.get("DB_HOST").is_some()
 }
 
 /// The path the LMDB store lives at, `<data-dir>/lmdb`.
@@ -134,12 +104,12 @@ pub async fn open(
             Ok(Opened::Lmdb(Box::new(store)))
         }
         EventStoreBackend::Postgres => {
-            let Some(url) = postgres_url(env) else {
+            if !postgres_configured(env) {
                 return Err(CliError::command(
                     "PostgreSQL is not configured (set DB_URI or DB_HOST)",
                 ));
-            };
-            let store = nostream_storage::PostgresBackend::connect(&url)
+            }
+            let store = nostream_storage::PostgresBackend::from_lookup(&|key: &str| env.get(key))
                 .await
                 .map_err(|error| storage_error(&error))?;
             Ok(Opened::Postgres(Box::new(store)))
@@ -184,37 +154,20 @@ mod tests {
     }
 
     #[test]
-    fn db_uri_wins_over_the_parts() {
-        let env = environment(&[("DB_URI", "postgres://a@b/c"), ("DB_HOST", "ignored")]);
-        assert_eq!(postgres_url(&env).as_deref(), Some("postgres://a@b/c"));
-    }
-
-    #[test]
-    fn the_parts_build_a_url_with_the_defaults() {
-        let env = environment(&[("DB_HOST", "db.internal")]);
-        assert_eq!(
-            postgres_url(&env).as_deref(),
-            Some("postgres://postgres@db.internal:5432/postgres")
-        );
-    }
-
-    #[test]
-    fn a_password_is_percent_encoded() {
-        let env = environment(&[
-            ("DB_HOST", "db.internal"),
-            ("DB_PORT", "6543"),
-            ("DB_USER", "nostr"),
-            ("DB_PASSWORD", "p@ss/word"),
-            ("DB_NAME", "relay"),
-        ]);
-        assert_eq!(
-            postgres_url(&env).as_deref(),
-            Some("postgres://nostr:p%40ss%2Fword@db.internal:6543/relay")
-        );
-    }
-
-    #[test]
-    fn no_db_configuration_is_no_url() {
-        assert_eq!(postgres_url(&environment(&[])), None);
+    fn the_presence_rule_is_either_key() {
+        assert!(postgres_configured(&environment(&[(
+            "DB_URI",
+            "postgres://a@b/c"
+        )])));
+        assert!(postgres_configured(&environment(&[(
+            "DB_HOST",
+            "db.internal"
+        )])));
+        // The parts without a host name no server: `master_options` needs `DB_HOST` when there
+        // is no `DB_URI`, and the message says so rather than dialling localhost.
+        assert!(!postgres_configured(&environment(&[
+            ("DB_PORT", "5432"),
+            ("DB_USER", "postgres"),
+        ])));
     }
 }

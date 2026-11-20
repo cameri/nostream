@@ -215,7 +215,7 @@ async fn open(
 ) -> Result<store::Opened, CliError> {
     let postgres = store::selected_backend(settings) == EventStoreBackend::Postgres;
 
-    if postgres && store::postgres_url(&context.env).is_none() {
+    if postgres && !store::postgres_configured(&context.env) {
         return Err(CliError::command(format!(
             "PostgreSQL is not configured (set DB_URI or DB_HOST).\n\n{DB_HINT}"
         )));
