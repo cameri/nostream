@@ -7,6 +7,7 @@ import { IEventStrategy } from '../../@types/message-handlers'
 import { isNip43RequestTimestampValid } from '../../utils/nip43'
 import { isProtectedEvent } from '../../utils/event'
 import { IUserRepository } from '../../@types/repositories'
+import { MembershipListPublisher } from '../../utils/nip43-membership'
 import { Settings } from '../../@types/settings'
 import { WebSocketAdapterEvent } from '../../constants/adapter'
 
@@ -18,6 +19,7 @@ export class LeaveRequestEventStrategy implements IEventStrategy<Event, Promise<
     private readonly userRepository: IUserRepository,
     private readonly cache: ICacheAdapter,
     private readonly settings: () => Settings,
+    private readonly membershipList?: MembershipListPublisher,
   ) {}
 
   public async execute(event: Event): Promise<void> {
@@ -64,6 +66,13 @@ export class LeaveRequestEventStrategy implements IEventStrategy<Event, Promise<
       await this.cache.deleteKey(admissionCacheKey(event.pubkey))
     } catch (error) {
       logger('unable to invalidate admission cache for %s: %o', event.pubkey, error)
+    }
+
+    // The admission is revoked whether or not the list could be refreshed, so a failure here must not fail the leave.
+    try {
+      await this.membershipList?.refresh()
+    } catch (error) {
+      logger('unable to refresh the membership list after %s left: %o', event.pubkey, error)
     }
 
     logger('revoked admission for %s', event.pubkey)

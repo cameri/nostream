@@ -512,6 +512,11 @@ export interface Nip43Settings {
   defaultMaxUses?: number
   allowInviteRequests?: boolean
   inviteRequestWhitelist?: Pubkey[]
+  /**
+   * Publish a kind 13534 membership list (a replaceable event signed by the relay's own key) and refresh it
+   * after each successful join or leave. It makes every member's pubkey public, so it defaults to false.
+   */
+  publishMembershipList?: boolean
 }
 
 export interface Nip56Settings {

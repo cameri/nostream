@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:stream'
+import { Event } from './event'
 import { INegentropySessions } from './negentropy'
 import { SubscriptionFilter } from './subscription'
 
@@ -34,6 +35,11 @@ export type IWebSocketAdapter = EventEmitter & {
    * while the client is slow.
    */
   waitForWritable(): Promise<void>
+  /**
+   * Hands an event to every subscriber of this relay (the server adapter and, in a worker, the primary), without
+   * going through this socket's own listeners, which are gone once the client has disconnected.
+   */
+  onBroadcast(event: Event): void
   drainAndClose(reason?: string): void
   /** NIP-77 sessions of this connection. */
   getNegentropySessions(): INegentropySessions
