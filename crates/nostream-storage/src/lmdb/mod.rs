@@ -1478,22 +1478,12 @@ mod tests {
         transaction.abort();
     }
 
-    /// A delete that stops part-way reports what it committed (round 2's finding 1). The loop
-    /// commits one batch per write transaction, so the third of five batches failing must leave
-    /// two batches deleted **and** answer [`StorageError::Partial`] with their row count: the
-    /// `Err` path is the only place an operator learns that rows are gone.
-    #[tokio::test]
-    async fn a_delete_that_stops_part_way_reports_the_rows_it_committed() {
+    /// `total` unsigned kind-1 rows (distinct ids, one second apart), which is all the clean-up
+    /// walk reads: kind, `created_at` and the id the key carries.
+    fn clean_rows(total: usize) -> Vec<EventRecord> {
         use nostream_core::{Event, Signature};
 
-        let directory = tempfile::tempdir().expect("tempdir");
-        let backend = LmdbBackend::open(directory.path())
-            .await
-            .expect("the store opens");
-
-        let batch = events::CLEAN_BATCH_ROWS;
-        let total = 5 * batch;
-        let records: Vec<EventRecord> = (0..total)
+        (0..total)
             .map(|step| {
                 let mut id = [0u8; 32];
                 id[..8].copy_from_slice(&(step as u64).to_be_bytes());
@@ -1507,28 +1497,69 @@ mod tests {
                     sig: Signature::from_byte_array([0; 64]),
                 })
             })
-            .collect();
+            .collect()
+    }
+
+    /// Rewrites one row's stored value: its first `keep` bytes, then `tail`. What the read paths
+    /// decode is the header at `1..1 + EVENT_HEADER_LEN` and the body after it, so `keep` alone
+    /// decides which of the two fails.
+    async fn rewrite_value(backend: &LmdbBackend, id: EventId, keep: usize, tail: &[u8]) {
+        let tail = tail.to_vec();
+        backend
+            .write(move |txn, databases| {
+                let value = databases
+                    .events
+                    .get(txn, id.as_bytes())?
+                    .expect("the row is there")
+                    .to_vec();
+                let mut broken = value[..keep].to_vec();
+                broken.extend_from_slice(&tail);
+                databases.events.put(txn, id.as_bytes(), &broken)?;
+                Ok(())
+            })
+            .await
+            .expect("the row is rewritten");
+    }
+
+    /// Rows left in the `events` database, read without decoding a header — the count a test
+    /// needs once a value is deliberately malformed (`count_by_criteria` cannot walk a truncated
+    /// header, which is why the surviving-row assertions here do not use it).
+    fn stored_rows(backend: &LmdbBackend) -> u64 {
+        let transaction = backend.env.read_txn().expect("a read transaction");
+        backend
+            .databases
+            .events
+            .len(&transaction)
+            .expect("the length")
+    }
+
+    /// A delete that stops part-way reports what it committed (round 2's finding 1). The loop
+    /// commits one batch per write transaction, so the third of five batches failing must leave
+    /// two batches deleted **and** answer [`StorageError::Partial`] with their row count: the
+    /// `Err` path is the only place an operator learns that rows are gone.
+    #[tokio::test]
+    async fn a_delete_that_stops_part_way_reports_the_rows_it_committed() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let backend = LmdbBackend::open(directory.path())
+            .await
+            .expect("the store opens");
+
+        let batch = events::CLEAN_BATCH_ROWS;
+        let total = 5 * batch;
+        let records = clean_rows(total);
         EventRepository::create_many(&backend, &records)
             .await
             .expect("the rows are written");
 
         // The third batch's first row keeps its header — the walk still selects it — and loses
         // its body, so that batch's write transaction fails after the first two committed.
-        let corrupt = records[2 * batch].event.id;
-        backend
-            .write(move |txn, databases| {
-                let value = databases
-                    .events
-                    .get(txn, corrupt.as_bytes())?
-                    .expect("the row is there")
-                    .to_vec();
-                let mut broken = value[..1 + encoding::EVENT_HEADER_LEN].to_vec();
-                broken.push(b'{');
-                databases.events.put(txn, corrupt.as_bytes(), &broken)?;
-                Ok(())
-            })
-            .await
-            .expect("the row is corrupted");
+        rewrite_value(
+            &backend,
+            records[2 * batch].event.id,
+            1 + encoding::EVENT_HEADER_LEN,
+            b"{",
+        )
+        .await;
 
         let outcome = backend
             .delete_by_criteria(&EventCleanCriteria::default())
@@ -1543,12 +1574,90 @@ mod tests {
         }
 
         assert_eq!(
-            backend
-                .count_by_criteria(&EventCleanCriteria::default())
-                .await
-                .expect("a count"),
+            stored_rows(&backend),
             (total - 2 * batch) as u64,
             "the rows the failed batch held are still there"
+        );
+    }
+
+    /// The `Partial` contract's other half: the **zero** arm. A row the walk selected but the
+    /// write cannot decode is a failure before any commit, so the delete answers the plain cause
+    /// — `Partial { deleted: 0 }` would tell an operator that rows are gone when none are.
+    #[tokio::test]
+    async fn a_delete_that_fails_before_any_commit_answers_the_plain_cause() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let backend = LmdbBackend::open(directory.path())
+            .await
+            .expect("the store opens");
+
+        let batch = events::CLEAN_BATCH_ROWS;
+        let total = 2 * batch + 1;
+        let records = clean_rows(total);
+        EventRepository::create_many(&backend, &records)
+            .await
+            .expect("the rows are written");
+
+        // The first batch's first row: its header survives so the walk selects it, and its body
+        // does not decode, so the first write transaction — the only one before any commit —
+        // fails.
+        rewrite_value(
+            &backend,
+            records[0].event.id,
+            1 + encoding::EVENT_HEADER_LEN,
+            b"{",
+        )
+        .await;
+
+        let outcome = backend
+            .delete_by_criteria(&EventCleanCriteria::default())
+            .await;
+        match &outcome {
+            Err(StorageError::Partial { .. }) => {
+                panic!("a failure before any commit must not claim deleted rows: {outcome:?}")
+            }
+            Err(StorageError::InvalidRow { .. }) => {}
+            other => panic!("the plain cause is the answer: {other:?}"),
+        }
+
+        assert_eq!(stored_rows(&backend), total as u64, "nothing was deleted");
+    }
+
+    /// The **read** side's arm: a batch that cannot be collected after an earlier one committed
+    /// reports the committed count too. The corrupt value loses its header, so the walk fails
+    /// while reading the second batch, not while writing it.
+    #[tokio::test]
+    async fn a_delete_that_fails_while_reading_reports_the_rows_it_committed() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let backend = LmdbBackend::open(directory.path())
+            .await
+            .expect("the store opens");
+
+        let batch = events::CLEAN_BATCH_ROWS;
+        let total = 3 * batch;
+        let records = clean_rows(total);
+        EventRepository::create_many(&backend, &records)
+            .await
+            .expect("the rows are written");
+
+        // Only the version byte survives, so `event_header` refuses it when the second batch is
+        // read — after the first batch's write transaction committed.
+        rewrite_value(&backend, records[batch].event.id, 1, b"").await;
+
+        let outcome = backend
+            .delete_by_criteria(&EventCleanCriteria::default())
+            .await;
+        match &outcome {
+            Err(StorageError::Partial { deleted, .. }) => assert_eq!(
+                *deleted, batch as u64,
+                "the first batch committed before the second could be read"
+            ),
+            other => panic!("a stopped read must report its committed rows: {other:?}"),
+        }
+
+        assert_eq!(
+            stored_rows(&backend),
+            (total - batch) as u64,
+            "the rows the unreadable batch holds are still there"
         );
     }
 }
