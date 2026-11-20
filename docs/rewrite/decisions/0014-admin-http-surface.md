@@ -128,6 +128,10 @@ A consequence, stated so it is not read as a defect: the daemon still wires
 route answers `500` in the daemon until that job lands. The oracle proves those routes against
 a real LMDB store; the daemon's composition is what changes when the store is wired.
 
+The one surface handed a bundle of its own is the MCP mode: `nostreamd --mcp-stdio` is a second
+process, so it composes its own `unavailable::stores()` rather than this `Arc` (D18). The two
+composition sites are independent, and wiring the store means wiring both.
+
 ### D8 — Settings are read per request and written through a `nostream-config` store
 
 The capture's `createSettings()`/`loadMergedSettings()` re-reads the files on every call
@@ -307,20 +311,29 @@ refuses appends nothing at all — matching `admin_auth_middleware.rs:52-63`, wh
 and writes nothing.
 
 **The mode is its own process, and the record says so.** `nostreamd --mcp-stdio` returns before
-the daemon's `serve` loop starts (`crates/nostreamd/src/main.rs:135-141`), so the process that
+the daemon's `serve` loop starts (`crates/nostreamd/src/main.rs:139-147`), so the process that
 serves a tool call composes its own `AdminState` over the same config directory rather than
-sharing the console's: the two modes are alternatives, and running both against one directory is
-outside ADR 0012 D9 — `admin-audit.jsonl` (whose compaction is a read, a write and a rename on a
-shared staging path, `crates/nostream-admin/src/state.rs:715-733`) and the settings write both
-assume one writer per configuration.
+sharing the console's: the same session credential, the same `admin-audit.jsonl`, and a
+repository bundle of its own — `unavailable::stores()` in `crates/nostreamd/src/mcp_stdio.rs`,
+composed independently of the relay path's at `crates/nostreamd/src/main.rs:187`, which D7's
+same-`Arc` rule covers for the console and not for this mode. Wiring the store means wiring the
+two sites in one change; until then neither process opens an LMDB directory, so ADR 0012 D9's
+second-writer hazard cannot arise. The two modes are alternatives, and running both against one
+directory is outside ADR 0012 D9 — `admin-audit.jsonl` (whose compaction is a read, a write and a
+rename on a shared staging path, `crates/nostream-admin/src/state.rs:715-733`) and the settings
+write both assume one writer per configuration.
 
 **The audit table is total.** Every tool the router registers has its own entry in
 `crates/nostream-mcp`'s `TOOL_ARGUMENTS` table, and the dispatch path looks a name up there
 instead of defaulting: a tool added without an entry fails
 `every_registered_tool_is_in_the_audit_table`, which reads the router's own list, so no call can
-execute unaudited. "One line per executed call" therefore means what it says — a call whose
-arguments do not parse and a call to a name the router does not register reach no tool and write
-nothing, and every other call writes its line before the handler runs.
+execute unaudited. "One line per executed call" therefore means what it says — a call the
+router's own deserialiser refuses, and a call to a name the router does not register, reach no
+tool and write nothing, and every other call writes its line before the handler runs. The rule an
+entry keeps is *no stricter than that deserialiser*, not "the shape the `inputSchema` states":
+the line is written before the dispatch, which is unconditional, so a stricter check would let a
+call run unaudited. `settings_set`'s entry is therefore vacuous by design — its arguments are a
+raw map and its schema is the half that refuses.
 
 ## Evidence
 

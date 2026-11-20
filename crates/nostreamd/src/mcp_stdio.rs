@@ -8,9 +8,13 @@
 //!
 //! The mode binds **no socket** — `nostreamd` stays the crate that binds, and this mode is not
 //! one of its listeners (D13) — and opens **no store of its own**: the admin state comes from
-//! [`crate::admin_http::compose`] over the same `unavailable::stores()` bundle the relay path
-//! hands over, so no second process ever opens the LMDB directory (ADR 0012 D9). While the store
-//! is unwired, the store-backed tools answer the store's own `NotImplemented` message (R19).
+//! [`crate::admin_http::compose`] over an `unavailable::stores()` bundle composed here, as the
+//! relay path composes its own in `crates/nostreamd/src/main.rs`'s `serve`. The two are
+//! independent `Arc`s in two processes, not one shared value (D7, D18), and while the store is
+//! unwired neither opens an LMDB directory at all — so ADR 0012 D9's second-writer hazard cannot
+//! arise. When the store is wired, `main.rs`'s bundle and this one have to be wired together in
+//! the same change, or this mode keeps answering the store-backed tools with the store's own
+//! `NotImplemented` message (R19).
 //!
 //! The credential is read once here and passed to the server as a value: the server never reads
 //! the environment (R7).

@@ -18,7 +18,7 @@ mod common;
 
 use common::TestMcp;
 use nostream_mcp::{
-    MAX_PAGE_ROWS, TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET,
+    MAX_ROWS_PER_PAGE, TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET,
 };
 use serde_json::{Value, json};
 
@@ -129,9 +129,17 @@ async fn the_required_parameters_are_typed() {
         json!(1),
         "a page of zero rows is not a page: {description}"
     );
+
+    // One number, three readers: the store's no-limit page, the tool's constant and the schema
+    // a client validates against cannot drift apart.
+    assert_eq!(
+        MAX_ROWS_PER_PAGE,
+        nostream_storage::DEFAULT_PAGE_ROWS,
+        "the tool's page bound is the store's own page, the page `truncated` is derived from"
+    );
     assert_eq!(
         listing["inputSchema"]["properties"]["limit"]["maximum"],
-        json!(MAX_PAGE_ROWS),
+        json!(MAX_ROWS_PER_PAGE),
         "the schema's bound is the tool's page bound"
     );
 

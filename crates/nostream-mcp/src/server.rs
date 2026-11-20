@@ -65,7 +65,10 @@ pub const MAX_FILTER_TERMS: usize = 64;
 /// ([`nostream_storage::DEFAULT_PAGE_ROWS`]), which is what a filter carrying no `limit`
 /// materialises. A larger page would need the store's limited iterator, which returns the
 /// newest rows rather than the first.
-pub const MAX_PAGE_ROWS: u64 = nostream_storage::DEFAULT_PAGE_ROWS;
+///
+/// It is not `nostream_storage::MAX_PAGE_ROWS`, the relay's 5,000-row clamp: this is the page a
+/// read materialises, which is the number a backend opens with.
+pub const MAX_ROWS_PER_PAGE: u64 = nostream_storage::DEFAULT_PAGE_ROWS;
 
 /// The refusal for a token that is absent, malformed or expired — the HTTP gate's `401`.
 pub const UNAUTHORIZED: &str = "Unauthorized";
@@ -81,11 +84,18 @@ pub fn audit_action(tool: &str) -> String {
     format!("mcp.{tool}")
 }
 
-/// Whether a call's arguments are the shape the tool's `inputSchema` states.
+/// Whether the router can deserialise a call's arguments: the same type its handler takes.
 type ArgumentsCheck = fn(Option<&Map<String, Value>>) -> bool;
 
-/// The audit table: every tool the router registers, with the check that says whether a call's
-/// arguments are the shape its `inputSchema` states (R9).
+/// The audit table: every tool the router registers, with the check that says whether the
+/// router can deserialise a call's arguments (R9).
+///
+/// The rule each entry keeps is **no stricter than the router's own deserialisation**, not "the
+/// shape the `inputSchema` states". [`ServerHandler::call_tool`] writes the line when the check
+/// answers `true` and then dispatches unconditionally, so a check that refused a call the router
+/// runs would execute it unaudited — R9's guarantee failing open. The check exists to write the
+/// line *before* the handler, never to refuse a call; `settings_set`'s is therefore deliberately
+/// vacuous, because its arguments are a raw map and its `inputSchema` is the half that refuses.
 ///
 /// The dispatch path looks a name up here and has no "everything else is audited" arm, so a
 /// tool added to the router without an entry cannot execute unaudited: it fails
@@ -127,7 +137,13 @@ fn arguments_value(arguments: Option<&Map<String, Value>>) -> Value {
 }
 
 /// The `list_events` criteria: each maps to one [`Filter`] field (R15).
+///
+/// The set is closed. Every field is optional, so serde would otherwise drop a mistyped name —
+/// `kind` for `kinds` is one character of plural away — and answer every row as if no criterion
+/// had been given. `deny_unknown_fields` makes that an argument error and publishes
+/// `additionalProperties: false`, which is the same rule a validating client reads.
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ListEventsArgs {
     /// Kinds to select; absent selects every kind.
     pub kinds: Option<Vec<u64>>,
@@ -146,8 +162,10 @@ pub struct ListEventsArgs {
     pub limit: Option<u64>,
 }
 
-/// The `get_event` arguments.
+/// The `get_event` arguments, and no others: an unknown key is an argument error, as it is for
+/// [`ListEventsArgs`].
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct GetEventArgs {
     /// The event's 64-character hex id, in either case.
     pub id: String,
@@ -158,6 +176,10 @@ pub struct GetEventArgs {
 /// Kept as a raw map rather than a typed struct because the schema's rule is that an explicit
 /// `null` is a value and not an absent key: a typed `Option<Value>` would collapse the two and
 /// turn the validator's `Expected string, got null` into `Invalid request`.
+///
+/// The `JsonSchema` below is the **advertisement** a validating client checks a body against;
+/// `settings_patch` is the **enforcement**, in the handler, and the two state the same rule
+/// twice on purpose — the schema cannot refuse a call, and the parser is not a schema.
 #[derive(Debug, Clone, Deserialize)]
 pub struct SettingsSetArgs {
     /// `{path, value}` or `{changes: [{path, value}, …]}`.
@@ -182,7 +204,7 @@ impl JsonSchema for SettingsSetArgs {
             json!({
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string" },
+                    "path": { "type": "string", "minLength": 1 },
                     "value": {},
                 },
                 "required": ["path", "value"],
@@ -195,7 +217,7 @@ impl JsonSchema for SettingsSetArgs {
                 {
                     "type": "object",
                     "properties": {
-                        "path": { "type": "string" },
+                        "path": { "type": "string", "minLength": 1 },
                         "value": {},
                     },
                     "required": ["path", "value"],
@@ -315,7 +337,7 @@ impl AdminMcp {
     /// No `limit` goes to the store, because the store picks its direction from it: a filter
     /// carrying one is answered newest-first, which would make the payload's order depend on an
     /// unrelated argument. Ascending is the store's unlimited page, whose bound is
-    /// [`MAX_PAGE_ROWS`], so `limit` is applied to that page here and the marker is
+    /// [`MAX_ROWS_PER_PAGE`], so `limit` is applied to that page here and the marker is
     /// `len >= limit`.
     async fn events(&self, criteria: ListEventsArgs) -> Result<(Vec<EventRecord>, bool), McpError> {
         let page = page_size(&criteria)?;
@@ -397,13 +419,13 @@ impl AdminMcp {
 
 /// The page a call asks for, checked against the bounds its `inputSchema` states.
 fn page_size(criteria: &ListEventsArgs) -> Result<usize, McpError> {
-    let limit = criteria.limit.unwrap_or(MAX_PAGE_ROWS);
-    let page = usize::try_from(limit)
-        .ok()
-        .filter(|page| (1..=usize::try_from(MAX_PAGE_ROWS).unwrap_or(usize::MAX)).contains(page));
+    let limit = criteria.limit.unwrap_or(MAX_ROWS_PER_PAGE);
+    let page = usize::try_from(limit).ok().filter(|page| {
+        (1..=usize::try_from(MAX_ROWS_PER_PAGE).unwrap_or(usize::MAX)).contains(page)
+    });
     page.ok_or_else(|| {
         McpError::Criterion(format!(
-            "limit: a page holds between 1 and {MAX_PAGE_ROWS} rows, {limit} was given"
+            "limit: a page holds between 1 and {MAX_ROWS_PER_PAGE} rows, {limit} was given"
         ))
     })
 }

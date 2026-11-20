@@ -17,6 +17,7 @@
 //! | `an_empty_change_list_is_refused` | `{changes: []}` is `Invalid request`, and the attempt is audited |
 //! | `an_unknown_tool_is_a_protocol_error` | an absent tool is JSON-RPC `-32602`, not a result |
 //! | `bad_arguments_are_an_error_result` | wrong-typed arguments are an `isError` result, not a protocol error |
+//! | `an_unknown_argument_is_an_argument_error` | a mistyped key is an argument error naming the accepted fields, not an unfiltered page |
 //! | `an_uppercase_id_finds_its_row` | a stored id pasted in uppercase is the same id, not a confident `null` |
 //! | `a_criterion_the_wire_would_refuse_is_an_argument_error` | a non-hex, short, oversized or over-counted criterion is refused, naming its field |
 //! | `a_refused_criterion_never_reaches_the_store` | the refusal comes before the store: over the unwired store the argument error answers, not `NotImplemented` |
@@ -356,6 +357,57 @@ async fn bad_arguments_are_an_error_result() {
 }
 
 #[tokio::test]
+async fn an_unknown_argument_is_an_argument_error() {
+    let fixture = TestMcp::start().await;
+    fixture
+        .seed(&[event(31, 1, 1_699_999_956), event(32, 7, 1_699_999_957)])
+        .await;
+    let client = fixture.client().await;
+
+    // The field a client works from is `kinds`; `kind` is one character of plural away, and a
+    // serde struct that drops what it does not know answers every row as if no criterion had
+    // been given — a complete-looking page of the wrong rows.
+    let mistyped = client.call(TOOL_LIST_EVENTS, json!({ "kind": [1] })).await;
+    assert_eq!(mistyped.is_error, Some(true), "{}", text(&mistyped));
+    let message = text(&mistyped);
+    assert!(
+        message.contains("unknown field `kind`")
+            && message.contains("`kinds`")
+            && message.contains("`limit`"),
+        "the refusal names the key it got and the keys it takes: {message}"
+    );
+    assert!(
+        fixture.audit_entries().is_empty(),
+        "a call the router's deserialiser refuses reaches no tool and writes nothing"
+    );
+
+    // The same rule in the published schema, which a validating client reads before it calls.
+    let tools = client.tools().await;
+    for name in [TOOL_LIST_EVENTS, TOOL_GET_EVENT] {
+        let tool = tools
+            .iter()
+            .find(|tool| tool.name == name)
+            .unwrap_or_else(|| panic!("{name} is listed"));
+        let schema = Value::Object((*tool.input_schema).clone());
+        assert_eq!(
+            schema["additionalProperties"],
+            json!(false),
+            "{name} admits no key its handler does not take: {schema}"
+        );
+    }
+
+    // The control: the right key is a page of exactly the rows that match.
+    let rows = client.call(TOOL_LIST_EVENTS, json!({ "kinds": [1] })).await;
+    assert_eq!(rows.is_error, Some(false), "{}", text(&rows));
+    assert_eq!(
+        payload(&rows)["events"].as_array().unwrap().len(),
+        1,
+        "{}",
+        text(&rows)
+    );
+}
+
+#[tokio::test]
 async fn an_uppercase_id_finds_its_row() {
     let fixture = TestMcp::start().await;
     let record = event(13, 1, 1_699_999_952);
@@ -598,6 +650,29 @@ async fn the_settings_schema_forbids_what_the_handler_refuses() {
         shapes[1]["properties"]["changes"]["minItems"],
         json!(1),
         "{schema}"
+    );
+
+    // `parse_change` refuses an empty path (`admin_json_body_middleware.rs:138-140`), so the
+    // advertisement says it too: the schema is what a validating client reads, the handler is
+    // what enforces.
+    assert_eq!(
+        shapes[0]["properties"]["path"]["minLength"],
+        json!(1),
+        "an empty path is not a change: {schema}"
+    );
+    assert_eq!(
+        shapes[1]["properties"]["changes"]["items"]["properties"]["path"]["minLength"],
+        json!(1),
+        "nor is it one in a list: {schema}"
+    );
+    let empty_path = client
+        .call(TOOL_SETTINGS_SET, json!({ "path": "", "value": 1 }))
+        .await;
+    assert_eq!(empty_path.is_error, Some(true), "{}", text(&empty_path));
+    let empty_path: Value = serde_json::from_str(&text(&empty_path)).expect("a refusal body");
+    assert_eq!(
+        empty_path["error"], "Invalid request",
+        "the handler refuses what the schema now forbids"
     );
 
     // Every shape the schema allows, the handler takes.
