@@ -17,6 +17,7 @@
 //! | `a_fifo_token_file_refuses_to_start` | a FIFO in the token file's place is refused, not opened: a read of one would stall the door |
 //! | `the_mode_needs_one_credential_flag` | neither flag is an error naming both, and both is an error naming both |
 //! | `an_inherited_descriptor_authenticates` | a document delivered on descriptor 3 answers `tools/list` and a read, with nothing on the command line or in the environment |
+//! | `a_caller_chosen_name_cannot_size_or_forge_the_log` | the one arm reached before any credential cuts and escapes the caller's name, so the log cannot be sized or forged by it |
 //!
 //! The dialogue is hand-written JSON-RPC over the child's pipes: this target proves a property
 //! of the process, so it spawns the binary the way an MCP client does.
@@ -699,5 +700,52 @@ async fn the_relay_path_still_needs_a_secret_for_payments() {
     assert!(
         stderr.contains("Please configure the secret using the SECRET environment variable."),
         "{stderr}"
+    );
+}
+
+/// The log line an unauthenticated call reaches carries a cut and escaped name. That arm runs
+/// before any credential is checked, so the caller chooses the only text on it: the line must
+/// neither take its length from that text nor let a newline in it start a line of the log's own
+/// (R28 leaves the name unbounded, and the audit file's own caller-text sink was closed the same
+/// way — `record_denial` takes a table constant).
+#[tokio::test]
+async fn a_caller_chosen_name_cannot_size_or_forge_the_log() {
+    let prepared = Prepared::new();
+    let mut daemon = Daemon::start(&prepared, &[]);
+    daemon.initialize().await;
+    // Deleting the document is the revocation (R29), and it is what puts these calls on the arm
+    // that logs before it refuses.
+    std::fs::remove_file(&prepared.token).expect("the token file is the fixture's");
+
+    // Wide enough that a line carrying it is unmistakably the caller's, short enough that the
+    // write itself cannot fill an undrained stderr pipe: at 200 000 characters the log write
+    // blocks the daemon before it answers at all, which is the same sink measured a second way.
+    let long = "n".repeat(4_000);
+    let refused = daemon.call(&long, json!({})).await;
+    let forged = "probe\nWARN forged line";
+    let injected = daemon.call(forged, json!({})).await;
+    let outcome = daemon.finish().await;
+
+    for response in [&refused, &injected] {
+        assert_eq!(response["result"]["isError"], true, "{response}");
+        assert_eq!(
+            response["result"]["content"][0]["text"], "Unauthorized",
+            "{response}"
+        );
+    }
+    assert!(
+        !outcome.stderr.contains(&long),
+        "the log carries a prefix of the name, not the name: {} bytes of stderr",
+        outcome.stderr.len()
+    );
+    assert!(
+        !outcome.stderr.contains("\nWARN forged line"),
+        "a newline in the name cannot start a line of the log's own: {}",
+        outcome.stderr
+    );
+    assert!(
+        outcome.stderr.lines().all(|line| line.len() < 1024),
+        "every log line is a line, not a payload: {:?}",
+        outcome.stderr.lines().max_by_key(|line| line.len())
     );
 }

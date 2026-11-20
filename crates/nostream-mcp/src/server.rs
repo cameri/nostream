@@ -598,7 +598,11 @@ impl ServerHandler for AdminMcp {
         let scopes = match self.grant() {
             Ok(scopes) => scopes,
             Err(refusal) => {
-                tracing::warn!(tool = %request.name, refusal, "the MCP call was refused");
+                // The caller's text reaches one record on this arm, and it is written before any
+                // credential is checked: the line carries a cut, escaped prefix, so the name can
+                // neither size it nor end it and start one of its own.
+                let name = logged_name(&request.name);
+                tracing::warn!(tool = %name, refusal, "the MCP call was refused");
                 return Ok(tool_refusal(refusal).into());
             }
         };
@@ -660,6 +664,20 @@ fn tool_refusal(text: &str) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(text)])
 }
 
+/// The most of a caller's tool name a log line carries: the log is a diagnostic, and the name is
+/// the caller's text on an arm reached before any credential.
+const LOGGED_NAME_CHARS: usize = 64;
+
+/// Caller text as a log line may carry it: at most [`LOGGED_NAME_CHARS`] characters, with anything
+/// that is not printable escaped, so a name can neither set the line's length nor end it and start
+/// one of its own. The audit file's caller-text sink is closed the same way — `record_denial`
+/// takes a [`TOOLS`] constant — and this is the remaining place a caller chooses a record's shape.
+fn logged_name(name: &str) -> String {
+    name.chars()
+        .take(LOGGED_NAME_CHARS)
+        .flat_map(|character| character.escape_debug())
+        .collect()
+}
 
 /// A refusal body as an `isError: true` result — the controller's own JSON, rendered (R13).
 fn tool_error_body(body: &Value) -> CallToolResult {
@@ -705,5 +723,17 @@ mod tests {
             served(&router, TOOL_SETTINGS_GET).is_none(),
             "the router's map decides dispatch, so it decides the refusal"
         );
+    }
+
+    /// The log line takes a prefix of the caller's name and no control character from it: the
+    /// name is unbounded and newline-capable, the line is neither.
+    #[test]
+    fn a_logged_name_is_cut_and_escaped() {
+        assert_eq!(logged_name(&"n".repeat(200_000)).len(), LOGGED_NAME_CHARS);
+        assert_eq!(
+            logged_name("probe\nWARN forged line"),
+            r"probe\nWARN forged line"
+        );
+        assert_eq!(logged_name(TOOL_SETTINGS_GET), TOOL_SETTINGS_GET);
     }
 }
