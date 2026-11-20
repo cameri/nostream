@@ -3,7 +3,7 @@ import { randomBytes } from 'crypto'
 import { intro, outro, confirm, text, isCancel, cancel } from '@clack/prompts'
 
 import { ensureConfigBootstrap } from '../utils/bootstrap'
-import { getUnsafeSecretReason, stripQuotes } from '../utils/env-config'
+import { getUnsafeSecretReason, stripQuotes, writeEnvFile } from '../utils/env-config'
 import { getProjectPath } from '../utils/paths'
 import { runStart } from './start'
 
@@ -172,11 +172,8 @@ const ensureEnvFile = async (assumeYes: boolean): Promise<boolean> => {
   const envExamplePath = getProjectPath('.env.example')
 
   if (!fs.existsSync(envPath)) {
-    if (fs.existsSync(envExamplePath)) {
-      fs.copyFileSync(envExamplePath, envPath)
-    } else {
-      fs.writeFileSync(envPath, '', 'utf-8')
-    }
+    // Written with writeEnvFile rather than copied, so the new file is private from the start.
+    writeEnvFile(envPath, fs.existsSync(envExamplePath) ? fs.readFileSync(envExamplePath, 'utf-8') : '')
   }
 
   const current = fs.readFileSync(envPath, 'utf-8')
@@ -204,7 +201,7 @@ const ensureEnvFile = async (assumeYes: boolean): Promise<boolean> => {
   }
 
   process.env.SECRET = secret
-  fs.writeFileSync(envPath, upsertSecret(current, secret), 'utf-8')
+  writeEnvFile(envPath, upsertSecret(current, secret))
   return true
 }
 

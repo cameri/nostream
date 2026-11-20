@@ -262,6 +262,70 @@ describe('runSetup', () => {
     })
   })
 
+  describe('the permissions of .env', function () {
+    // File modes mean nothing on Windows.
+    before(function () {
+      if (process.platform === 'win32') {
+        this.skip()
+      }
+    })
+
+    const modeOf = (file: string) => fs.statSync(file).mode & 0o777
+    const envPath = () => path.join(tempDir, '.env')
+    let originalUmask: number
+
+    beforeEach(() => {
+      // The usual umask, under which a file created with the default mode is readable by every local account.
+      originalUmask = process.umask(0o022)
+    })
+
+    afterEach(() => {
+      process.umask(originalUmask)
+    })
+
+    it('creates .env from .env.example readable by its owner only', async () => {
+      fs.writeFileSync(path.join(tempDir, '.env.example'), 'SECRET=change_me_to_something_long_and_random\nFOO=bar\n')
+      fs.chmodSync(path.join(tempDir, '.env.example'), 0o644)
+      process.env.SECRET = 'replacement-secret'
+
+      expect(await setupCommand.runSetup({ yes: true })).to.equal(0)
+
+      expect(modeOf(envPath())).to.equal(0o600)
+      expect(readEnv()).to.include('SECRET=replacement-secret')
+      expect(readEnv()).to.include('FOO=bar')
+    })
+
+    it('creates .env readable by its owner only when there is no .env.example', async () => {
+      process.env.SECRET = 'replacement-secret'
+
+      expect(await setupCommand.runSetup({ yes: true })).to.equal(0)
+
+      expect(modeOf(envPath())).to.equal(0o600)
+      expect(readEnv()).to.include('SECRET=replacement-secret')
+    })
+
+    it('restricts an existing .env when it stores the secret', async () => {
+      fs.writeFileSync(envPath(), 'SECRET=change_me_to_something_long_and_random\nFOO=bar\n')
+      fs.chmodSync(envPath(), 0o644)
+      process.env.SECRET = 'replacement-secret'
+
+      expect(await setupCommand.runSetup({ yes: true })).to.equal(0)
+
+      expect(modeOf(envPath())).to.equal(0o600)
+      expect(readEnv()).to.include('FOO=bar')
+    })
+
+    it('does not touch an existing .env that already has a secret and needs no write', async () => {
+      fs.writeFileSync(envPath(), 'SECRET=real-secret\n')
+      fs.chmodSync(envPath(), 0o640)
+
+      expect(await setupCommand.runSetup({ yes: true })).to.equal(0)
+
+      expect(modeOf(envPath())).to.equal(0o640)
+      expect(readEnv()).to.equal('SECRET=real-secret\n')
+    })
+  })
+
   describe('a secret that is accepted', () => {
     const safe = [
       'plain-hex-0123456789abcdef',

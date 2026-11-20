@@ -202,6 +202,23 @@ export const readEnvValues = (): Record<string, string> => {
   return values
 }
 
+// .env holds SECRET, which signs the admin session tokens, and other credentials, so only its owner should read
+// it. With the usual umask a file created with the default mode is readable by every local account.
+const PRIVATE_FILE_MODE = 0o600
+
+/** Writes the .env file readable by its owner only, whether it exists already or not. */
+export const writeEnvFile = (envPath: string, content: string): void => {
+  // The mode applies when the file is created, so a new file is never readable by others, not even briefly.
+  fs.writeFileSync(envPath, content, { encoding: 'utf-8', mode: PRIVATE_FILE_MODE })
+
+  // It does not change a file that exists already, which keeps whatever mode it had.
+  try {
+    fs.chmodSync(envPath, PRIVATE_FILE_MODE)
+  } catch {
+    // Best effort: a file system without Unix permissions, or a file we do not own, must not stop the write.
+  }
+}
+
 export const upsertEnvValue = (key: string, value: string): void => {
   const envPath = getEnvFilePath()
   const { lines, parsed } = parseEnvFile()
@@ -218,7 +235,7 @@ export const upsertEnvValue = (key: string, value: string): void => {
     lines.push(replacement)
   }
 
-  fs.writeFileSync(envPath, lines.join('\n').replace(/\n?$/, '\n'), 'utf-8')
+  writeEnvFile(envPath, lines.join('\n').replace(/\n?$/, '\n'))
 }
 
 export const validateEnvValues = (values: Record<string, string>): EnvValidationIssue[] => {
