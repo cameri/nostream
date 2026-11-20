@@ -110,7 +110,7 @@ The mode also needs `admin.enabled: true` in the settings (else every call answe
 surface is unchanged and still authenticates with `SECRET` and `POST /admin/login` sessions.
 
 Run it from the directory that holds `resources/` — the daemon reads its default settings from
-`resources/default-settings.yaml` beside the working directory — and from nowhere else:
+`resources/default-settings.yaml`, resolved against the working directory — and from nowhere else:
 
 ```sh
 install -m 0600 /dev/null /etc/nostream/admin-token.json

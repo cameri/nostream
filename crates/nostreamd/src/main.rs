@@ -59,9 +59,9 @@ struct Cli {
     #[arg(long)]
     mcp_stdio: bool,
 
-    /// The token document the MCP mode reads, on every call. A regular file that carries no
-    /// group or other permission (0600 is the usual mode) or the mode refuses to start; deleting
-    /// or rewriting the file is the revocation.
+    /// The token document the MCP mode reads, on every call. A regular file of at most 4 KiB that
+    /// carries no group or other permission (0600 is the usual mode) or the mode refuses to
+    /// start; deleting or rewriting the file is the revocation.
     #[arg(
         long,
         value_name = "PATH",
@@ -72,8 +72,8 @@ struct Cli {
 
     /// The same token document on an inherited descriptor (conventionally 3), read once at
     /// start: the credential then lives as long as the process. The descriptor's target is held
-    /// to the same rule as `--admin-token-file`: a regular file with no group or other
-    /// permission.
+    /// to the same rule as `--admin-token-file`: a regular file of at most 4 KiB with no group or
+    /// other permission.
     #[arg(
         long,
         value_name = "N",

@@ -331,14 +331,18 @@ router can deserialise a call's arguments (R9), and the scope the call needs (R2
 path looks a name up there instead of defaulting, and `every_registered_tool_has_a_table_row`
 reads the router's own list, so no call can execute unaudited and none can execute ungated. The
 scope column names the read tools explicitly and keeps `settings_set` as the only `write`; a name
-the table does not carry is answered as `write`, which is the failure-closed default the next
-slice's tool meets before its row lands. "One line per executed call" therefore means what it
-says — a call the router's own deserialiser refuses, and a call to a name the router does not
-register, reach no tool and write nothing, and every other call writes its line before the handler
-runs. The rule the argument check keeps is *no stricter than that deserialiser*, not "the shape
-the `inputSchema` states": the line is written before the dispatch, which is unconditional, so a
-stricter check would let a call run unaudited. `settings_set`'s check is therefore vacuous by
-design — its arguments are a raw map and its schema is the half that refuses.
+the table does not carry is **refused there**, with the router's own `-32602 tool not found`,
+before the scope decision and before any line is written — so a tool that arrived without its row
+is unreachable rather than unaudited, and the name an audit line records is always one of the
+table's constants. The scope column's own default (`required_scope` answers `write` for a name the
+table lacks) is the helper's answer to a question `call_tool` no longer has to ask, not a path a
+call travels. "One line per executed call" therefore means what it says — a call the router's own
+deserialiser refuses, and a call to a name the router does not register, reach no tool and write
+nothing, and every other call writes its line before the handler runs. The rule the argument check
+keeps is *no stricter than that deserialiser*, not "the shape the `inputSchema` states": the line
+is written before the dispatch, which is unconditional, so a stricter check would let a call run
+unaudited. `settings_set`'s check is therefore vacuous by design — its arguments are a raw map and
+its schema is the half that refuses.
 
 ### D19 — The stdio door's credential is a scoped token document of its own
 
@@ -370,12 +374,18 @@ place would stall a call instead of failing it. The pre-open check is the one ch
 a FIFO swapped in between it and the open stalls one call, which is the same writer who could
 drop in their own `0600` document — the boundary below.
 
-**One size, too.** A token document names scopes and carries nothing else, so it is bounded at
-4 KiB (`MAX_TOKEN_DOCUMENT_BYTES`) and refused above that, naming the size it found and the cap.
-The bound is one comparison on metadata both forms already read: without it the file form's
-per-call read would be an amount of work the path chooses, and the descriptor form's single read
-could be asked for a `/dev/zero` that never ends — the type check above is what refuses the
-device, and the bound is what keeps a wrong path from being simply a large one.
+**One size, too, and it bounds the read.** A token document names scopes and carries nothing else,
+so it is bounded at 4 KiB (`MAX_TOKEN_DOCUMENT_BYTES`) and refused above that, naming the size it
+found and the cap. The bound is applied twice, because one place is not enough: a comparison on
+metadata both forms already read refuses a document that says it is large, and the read itself is
+taken through `take(cap + 1)` so a document that does not say so is still refused rather than read
+whole — a procfs file whose `st_size` is `0` (`/proc/self/environ` answers `0` and then a body as
+long as the environment is), or a document a writer grows between the `stat` and the read. Without
+the first, the file form's per-call read would be an amount of work the path chooses; without the
+second it would be an amount the path's own metadata chooses. The descriptor form's single read
+could be asked for a
+`/dev/zero` that never ends — the type check above is what refuses the device — and the bound is
+what keeps a wrong path from being simply a large one.
 
 Exactly one of the two is required; both is a refusal, and neither is a refusal naming both.
 `NOSTREAM_ADMIN_TOKEN` is retired: a mode started with it **refuses to start**, naming the variable
@@ -395,23 +405,24 @@ and appends nothing, because there is nothing to attribute it to — that is D18
 
 **What is deliberately not checked, and why.** Beyond the mode the document must carry, no
 ownership check is made: the process's own effective uid is not readable through `std` without
-adding `libc`, and the mode rule is already what decides who can rewrite the file — the group and
-other *write* bits, which is what would let another user replace the document. A symlink is
-followed, so a `0600` link to a `0644` target is refused on the target's mode. The descriptor form
-is checked rather than excused: `stat` on `/proc/self/fd/<n>` answers the target's type, mode and
-size, so a `0644` document on a descriptor is refused exactly as the same file by path is. Its
-mode rule does guard less than the file form's, though — the document is read once at start, so a
-mode change afterwards can neither escalate nor revoke the grant the process already holds.
+adding `libc`, and the mode rule is already what decides who may read the document and who may
+replace it — any group or other bit, so a `0640` file is refused for its group *read* exactly as
+a `0660` one is for its group *write*. A symlink is followed, so a `0600` link to a `0644`
+target is refused on the target's mode. The descriptor form is checked rather than excused:
+`stat` on `/proc/self/fd/<n>` answers the target's type, mode and size, so a `0644` document on a
+descriptor is refused exactly as the same file by path is. Its mode rule does guard less than the
+file form's, though — the document is read once at start, so a mode change afterwards can neither
+escalate nor revoke the grant the process already holds.
 
 **Revocation is the file's lifetime, with no server-side store.** The file form stats the path for
 the type, opens it, then fstats **the descriptor it just opened** for the type, the mode and the
 size, and reads the document from that same handle — `std::fs::metadata` by path, `File::open`,
-`File::metadata()`, `File::read_to_string` and a small JSON parse **per call** — measured at
-`10.6 µs` for a 20-byte document over 10 000 grants in a debug build
-(`crates/nostream-mcp`'s `Credential::grant`, the same path `call_tool` takes), against a tool call
-that reaches an LMDB read or a settings write. That is the price of a revocation that
-needs no session store, no notification path and no restart: narrowing a running door is
-`printf '{"scopes": []}' >` the file.
+`File::metadata()`, `File::read_to_string` through the `take` the size paragraph names, and a small
+JSON parse **per call** — measured at `10.6 µs` for a 20-byte document over 10 000 grants in a
+debug build (`crates/nostream-mcp`'s `Credential::grant`, the same path `call_tool` takes),
+against a tool call that reaches an LMDB read or a settings write. That is the price of a
+revocation that needs no session store, no notification path and no restart: narrowing a running
+door is `printf '{"scopes": []}' >` the file.
 The descriptor form's asymmetry is stated rather than implied away, in `CONFIGURATION.md`, in the
 mode's `--help`, in the crate's docs and here: it is read once, so its lifetime is the process's.
 

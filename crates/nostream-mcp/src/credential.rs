@@ -17,7 +17,8 @@
 //! regular file, it must carry **no group or other permission** (`mode & 0o077 == 0`, which a
 //! `0600` file satisfies and a read-only `0400` one does too), and it must be no larger than
 //! [`MAX_TOKEN_DOCUMENT_BYTES`]. The checks read the metadata of the object the location names,
-//! so a `0644` document is refused whichever way it is delivered (R27).
+//! so a `0644` document is refused whichever way it is delivered, and the read itself is bounded
+//! too, so a metadata reading the read does not agree with cannot make that read larger (R27).
 
 use std::io::Read;
 use std::os::unix::fs::PermissionsExt;
@@ -45,8 +46,12 @@ const GROUP_OR_OTHER: u32 = 0o077;
 /// The most bytes a token document may hold: it names scopes and carries nothing else, so a file
 /// larger than this is a wrong path — a log, a data file — rather than a credential (R27).
 ///
-/// The bound is what keeps the read from being an amount of work the path can choose: the file
-/// form re-reads the document on every call, and neither form may hang on a path that never ends.
+/// The bound holds twice: `checked` refuses the document from the metadata both forms already
+/// read, and [`read_bounded`] stops the read one byte past it. Either alone would leave a path the
+/// other misses — a `st_size` of `0` on a procfs file, a document a writer grows between the stat
+/// and the read — and the file form re-reads the document on every call, so the read is what has
+/// to stay the same amount of work whatever the path answers. Neither form may hang on a path
+/// that never ends: the type check refuses a pipe or a device before the read.
 pub const MAX_TOKEN_DOCUMENT_BYTES: u64 = 4 * 1024;
 
 /// The scopes a token document grants.
@@ -173,7 +178,8 @@ impl Credential {
             ))
         })?;
         checked(&metadata, &location)?;
-        let text = std::fs::read_to_string(&path).map_err(|error| unreadable(&location, &error))?;
+        let file = std::fs::File::open(&path).map_err(|error| unreadable(&location, &error))?;
+        let text = read_bounded(file, &location)?;
         let named = format!("on descriptor {fd}");
         let document = TokenDocument::parse(&text, &named)?;
         Ok(Self {
@@ -221,15 +227,36 @@ fn read_file(path: &Path) -> Result<Scopes, McpError> {
     if !kind.is_file() {
         return Err(not_regular(&location));
     }
-    let mut file = std::fs::File::open(path).map_err(|error| unreadable(&location, &error))?;
+    let file = std::fs::File::open(path).map_err(|error| unreadable(&location, &error))?;
     let metadata = file
         .metadata()
         .map_err(|error| unreadable(&location, &error))?;
     checked(&metadata, &location)?;
-    let mut text = String::new();
-    file.read_to_string(&mut text)
-        .map_err(|error| unreadable(&location, &error))?;
+    let text = read_bounded(file, &location)?;
     TokenDocument::parse(&text, &named)?.scopes(&named)
+}
+
+/// The document's text, with the bound applied to the read itself and not only to the metadata.
+///
+/// [`checked`] refuses the document from a size both forms already hold; this is the half that
+/// holds when the two disagree — a procfs file whose `st_size` is `0`, or a document a writer grows
+/// between the `stat` and the read. `take` stops one byte past the cap, so the read is bounded
+/// whatever the path answers, and a document that outgrew its metadata is refused naming the cap
+/// rather than read whole.
+fn read_bounded(source: impl Read, location: &str) -> Result<String, McpError> {
+    let cap = usize::try_from(MAX_TOKEN_DOCUMENT_BYTES).unwrap_or(usize::MAX);
+    let mut text = String::new();
+    source
+        .take(MAX_TOKEN_DOCUMENT_BYTES + 1)
+        .read_to_string(&mut text)
+        .map_err(|error| unreadable(location, &error))?;
+    if text.len() > cap {
+        return Err(McpError::Credential(format!(
+            "{location} carries more than {MAX_TOKEN_DOCUMENT_BYTES} bytes: a token document is at \
+             most that many — it lists scope names and carries nothing else"
+        )));
+    }
+    Ok(text)
 }
 
 /// The three checks both forms make, from the metadata already in hand: a regular file, no group
@@ -237,7 +264,8 @@ fn read_file(path: &Path) -> Result<Scopes, McpError> {
 ///
 /// The metadata is the one the object the location names answers — the descriptor's own for the
 /// file form, and the target the `/proc` link resolves to for the descriptor form — so both forms
-/// are judged on the same three facts, and neither read is one a caller can grow or stall.
+/// are judged on the same three facts, and neither read is one a caller can grow or stall, because
+/// [`read_bounded`] holds the read to the same size this check refuses on.
 fn checked(metadata: &std::fs::Metadata, location: &str) -> Result<(), McpError> {
     if !metadata.is_file() {
         return Err(not_regular(location));
@@ -246,7 +274,8 @@ fn checked(metadata: &std::fs::Metadata, location: &str) -> Result<(), McpError>
     if mode & GROUP_OR_OTHER != 0 {
         return Err(McpError::Credential(format!(
             "{location} is mode {mode:04o}: it must carry no group or other permission \
-             ({TOKEN_FILE_MODE:04o} is the usual mode), so no one but its owner can rewrite it"
+             ({TOKEN_FILE_MODE:04o} is the usual mode), so no one but its owner can read or \
+             rewrite it"
         )));
     }
     let size = metadata.len();
@@ -268,4 +297,44 @@ fn not_regular(location: &str) -> McpError {
 
 fn unreadable(location: &str, error: &std::io::Error) -> McpError {
     McpError::Credential(format!("{location} could not be read: {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use std::io::Cursor;
+
+    use super::*;
+
+    /// [`checked`] refuses the document from metadata; the read does not trust it. A reader that
+    /// answers more than the metadata did — a procfs file whose `st_size` is `0`, a document a
+    /// writer grew between the `stat` and the read — is stopped one byte past the cap rather than
+    /// read whole (R27), which is what the `take` in [`read_bounded`] is for.
+    #[test]
+    fn the_read_stops_one_byte_past_the_cap() {
+        let cap = usize::try_from(MAX_TOKEN_DOCUMENT_BYTES).unwrap();
+        let mut document = Cursor::new(vec![b' '; cap * 2]);
+        let refused = read_bounded(&mut document, "the document").expect_err("a read past the cap");
+        assert!(
+            refused.to_string().contains("more than 4096"),
+            "the refusal names the cap: {refused}"
+        );
+        // Without the `take` the read runs to the end of whatever the path answers, which is how
+        // a `st_size` of `0` became a 103 539-byte read.
+        assert_eq!(
+            document.position(),
+            MAX_TOKEN_DOCUMENT_BYTES + 1,
+            "the read stopped one byte past the cap"
+        );
+    }
+
+    /// A document inside the cap is read whole: the bound refuses the wrong path, not the
+    /// credential.
+    #[test]
+    fn a_document_at_the_cap_is_read() {
+        let cap = usize::try_from(MAX_TOKEN_DOCUMENT_BYTES).unwrap();
+        let document = Cursor::new(vec![b' '; cap]);
+        assert_eq!(read_bounded(document, "the document").unwrap().len(), cap);
+    }
 }

@@ -463,7 +463,9 @@ async fn the_help_text_names_the_credential() {
         .collect::<Vec<_>>()
         .join(" ");
     // The mode rule, not only its usual mode: `0600` is the example, and a `0400` document is
-    // accepted, so the help has to state the rule the door enforces (R27, R30).
+    // accepted, so the help has to state the rule the door enforces (R27, R30). `4 KiB` is there
+    // for the same reason: the size rule is a refusal an operator meets, and the flag entries
+    // state it beside the mode rule rather than leaving it to the mode's paragraph.
     for needle in [
         "--mcp-stdio",
         "--admin-token-file",
@@ -472,6 +474,7 @@ async fn the_help_text_names_the_credential() {
         "regular file",
         "no group or other permission",
         "0600",
+        "4 KiB",
         "scopes",
         "write",
         "admin.enabled",
