@@ -718,6 +718,45 @@ fn ac16_start_names_the_flags_overlays_and_the_up_arguments() {
     );
 }
 
+/// `start` must not overwrite a deployment whose only settings file is the deprecated
+/// `settings.json`. Copying the defaults into `settings.yaml` makes the loader prefer them —
+/// `nostream_config::load_user_settings` reads the yaml first — so the deployment's overrides
+/// would vanish silently on the next start. The capture's own bootstrap has this defect; this
+/// port's does not (round 2, the primary's finding).
+#[test]
+fn a_legacy_settings_json_survives_the_bootstrap() {
+    let (work, log) = compose_work();
+    write_shim(work.path(), "docker", &log);
+
+    let config = work.path().join("config");
+    fs::create_dir_all(&config).expect("the config directory");
+    fs::write(
+        config.join("settings.json"),
+        "{\"limits\":{\"event\":{\"content\":[{\"maxLength\":4242}]}}}",
+    )
+    .expect("the legacy settings write");
+    let env = [("NOSTR_CONFIG_DIR", config.to_str().expect("a utf-8 path"))];
+
+    let output = run_env(work.path(), &["start"], &env);
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    assert!(
+        !config.join("settings.yaml").exists(),
+        "the bootstrap wrote a settings.yaml over the legacy file"
+    );
+
+    let output = run_env(
+        work.path(),
+        &["config", "get", "limits.event.content[0].maxLength"],
+        &env,
+    );
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    assert_eq!(
+        stdout(&output).trim(),
+        "4242",
+        "the legacy override is still effective: {output:?}"
+    );
+}
+
 #[test]
 fn ac17_the_port_override_file_is_named_then_removed() {
     let (work, log) = compose_work();

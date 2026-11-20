@@ -38,7 +38,14 @@ pub async fn ensure_not_root() -> Result<(), CliError> {
 }
 
 /// `ensureConfigBootstrap`: the config directory, and `settings.yaml` copied from the defaults
-/// when it is absent.
+/// when neither it nor the deprecated `settings.json` is there.
+///
+/// The legacy check is not the capture's: `src/cli/utils/bootstrap.ts` tests only
+/// `settings.yaml`, so `start` copies the defaults over a deployment that still keeps its
+/// overrides in `settings.json` — and because the loader prefers `settings.yaml`
+/// (`nostream_config::load_user_settings`), every override in the legacy file is silently
+/// replaced by a default on the next start. Testing both files keeps that deployment effective
+/// and leaves the migration of `settings.json` to `settings.yaml` to the operator.
 pub fn ensure_config_bootstrap(cwd: &Path) -> Result<(), CliError> {
     let paths = resolve_paths(cwd, None);
 
@@ -49,7 +56,7 @@ pub fn ensure_config_bootstrap(cwd: &Path) -> Result<(), CliError> {
         ))
     })?;
 
-    if !paths.settings_file.exists() {
+    if !paths.settings_file.exists() && !paths.legacy_settings_file.exists() {
         if !paths.default_settings_file.exists() {
             return Err(CliError::command(format!(
                 "the default settings file is missing: {}",
