@@ -380,13 +380,15 @@ async fn an_out_of_range_kind_is_refused_and_deletes_nothing() {
 /// environment commits once per batch and a second writer gets in between them.
 ///
 /// `last_txn_id` counts committed write transactions, so the assertion is the boundary itself
-/// rather than a timing: 8 500 rows at `CLEAN_BATCH_ROWS` = 1 000 is eight full batches and a
-/// 500-row tail, one commit each.
+/// rather than a timing: 25 001 rows at the shipped `CLEAN_BATCH_ROWS` = 10 000 are two full
+/// batches and a one-row tail, one commit each. The row count is a literal on purpose — a batch
+/// size large enough to make this one transaction fails here, so the constant cannot move without
+/// a red, and ADR 0015's D13 is where a move is argued.
 #[tokio::test]
 async fn the_writer_is_released_between_batches() {
     let (_directory, backend) = store().await;
 
-    let total = 8_500i64;
+    let total = 25_001i64;
     let rows: Vec<EventRecord> = (0..total).map(|step| plain(1_700_000_000 + step)).collect();
     backend
         .create_many(&rows)
@@ -402,7 +404,7 @@ async fn the_writer_is_released_between_batches() {
 
     assert_eq!(deleted, total as u64, "the delete removes every row");
     assert!(
-        committed >= 9,
+        committed >= 3,
         "the delete committed {committed} write transaction(s) for {total} rows: one batch per \
          transaction is what releases the writer, one transaction for the run is the defect"
     );
