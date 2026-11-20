@@ -620,10 +620,11 @@ enum ConfigCommand {
         #[arg(long = "type", value_name = "type")]
         value_type: Option<String>,
         /// Validate the merged settings before writing (the default).
-        ///
-        /// The capture declares both spellings and reads them as one boolean
-        /// (`src/cli/index.ts:339-340,412`): `--validate` is the default named, and the last
-        /// flag wins (see the dispatch).
+        // The capture declares both spellings and reads them as one boolean
+        // (`src/cli/index.ts:339-340,412`): `--validate` is the default named, not a second mode,
+        // and the last flag wins through `overrides_with`. Kept out of the doc comment because
+        // clap renders it under `--help`, and a per-command page carries the capture's spellings
+        // and one-line descriptions, not the sources behind them (ADR 0015 D1).
         #[arg(long, overrides_with = "no_validate")]
         validate: bool,
         /// Write the value without validating the merged settings.
