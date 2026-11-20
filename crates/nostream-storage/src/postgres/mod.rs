@@ -101,12 +101,6 @@ impl Default for PoolBounds {
 }
 
 impl PostgresBackend {
-    /// Connects a master pool and, when `READ_REPLICA_ENABLED=true`, the replica pool this
-    /// worker reads from. Both pools use the capture's `DB_*` names and defaults.
-    pub async fn from_env() -> Result<Self, StorageError> {
-        Self::from_lookup(&|name| env::var(name).ok()).await
-    }
-
     /// Connects the master pool from `url`; with no replica configured the reader is the
     /// master pool itself (`src/database/client.ts:97-100`). The harness and the tests use
     /// this.
@@ -199,8 +193,9 @@ impl PostgresBackend {
     /// Connects the master pool, and the replica pool when `READ_REPLICA_ENABLED=true`, from a
     /// settings lookup: the one assembly of a Postgres connection the workspace has. It builds
     /// `PgConnectOptions` field by field from `master_parts`/`replica_parts` — no URL is
-    /// composed and no value is encoded, because nothing is parsed back out. `from_env` passes
-    /// the process environment; the CLI passes its `.env`-layered one.
+    /// composed and no value is encoded, because nothing is parsed back out. The caller owns the
+    /// lookup, so a deployment's `.env` layer is reachable: the CLI passes its own environment's
+    /// `get`. `master_only_from_lookup` is the copy's door on the same assembly.
     pub async fn from_lookup<F>(lookup: &F) -> Result<Self, StorageError>
     where
         F: Fn(&str) -> Option<String> + Sync,
@@ -225,10 +220,10 @@ impl PostgresBackend {
     /// reachable.
     ///
     /// The migration copies from the master and nothing else, so a replica that is offline
-    /// during a cutover must not be able to stop it: `from_env` dials both and fails when the
-    /// replica is down, which is right for the relay and wrong for a one-shot copy. The copy's
-    /// own probe is what waits for the source, and `MIGRATION_CONNECT_CAP_MS` is the default
-    /// it waits with.
+    /// during a cutover must not be able to stop it: `from_lookup` dials both when the replica
+    /// is enabled and fails when it is down, which is right for the relay and wrong for a
+    /// one-shot copy. The copy's own probe is what waits for the source, and
+    /// `MIGRATION_CONNECT_CAP_MS` is the default it waits with.
     pub fn master_only_from_env() -> Result<Self, StorageError> {
         Self::master_only_from_lookup(&|name| env::var(name).ok())
     }

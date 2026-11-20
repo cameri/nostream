@@ -219,8 +219,8 @@ fn the_help_route_does_not_print_a_second_import_page() {
 
 /// `import` reaches Postgres through the one assembly and the CLI's own environment, so a
 /// `DB_*` value in `.env` is configured for it exactly as it is for every other store command.
-/// Before this the command called `PostgresBackend::from_env`, which reads the process
-/// environment alone: the file layer was invisible and the run dialled the default host
+/// Before this the command called `PostgresBackend::from_env` (since deleted), which read the
+/// process environment alone: the file layer was invisible and the run dialled the default host
 /// (round 2, the architecture review's note).
 #[test]
 fn the_database_settings_are_read_from_the_env_file() {
