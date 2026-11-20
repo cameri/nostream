@@ -451,8 +451,8 @@ pub fn write_token(config_dir: &Path, scopes: &[&str]) -> PathBuf {
     path
 }
 
-/// Writes `contents` to `path` with mode `0600`: the only mode the token file may carry, so a
-/// fixture that wrote anything else would be refused before any case ran (R27).
+/// Writes `contents` to `path` at mode `0600`, which satisfies the token document's rule — no
+/// group or other permission — so no case is refused at start for its mode (R27).
 pub fn write_private(path: &Path, contents: &str) {
     use std::os::unix::fs::PermissionsExt;
 

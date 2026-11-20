@@ -31,11 +31,13 @@ mod credential;
 mod error;
 mod server;
 
-pub use credential::{ACCEPTED_SCOPES, Credential, SCOPE_WRITE, Scopes, TOKEN_FILE_MODE};
+pub use credential::{
+    ACCEPTED_SCOPES, Credential, MAX_TOKEN_DOCUMENT_BYTES, SCOPE_WRITE, Scopes, TOKEN_FILE_MODE,
+};
 pub use error::McpError;
 pub use server::{
     AUDIT_DENIED, AdminMcp, FORBIDDEN, GetEventArgs, ListEventsArgs, MAX_FILTER_TERMS,
-    MAX_ROWS_PER_PAGE, MCP_INSTRUCTIONS, MCP_SERVER_NAME, NOT_FOUND, SettingsSetArgs,
-    TOOL_ARGUMENTS, TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET,
+    MAX_ROWS_PER_PAGE, MCP_INSTRUCTIONS, MCP_SERVER_NAME, NOT_FOUND, Requires, SettingsSetArgs,
+    TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET, TOOLS, Tool,
     UNAUTHORIZED, arguments_parse, audit_action, required_scope,
 };

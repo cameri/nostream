@@ -45,8 +45,8 @@ pub fn resolve_credential(file: Option<&Path>, fd: Option<i32>) -> Result<Creden
     if std::env::var_os(RETIRED_TOKEN_ENV).is_some() {
         return Err(DaemonError::Setup(format!(
             "{RETIRED_TOKEN_ENV} is retired: a console session token does not authenticate \
-             --mcp-stdio. Start the mode with --admin-token-file <path> (mode 0600) or \
-             --admin-token-fd <n>."
+             --mcp-stdio. Start the mode with --admin-token-file <path> (a regular file with no \
+             group or other permission, 0600 being the usual mode) or --admin-token-fd <n>."
         )));
     }
     match (file, fd) {

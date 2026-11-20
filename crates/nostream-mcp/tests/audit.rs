@@ -4,9 +4,8 @@
 //! |---|---|
 //! | `each_call_appends_one_line` | four calls append five lines in call order — the four `mcp.*` lines, then `settings_set`'s own `settings.updated` |
 //! | `a_refused_call_appends_nothing` | a call with bad arguments and a call with no credential each leave the file untouched |
-//! | `every_registered_tool_is_in_the_audit_table` | the audit table is total: no tool the router registers can execute unaudited |
+//! | `every_registered_tool_has_a_table_row` | the table is total over the router's own list, so no tool can execute unaudited or ungated |
 //! | `the_audit_check_is_no_stricter_than_the_router` | the table's rule is the router's deserialiser, not the schema: a stricter check would fail open |
-//!
 //! R9 appends the `mcp.*` line at dispatch, before the handler's work, so the order in the file
 //! is the order of the calls and a domain line always follows its own dispatch line. The one
 //! refusal that does write is a credential's scope denial — `mcp.denied`, R28 — and it has its
@@ -20,7 +19,7 @@ use std::collections::BTreeSet;
 
 use common::{TestMcp, event, id_of, object, text};
 use nostream_mcp::{
-    TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET, audit_action,
+    TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET, TOOLS, audit_action,
 };
 use serde_json::json;
 
@@ -116,12 +115,12 @@ async fn a_refused_call_appends_nothing() {
 }
 
 #[tokio::test]
-async fn every_registered_tool_is_in_the_audit_table() {
+async fn every_registered_tool_has_a_table_row() {
     let fixture = TestMcp::start().await;
     let client = fixture.client().await;
 
     // The router's own list: `tools/list` is what `ToolRouter::list_all()` answers, so a tool
-    // added with a `#[tool]` method and no table entry is in `registered` and nowhere else.
+    // added with a `#[tool]` method and no row is in `registered` and nowhere else.
     let registered: BTreeSet<String> = client
         .tools()
         .await
@@ -130,15 +129,12 @@ async fn every_registered_tool_is_in_the_audit_table() {
         .collect();
     for name in &registered {
         assert!(
-            nostream_mcp::arguments_parse(name, None).is_some(),
-            "tool {name} is registered but has no TOOL_ARGUMENTS entry, so its calls would \
-             execute unaudited"
+            TOOLS.iter().any(|row| row.name == name),
+            "tool {name} is registered but has no TOOLS row, so its calls would execute \
+             unaudited and with no scope declared"
         );
     }
-    let tabled: BTreeSet<String> = nostream_mcp::TOOL_ARGUMENTS
-        .iter()
-        .map(|(name, _)| (*name).to_owned())
-        .collect();
+    let tabled: BTreeSet<String> = TOOLS.iter().map(|row| row.name.to_owned()).collect();
     assert_eq!(
         tabled, registered,
         "the table names exactly the tools the router registers"

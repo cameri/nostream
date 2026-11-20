@@ -42,10 +42,12 @@ struct Cli {
     /// Serve the admin MCP server on stdin/stdout and exit when stdin closes. Binds no socket.
     ///
     /// Every call is decided by a scoped token document, delivered either by a regular file
-    /// (`--admin-token-file <path>`, which must be mode 0600 and is re-read on every call, so
-    /// deleting or rewriting it revokes or narrows the credential) or on an inherited descriptor
+    /// (`--admin-token-file <path>`, re-read on every call, so deleting or rewriting it revokes
+    /// or narrows the credential) or on an inherited descriptor
     /// (`--admin-token-fd <n>`, read once at start and valid for the life of the process).
-    /// Exactly one of the two is required.
+    /// Exactly one of the two is required. Either way the target must be a regular file that
+    /// carries no group or other permission — 0600 is the usual mode; a 0644 file refuses the
+    /// start — and at most 4 KiB.
     ///
     /// The document is `{"scopes": ["write"]}`; a document with no scopes grants the read tools
     /// (`settings_get`, `list_events`, `get_event`), and the "write" scope adds `settings_set`.
@@ -57,8 +59,9 @@ struct Cli {
     #[arg(long)]
     mcp_stdio: bool,
 
-    /// The token document the MCP mode reads, on every call. A regular file at mode 0600 or the
-    /// mode refuses to start; deleting or rewriting the file is the revocation.
+    /// The token document the MCP mode reads, on every call. A regular file that carries no
+    /// group or other permission (0600 is the usual mode) or the mode refuses to start; deleting
+    /// or rewriting the file is the revocation.
     #[arg(
         long,
         value_name = "PATH",
@@ -68,7 +71,9 @@ struct Cli {
     admin_token_file: Option<PathBuf>,
 
     /// The same token document on an inherited descriptor (conventionally 3), read once at
-    /// start: the credential then lives as long as the process.
+    /// start: the credential then lives as long as the process. The descriptor's target is held
+    /// to the same rule as `--admin-token-file`: a regular file with no group or other
+    /// permission.
     #[arg(
         long,
         value_name = "N",

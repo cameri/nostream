@@ -61,7 +61,8 @@ fn token_document(scopes: &[&str]) -> String {
     serde_json::to_string(&json!({ "scopes": scopes })).unwrap()
 }
 
-/// Writes `contents` to `path` at mode 0600, the mode the credential requires (R27).
+/// Writes `contents` to `path` at mode 0600: no group or other permission, which is what the
+/// credential requires (R27).
 fn write_private(path: &Path, contents: &str) {
     std::fs::write(path, contents).unwrap();
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
@@ -456,12 +457,20 @@ async fn the_help_text_names_the_credential() {
         .await
         .expect("the binary answers --help");
     assert!(output.status.success(), "--help exits 0");
-    let help = String::from_utf8_lossy(&output.stdout);
+    // Clap wraps at the terminal width, so a phrase needle is matched against the flattened text.
+    let help = String::from_utf8_lossy(&output.stdout)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    // The mode rule, not only its usual mode: `0600` is the example, and a `0400` document is
+    // accepted, so the help has to state the rule the door enforces (R27, R30).
     for needle in [
         "--mcp-stdio",
         "--admin-token-file",
         "--admin-token-fd",
         "NOSTREAM_ADMIN_TOKEN",
+        "regular file",
+        "no group or other permission",
         "0600",
         "scopes",
         "write",
@@ -469,6 +478,10 @@ async fn the_help_text_names_the_credential() {
     ] {
         assert!(help.contains(needle), "the help names `{needle}`: {help}");
     }
+    assert!(
+        !help.contains("must be mode 0600"),
+        "the help states the rule rather than an example of it: {help}"
+    );
 }
 
 /// Proof 1: a console session token in the retired variable does not start the door — the mode
@@ -504,7 +517,13 @@ async fn a_group_readable_token_file_refuses_to_start() {
 
     assert_eq!(code, Some(1), "{stderr}");
     assert!(stderr.contains("0644"), "the mode it found: {stderr}");
-    assert!(stderr.contains("0600"), "the mode it needs: {stderr}");
+    assert!(stderr.contains("0600"), "the usual mode: {stderr}");
+    // The rule, not only one example of it: `0400` is accepted, so the refusal has to say what it
+    // enforces (R27).
+    assert!(
+        stderr.contains("no group or other permission"),
+        "the rule it enforces: {stderr}"
+    );
 }
 
 /// A FIFO in the token file's place is refused rather than opened: the door re-reads the document

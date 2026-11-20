@@ -12,6 +12,12 @@
 //! is read once at start, so its lifetime is the process's. Nothing here is cached for the file
 //! form, deliberately — one small file per call is the price of a revocation that needs no
 //! server-side store.
+//!
+//! Both forms are checked the same way before the document is parsed: the target must be a
+//! regular file, it must carry **no group or other permission** (`mode & 0o077 == 0`, which a
+//! `0600` file satisfies and a read-only `0400` one does too), and it must be no larger than
+//! [`MAX_TOKEN_DOCUMENT_BYTES`]. The checks read the metadata of the object the location names,
+//! so a `0644` document is refused whichever way it is delivered (R27).
 
 use std::io::Read;
 use std::os::unix::fs::PermissionsExt;
@@ -27,12 +33,21 @@ pub const SCOPE_WRITE: &str = "write";
 /// The scopes a token document may name, as a refusal states them.
 pub const ACCEPTED_SCOPES: &[&str] = &[SCOPE_WRITE];
 
-/// The mode a token file must carry: owner read and write, and nothing for anyone else (R27).
+/// The mode a token document is usually written with: owner read and write, and nothing for
+/// anyone else. It is the number the refusal names as its example; the rule is [`GROUP_OR_OTHER`]'s
+/// — no group or other permission — which a read-only `0400` document satisfies too (R27).
 pub const TOKEN_FILE_MODE: u32 = 0o600;
 
-/// The bits a token file must not carry: any group or other permission, write included — a file
-/// another user could rewrite is not one this door may trust.
+/// The bits a token document must not carry: any group or other permission, write included — a
+/// file another user could rewrite is not one this door may trust.
 const GROUP_OR_OTHER: u32 = 0o077;
+
+/// The most bytes a token document may hold: it names scopes and carries nothing else, so a file
+/// larger than this is a wrong path — a log, a data file — rather than a credential (R27).
+///
+/// The bound is what keeps the read from being an amount of work the path can choose: the file
+/// form re-reads the document on every call, and neither form may hang on a path that never ends.
+pub const MAX_TOKEN_DOCUMENT_BYTES: u64 = 4 * 1024;
 
 /// The scopes a token document grants.
 ///
@@ -90,16 +105,17 @@ impl TokenDocument {
     ///
     /// An unknown scope is never silently dropped: a document that says `admin` and is read as
     /// "no scopes" would answer `Forbidden` to calls the operator believed it allowed, with the
-    /// typo nowhere in sight.
-    fn scopes(&self) -> Result<Scopes, McpError> {
+    /// typo nowhere in sight. `location` names the document the way [`TokenDocument::parse`]
+    /// does, so every document refusal says which document is being read.
+    fn scopes(&self, location: &str) -> Result<Scopes, McpError> {
         let mut scopes = Scopes::read_only();
         for name in &self.scopes {
             if name == SCOPE_WRITE {
                 scopes = Scopes::writing();
             } else {
                 return Err(McpError::Credential(format!(
-                    "the admin token document names an unknown scope {name:?}: the accepted set \
-                     is {ACCEPTED_SCOPES:?}, and reading is granted to every token"
+                    "the admin token document {location} names an unknown scope {name:?}: the \
+                     accepted set is {ACCEPTED_SCOPES:?}, and reading is granted to every token"
                 )));
             }
         }
@@ -137,7 +153,11 @@ impl Credential {
 
     /// The same document on a descriptor the parent passed (`--admin-token-fd`), read once.
     ///
-    /// It reads a regular file and a pipe alike, from the descriptor's own offset.
+    /// The descriptor must carry a **regular file**, checked exactly as the file form's target is
+    /// — type, mode and size, from the metadata of the object the `/proc` path names — because a
+    /// descriptor is a way to deliver the document, not a way around its rules (R27). The text is
+    /// then read through that path, which opens the file afresh from its start rather than
+    /// continuing from whatever offset the parent left.
     ///
     /// `shortcut: /proc/self/fd/<n> is the readable path to an inherited descriptor and needs no
     /// unsafe — the workspace denies unsafe_code and its one carve-out is the storage crate's
@@ -145,15 +165,19 @@ impl Credential {
     /// point at which a raw-fd handle earns its audited unsafe block`
     pub fn from_descriptor(fd: i32) -> Result<Self, McpError> {
         let path = PathBuf::from(format!("/proc/self/fd/{fd}"));
-        let text = std::fs::read_to_string(&path).map_err(|error| {
+        let location = format!("the admin token document on descriptor {fd}");
+        let metadata = std::fs::metadata(&path).map_err(|error| {
             McpError::Credential(format!(
                 "--admin-token-fd {fd} could not be read: {error} — pass the token document on an \
                  open descriptor, conventionally 3"
             ))
         })?;
-        let document = TokenDocument::parse(&text, &format!("on descriptor {fd}"))?;
+        checked(&metadata, &location)?;
+        let text = std::fs::read_to_string(&path).map_err(|error| unreadable(&location, &error))?;
+        let named = format!("on descriptor {fd}");
+        let document = TokenDocument::parse(&text, &named)?;
         Ok(Self {
-            source: Source::Delivered(document.scopes()?),
+            source: Source::Delivered(document.scopes(&named)?),
         })
     }
 
@@ -190,41 +214,58 @@ impl Credential {
 /// other write bits included — upgrade when a root-run mode has to refuse a file owned by another
 /// user, which needs a dependency this crate was not given`
 fn read_file(path: &Path) -> Result<Scopes, McpError> {
+    let location = format!("the admin token file {}", path.display());
+    let named = path.display().to_string();
     // Before the open: a FIFO's open blocks, so the type has to be known first.
-    let kind = std::fs::metadata(path).map_err(|error| unreadable(path, &error))?;
+    let kind = std::fs::metadata(path).map_err(|error| unreadable(&location, &error))?;
     if !kind.is_file() {
-        return Err(not_regular(path));
+        return Err(not_regular(&location));
     }
-    let mut file = std::fs::File::open(path).map_err(|error| unreadable(path, &error))?;
-    let metadata = file.metadata().map_err(|error| unreadable(path, &error))?;
+    let mut file = std::fs::File::open(path).map_err(|error| unreadable(&location, &error))?;
+    let metadata = file
+        .metadata()
+        .map_err(|error| unreadable(&location, &error))?;
+    checked(&metadata, &location)?;
+    let mut text = String::new();
+    file.read_to_string(&mut text)
+        .map_err(|error| unreadable(&location, &error))?;
+    TokenDocument::parse(&text, &named)?.scopes(&named)
+}
+
+/// The three checks both forms make, from the metadata already in hand: a regular file, no group
+/// or other permission, and a size the document's bound allows (R27).
+///
+/// The metadata is the one the object the location names answers — the descriptor's own for the
+/// file form, and the target the `/proc` link resolves to for the descriptor form — so both forms
+/// are judged on the same three facts, and neither read is one a caller can grow or stall.
+fn checked(metadata: &std::fs::Metadata, location: &str) -> Result<(), McpError> {
     if !metadata.is_file() {
-        return Err(not_regular(path));
+        return Err(not_regular(location));
     }
     let mode = metadata.permissions().mode() & 0o777;
     if mode & GROUP_OR_OTHER != 0 {
         return Err(McpError::Credential(format!(
-            "the admin token file {} is mode {mode:04o}: it must be {TOKEN_FILE_MODE:04o}, \
-             readable and writable by its owner alone",
-            path.display()
+            "{location} is mode {mode:04o}: it must carry no group or other permission \
+             ({TOKEN_FILE_MODE:04o} is the usual mode), so no one but its owner can rewrite it"
         )));
     }
-    let mut text = String::new();
-    file.read_to_string(&mut text)
-        .map_err(|error| unreadable(path, &error))?;
-    TokenDocument::parse(&text, &path.display().to_string())?.scopes()
+    let size = metadata.len();
+    if size > MAX_TOKEN_DOCUMENT_BYTES {
+        return Err(McpError::Credential(format!(
+            "{location} is {size} bytes: a token document is at most {MAX_TOKEN_DOCUMENT_BYTES} \
+             bytes — it lists scope names and carries nothing else"
+        )));
+    }
+    Ok(())
 }
 
-fn not_regular(path: &Path) -> McpError {
+fn not_regular(location: &str) -> McpError {
     McpError::Credential(format!(
-        "the admin token file {} is not a regular file: the door re-reads it on every call, and a \
-         pipe or a device there would stall that read",
-        path.display()
+        "{location} is not a regular file: the document is read as a file of bytes, so a pipe, a \
+         device or a directory there would stall that read, never end it, or give it nothing"
     ))
 }
 
-fn unreadable(path: &Path, error: &std::io::Error) -> McpError {
-    McpError::Credential(format!(
-        "the admin token file {} could not be read: {error}",
-        path.display()
-    ))
+fn unreadable(location: &str, error: &std::io::Error) -> McpError {
+    McpError::Credential(format!("{location} could not be read: {error}"))
 }

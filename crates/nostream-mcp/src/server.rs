@@ -93,45 +93,94 @@ pub fn audit_action(tool: &str) -> String {
     format!("mcp.{tool}")
 }
 
-/// The scope a tool needs beyond the read grant every token carries (R28).
+/// The scope a call needs from the document (R28).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Requires {
+    /// Reading: the grant every accepted document carries, so no scope names it and none is
+    /// asked for at dispatch. The three read tools say this in the table rather than leaving
+    /// the column empty.
+    Read,
+    /// [`SCOPE_WRITE`]: the one scope a document may add, and the right to call `settings_set`.
+    Write,
+}
+
+/// One tool the router registers: its name, the check that says whether the router can
+/// deserialise a call's arguments (R9), and the scope the call needs (R28).
 ///
-/// The three read tools name nothing because reading is the document's default; the one tool that
-/// changes the relay is the one a document has to opt into. A tool added to the router without an
-/// entry here is a read tool, which is the safe direction: the failure it would produce is a
-/// `Forbidden` a case can see, not an unnoticed write.
-pub fn required_scope(tool: &str) -> Option<&'static str> {
-    (tool == TOOL_SETTINGS_SET).then_some(SCOPE_WRITE)
+/// The two facts are one row because they are one decision: a `#[tool]` method added to the
+/// router has to appear here once, and both the audit line and the gate read the row it lands
+/// in.
+#[derive(Debug, Clone, Copy)]
+pub struct Tool {
+    /// The name `tools/list` publishes, which is also its audit action's suffix.
+    pub name: &'static str,
+    /// Whether the router can deserialise a call's arguments: the audit line's condition.
+    pub parses: ArgumentsCheck,
+    /// What the call needs from the document.
+    pub needs: Requires,
+}
+
+/// The scope a call needs (R28).
+///
+/// A name the table does not carry needs [`Requires::Write`], not [`Requires::Read`]: the router
+/// grows one `#[tool]` method at a time, and a tool that arrived without its row is the case to
+/// fail closed on. The safe direction is the other way round from the one that reads well — a
+/// miss there would let a document that grants nothing but reads call a write — so the default
+/// here is the write, and `every_registered_tool_has_a_table_row` (`tests/audit.rs`) reads the
+/// router's own list against the table, which makes the missing row a red case rather than a
+/// silent grant.
+pub fn required_scope(tool: &str) -> Requires {
+    row(tool).map_or(Requires::Write, |entry| entry.needs)
 }
 
 /// Whether the router can deserialise a call's arguments: the same type its handler takes.
 type ArgumentsCheck = fn(Option<&Map<String, Value>>) -> bool;
 
-/// The audit table: every tool the router registers, with the check that says whether the
-/// router can deserialise a call's arguments (R9).
+/// The table: every tool the router registers, once, with both dispatch-time facts (R9, R28).
 ///
-/// The rule each entry keeps is **no stricter than the router's own deserialisation**, not "the
-/// shape the `inputSchema` states". [`ServerHandler::call_tool`] writes the line when the check
-/// answers `true` and then dispatches unconditionally, so a check that refused a call the router
-/// runs would execute it unaudited — R9's guarantee failing open. The check exists to write the
-/// line *before* the handler, never to refuse a call; `settings_set`'s is therefore deliberately
-/// vacuous, because its arguments are a raw map and its `inputSchema` is the half that refuses.
+/// The rule each [`Tool::parses`] keeps is **no stricter than the router's own deserialisation**,
+/// not "the shape the `inputSchema` states". [`ServerHandler::call_tool`] writes the line when
+/// the check answers `true` and then dispatches unconditionally, so a check that refused a call
+/// the router runs would execute it unaudited — R9's guarantee failing open. The check exists to
+/// write the line *before* the handler, never to refuse a call; `settings_set`'s is therefore
+/// deliberately vacuous, because its arguments are a raw map and its `inputSchema` is the half
+/// that refuses.
 ///
-/// The dispatch path looks a name up here and has no "everything else is audited" arm, so a
-/// tool added to the router without an entry cannot execute unaudited: it fails
-/// `every_registered_tool_is_in_the_audit_table`, which reads the router's own list.
-pub const TOOL_ARGUMENTS: &[(&str, ArgumentsCheck)] = &[
-    (TOOL_SETTINGS_GET, accepts_any_arguments),
-    (TOOL_SETTINGS_SET, settings_set_parses),
-    (TOOL_LIST_EVENTS, list_events_parse),
-    (TOOL_GET_EVENT, get_event_parses),
+/// The dispatch path looks a name up here and has no "everything else" arm, so a tool added to
+/// the router without a row cannot execute unaudited, and cannot execute ungated either:
+/// `every_registered_tool_has_a_table_row` reads the router's own list, and both
+/// [`arguments_parse`] and [`required_scope`] answer this table alone.
+pub const TOOLS: &[Tool] = &[
+    Tool {
+        name: TOOL_SETTINGS_GET,
+        parses: accepts_any_arguments,
+        needs: Requires::Read,
+    },
+    Tool {
+        name: TOOL_SETTINGS_SET,
+        parses: settings_set_parses,
+        needs: Requires::Write,
+    },
+    Tool {
+        name: TOOL_LIST_EVENTS,
+        parses: list_events_parse,
+        needs: Requires::Read,
+    },
+    Tool {
+        name: TOOL_GET_EVENT,
+        parses: get_event_parses,
+        needs: Requires::Read,
+    },
 ];
 
-/// Whether `tool`'s arguments parse; `None` when the router registers no such tool.
+/// `tool`'s row; `None` when the table does not name it.
+fn row(tool: &str) -> Option<&'static Tool> {
+    TOOLS.iter().find(|entry| entry.name == tool)
+}
+
+/// Whether `tool`'s arguments parse; `None` when the table does not name it.
 pub fn arguments_parse(tool: &str, arguments: Option<&Map<String, Value>>) -> Option<bool> {
-    TOOL_ARGUMENTS
-        .iter()
-        .find(|(name, _)| *name == tool)
-        .map(|(_, parses)| parses(arguments))
+    row(tool).map(|entry| (entry.parses)(arguments))
 }
 
 /// `settings_get` takes no parameters, so the router deserialises nothing for it.
@@ -524,12 +573,12 @@ impl ServerHandler for AdminMcp {
                 return Ok(tool_refusal(refusal).into());
             }
         };
-        if let Some(scope) = required_scope(&request.name)
-            && !scopes.includes(scope)
+        if let Requires::Write = required_scope(&request.name)
+            && !scopes.includes(SCOPE_WRITE)
         {
-            self.record_denial(&request.name, scope);
+            self.record_denial(&request.name, SCOPE_WRITE);
             return Ok(tool_refusal(&format!(
-                "{FORBIDDEN}: {} needs the \"{scope}\" scope",
+                "{FORBIDDEN}: {} needs the \"{SCOPE_WRITE}\" scope",
                 request.name
             ))
             .into());

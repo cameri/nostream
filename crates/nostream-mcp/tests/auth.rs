@@ -1,4 +1,5 @@
-//! AC29–AC34 — the door's own credential: a scoped token document, by file or descriptor.
+//! AC29–AC34, AC38, AC39 — the door's own credential: a scoped token document, by file or
+//! descriptor, and the scope table that decides what it may call.
 //!
 //! | case | what it proves |
 //! |---|---|
@@ -8,7 +9,10 @@
 //! | `an_unknown_scope_refuses_the_load` | a document naming a scope the door does not know is refused when it is loaded, naming the scope and the accepted set |
 //! | `a_file_rewrite_changes_the_decision` | rewriting the file on a running server narrows the write, and rewriting it back restores it: the file's lifetime is the credential's |
 //! | `an_inherited_descriptor_authenticates` | the descriptor form answers `tools/list` and a read, and keeps the grant it was handed when the file it came from changes |
-//! | `only_the_writing_tool_needs_a_scope` | the read tools need no scope, and `settings_set` is the one that does |
+//! | `only_the_writing_tool_needs_a_scope` | the table names every registered tool and declares a scope for each: the three read tools read, `settings_set` needs `write`, and a name the table does not carry needs `write` |
+//! | `a_group_readable_descriptor_refuses_to_start` | a `0644` document on a descriptor is refused as the same file by path is |
+//! | `a_device_descriptor_refuses_to_start` | a device on the descriptor is refused before a byte is read, so `/dev/zero` cannot hang the start |
+//! | `an_oversized_document_is_refused` | a document over the size bound is refused on both forms, naming its size and the cap |
 //!
 //! Each case builds its own server with the credential as a **value**, and none sets an
 //! environment variable: cases in one binary run in parallel, so an environment-based credential
@@ -19,12 +23,15 @@
 
 mod common;
 
+use std::collections::BTreeSet;
 use std::os::fd::AsRawFd;
+use std::os::unix::fs::PermissionsExt;
 
 use common::{Fixture, Grant, TestMcp, text, write_token};
 use nostream_mcp::{
-    AUDIT_DENIED, Credential, FORBIDDEN, NOT_FOUND, TOOL_GET_EVENT, TOOL_LIST_EVENTS,
-    TOOL_SETTINGS_GET, TOOL_SETTINGS_SET, UNAUTHORIZED, audit_action, required_scope,
+    AUDIT_DENIED, Credential, FORBIDDEN, MAX_TOKEN_DOCUMENT_BYTES, NOT_FOUND, Requires,
+    TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET, TOOLS, UNAUTHORIZED,
+    audit_action, required_scope,
 };
 use serde_json::json;
 
@@ -133,6 +140,12 @@ async fn an_unknown_scope_refuses_the_load() {
     let message = refused.to_string();
     assert!(message.contains("\"admin\""), "{message}");
     assert!(message.contains("write"), "the accepted set: {message}");
+    // The one document refusal that used to leave the location implicit: it names the file now,
+    // as the parse refusal beside it does (R27).
+    assert!(
+        message.contains(&document.display().to_string()),
+        "the document it read: {message}"
+    );
 
     // A document still carrying the retired session token is refused for its shape, not read for
     // less than it says: the load names the key it did not expect.
@@ -145,10 +158,7 @@ async fn an_unknown_scope_refuses_the_load() {
     // can read is refused before the door serves anything (R27).
     let readable = temp.path().join("readable.json");
     common::write_private(&readable, &common::token_document(&["write"]));
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&readable, std::fs::Permissions::from_mode(0o644)).unwrap();
-    }
+    std::fs::set_permissions(&readable, std::fs::Permissions::from_mode(0o644)).unwrap();
     let refused = Credential::from_file(&readable).expect_err("0644 is not 0600");
     assert!(refused.to_string().contains("0644"), "{refused}");
     assert!(refused.to_string().contains("0600"), "{refused}");
@@ -237,17 +247,108 @@ async fn only_the_writing_tool_needs_a_scope() {
     let fixture = TestMcp::start().await;
     let client = fixture.client().await;
 
-    let scoped: Vec<String> = client
+    // The expected sets come from the table's own column and the router's own list, never from
+    // `required_scope`: a case that filtered `tools/list` through the function under test would
+    // drop the tool the function has no row for, which is the tool this case exists to catch.
+    let registered: BTreeSet<String> = client
         .tools()
         .await
         .iter()
-        .filter(|tool| required_scope(&tool.name).is_some())
         .map(|tool| tool.name.to_string())
         .collect();
+    let tabled: BTreeSet<String> = TOOLS.iter().map(|row| row.name.to_owned()).collect();
+    assert_eq!(tabled, registered, "every registered tool declares a scope");
+
+    let mut reading: Vec<&str> = TOOLS
+        .iter()
+        .filter(|row| row.needs == Requires::Read)
+        .map(|row| row.name)
+        .collect();
+    let mut writing: Vec<&str> = TOOLS
+        .iter()
+        .filter(|row| row.needs == Requires::Write)
+        .map(|row| row.name)
+        .collect();
+    reading.sort_unstable();
+    writing.sort_unstable();
     assert_eq!(
-        scoped,
-        vec![TOOL_SETTINGS_SET.to_owned()],
-        "reading is the document's default; the one tool that changes the relay is the one it \
-         has to opt into"
+        reading,
+        vec![TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_SETTINGS_GET],
+        "reading is the grant every document carries"
+    );
+    assert_eq!(
+        writing,
+        vec![TOOL_SETTINGS_SET],
+        "the one tool that changes the relay is the one a document opts into"
+    );
+
+    // A name the table does not carry needs the write: that is what a later slice's tool meets
+    // before its row lands, and the reason a missing row fails closed rather than open.
+    assert_eq!(required_scope("delete_event"), Requires::Write);
+}
+
+/// The descriptor is a way to deliver the document, not a way around its rules: a `0644` file on
+/// a descriptor is refused as the same file by path is (R27).
+#[tokio::test]
+async fn a_group_readable_descriptor_refuses_to_start() {
+    let fixture = TestMcp::start().await;
+    // The descriptor is opened before the mode widens, so the case refuses the mode and not an
+    // open.
+    let file = fixture.descriptor();
+    std::fs::set_permissions(&fixture.token_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+    let refused = Credential::from_descriptor(file.as_raw_fd())
+        .expect_err("the descriptor's target carries a group permission");
+    let message = refused.to_string();
+    assert!(message.contains("0644"), "{message}");
+    assert!(message.contains("0600"), "the usual mode: {message}");
+    assert!(
+        message.contains("no group or other permission"),
+        "{message}"
+    );
+}
+
+/// A device on the descriptor is refused before a byte is read, so `/dev/zero` — which never ends
+/// a read — cannot hang the start (R27).
+#[tokio::test]
+async fn a_device_descriptor_refuses_to_start() {
+    let zero = std::fs::File::open("/dev/zero").expect("/dev/zero is a device this host has");
+    let refused = Credential::from_descriptor(zero.as_raw_fd())
+        .expect_err("a device is not a token document");
+    assert!(
+        refused.to_string().contains("not a regular file"),
+        "{refused}"
+    );
+}
+
+/// The document's size is bounded, so neither read is an amount of work the path chooses: a file
+/// over the bound is refused, naming the size it found and the cap (R27).
+#[tokio::test]
+async fn an_oversized_document_is_refused() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("oversized.json");
+    let over = usize::try_from(MAX_TOKEN_DOCUMENT_BYTES).unwrap() + 1;
+    common::write_private(&path, &" ".repeat(over));
+
+    let refused = Credential::from_file(&path).expect_err("a document has a size bound");
+    let message = refused.to_string();
+    assert!(
+        message.contains(&over.to_string()),
+        "the size it found: {message}"
+    );
+    assert!(
+        message.contains(&MAX_TOKEN_DOCUMENT_BYTES.to_string()),
+        "the cap: {message}"
+    );
+
+    // The same bound on the descriptor's target: one comparison on the metadata both forms
+    // already read.
+    let file = std::fs::File::open(&path).unwrap();
+    let refused = Credential::from_descriptor(file.as_raw_fd()).expect_err("the same bound");
+    assert!(
+        refused
+            .to_string()
+            .contains(&MAX_TOKEN_DOCUMENT_BYTES.to_string()),
+        "{refused}"
     );
 }
