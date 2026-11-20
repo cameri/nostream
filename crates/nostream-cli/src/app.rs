@@ -137,7 +137,8 @@ pub const COMMANDS: &[&str] = &[
     "setup", "start", "stop", "tui", "update",
 ];
 
-/// `src/cli/index.ts:470-531`: the three answers that are not a command's, before `parse`.
+/// `src/cli/index.ts:470-531`: the four answers that are not a command's, before `parse` — the
+/// page, the version, the unknown word, and `start`'s valueless `--port` (D1).
 pub fn pre_parse(argv: &[String]) -> Invocation {
     let Some(first) = argv.first() else {
         return Invocation::Help;

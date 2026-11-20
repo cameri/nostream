@@ -22,13 +22,18 @@ volume and the count a stopped run reports.
 
 ## Decisions
 
-### D1 — The page is hand-written, and `--help`, no arguments and an unknown word are answered before the parser
+### D1 — The page is hand-written, and four invocations are answered before the parser
 
 `--help`, `-h` and an empty command line print the capture's page on **stdout** at exit 0; an
 unknown first word prints `Unknown command: <word>` on **stderr** and the same page on
 **stdout** at exit 2 (`src/cli/index.ts:470-531`, measured at the capture as 63 B stderr and
-1209 B stdout). Only then does clap parse, so the parser never sees a case that has its own
-answer.
+1209 B stdout). A fourth answer is the port's, added by the first review round: `start` with a
+valueless `--port` (`start --port`, `start --port --detach`) is the port's own
+`Error: Port must be a safe integer between 1 and 65535` at exit 1. That is a case clap *does*
+answer — its missing-value error at exit 2 — and the arm deliberately overrides the class, which
+is what `src/cli/commands/start.ts:74-78` measures: the capture reads its own `argv` for the flag
+before its parser sees it. Only after those four does clap parse, so the parser never sees a case
+that has its own answer.
 
 The page is the capture's `cac` output with two edits — both lines that name `dev` are gone —
 and the version line is the crate's own (D2). Per-command pages stay clap's, with the program
@@ -36,8 +41,11 @@ name `nostream` and the capture's flag spellings, value names and one-line descr
 declared on the derive.
 
 **Cost:** a script that greps `Usage:` from the bare invocation's **stderr** sees it on stdout
-instead, and one that matched clap's `error: unrecognized subcommand` now matches
-`Unknown command:` on stderr. Both are the point of the port.
+instead, one that matched clap's `error: unrecognized subcommand` now matches `Unknown command:`
+on stderr, and the valueless `--port` moves a usage failure from exit 2 to exit 1 because the
+message is the capture's, not the parser's. The page's own stream follows the same three rules:
+a closed reader leaves the code alone and a full disk answers 1, except that a page which was a
+failure's decoration keeps the failure's code.
 
 ### D2 — The version page is `nostream/<CARGO_PKG_VERSION>`
 
@@ -47,8 +55,10 @@ string `info` prints as `Nostream v0.1.0` and the admin diagnostics serve
 `linux-x64 node-v24.22.1`, which are Node's own platform and version and which this binary does
 not have.
 
-**Cost:** a script matching the decorated string has to drop two fields. This is the one place
-the port deliberately differs from the capture's bytes rather than reproducing them.
+**Cost:** a script matching the decorated string has to drop two fields. It is not the port's
+only deliberate divergence — D9's `config validate` exit 2, D10's saturation, D12's refusal
+message and D13's partial count are each a byte or a code the capture does not print — but it is
+the one divergence *of the version page*, which is what this decision is about.
 
 ### D3 — Three failure shapes, and the `Error: ` prefix belongs to the class
 
@@ -169,9 +179,13 @@ value must never become an *absent* bound, which is the defect this decision rep
 The capture's CLI shells `docker`, `git`, `openssl` and `pnpm` itself (`src/cli/utils/process.ts`,
 `docker.ts`). The rewrite's rule is that only `nostream-services` opens child processes and
 sockets (`CLAUDE.md`'s crate table), so the seam lives there — `nostream_services::process::{run,
-capture}` with five failure classes and a caller-owned runtime — and the CLI calls it. `start`,
-`stop`, `update` and `info` are its only callers, and every argument reaches a child as one whole
-argv element: no call site builds a shell string.
+capture}` with five failure classes and a caller-owned runtime — and the CLI calls it. Its callers
+are `start`, `stop`, `update`, `info` and `clean` — the last spawns `docker system prune` and
+`docker volume prune` — plus the two modules those commands drive, `compose.rs` (through `start`
+and `stop`) and `bootstrap.rs` (the uid probe and the settings copy `start` runs first). Nine call
+sites in five files (`bootstrap.rs`, `compose.rs`, `commands/clean.rs`, `commands/info.rs`,
+`commands/update.rs`); every argument reaches a child as one whole argv element: no call site
+builds a shell string.
 
 **Cost:** a dependency edge `nostream-cli → nostream-services` that the crate did not have, and a
 seam whose shape is the services crate's rather than the CLI's. The gain is that the rule stays
