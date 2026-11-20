@@ -34,6 +34,7 @@ pub mod http;
 pub mod invoice;
 pub mod monitor;
 pub mod payments;
+pub mod process;
 pub mod scheduler;
 pub mod services;
 pub mod testing;
