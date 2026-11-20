@@ -292,8 +292,9 @@ reusing one:
 **These extend the capture's nine names; they do not replace them.** The capture's vocabulary is
 a closed nine-name union (`src/@types/admin-audit.ts:1-10`), and the rewrite's writer takes
 `&str` (`crates/nostream-admin/src/state.rs:497`), so a new name is accepted and stored without
-a schema change. Each name is `mcp.` plus the tool's own name, and each is a named constant in
-`crates/nostream-mcp`.
+a schema change. Each name is `mcp.` plus the tool's own name: the tool name is a constant in
+`crates/nostream-mcp` (`TOOL_*`) and the action is composed from it by `audit_action`, so no
+`mcp.*` string is written at a call site.
 
 **One name per tool, not one `mcp.tool_call` with the tool in `detail`.** The console's trust page
 renders `entry.action` verbatim (`resources/admin/assets/admin-trust.js:93`), so the action column
