@@ -911,6 +911,75 @@ fn a_full_disk_does_not_panic_or_recode_the_answer() {
     assert!(stdout(&output).contains("Usage:"), "{output:?}");
 }
 
+/// The `NODE_ENV=production` warning is written **before** the delete, in the capture's order, so
+/// a stderr that cannot take it must not abort the run: measured at the base this exited 101 with
+/// all three rows still present (round 3's code finding 2, narrowed by the primary's
+/// verification). The ordering is not moved — the run goes on and deletes, which is what the
+/// second half asserts.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_production_warning_that_cannot_be_written_does_not_stop_the_run() {
+    let work = Work::new();
+    let config = work.with_lmdb_settings("eventStore:\n  backend: lmdb\n");
+    block_on_store(write_events(
+        &work.data(),
+        vec![
+            note(1, 1, 1_700_000_000),
+            note(2, 1, 1_700_000_100),
+            note(3, 1, 1_700_000_200),
+        ],
+    ));
+    let data = work.data();
+    let full = std::fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/full")
+        .expect("/dev/full is a writable device");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args([
+            "clean-db",
+            "--older-than=1",
+            "--force",
+            "--data-dir",
+            data.to_str().expect("a utf-8 path"),
+        ])
+        .current_dir(work.path())
+        .env_clear()
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", shims(work.path()).display()),
+        )
+        .env("HOME", work.path())
+        .env("NODE_ENV", "production")
+        .env("NOSTR_CONFIG_DIR", &config)
+        .stderr(full)
+        .output()
+        .expect("the binary runs");
+
+    assert_eq!(
+        code(&output),
+        0,
+        "a warning that cannot be written is not a failure"
+    );
+    assert_eq!(stdout(&output).trim(), "Deleted 3 events.");
+
+    let output = run_env(
+        work.path(),
+        &[
+            "clean-db",
+            "--older-than=1",
+            "--dry-run",
+            "--data-dir",
+            data.to_str().expect("a utf-8 path"),
+        ],
+        &[("NOSTR_CONFIG_DIR", config.to_str().expect("a utf-8 path"))],
+    );
+    assert_eq!(
+        stdout(&output).trim(),
+        "Dry run: 0 events would be deleted."
+    );
+}
+
 #[test]
 fn ac17_the_port_override_file_is_named_then_removed() {
     let (work, log) = compose_work();

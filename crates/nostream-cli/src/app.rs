@@ -832,7 +832,11 @@ fn print_lines(lines: &[String]) -> std::io::Result<()> {
 
 /// Prints lines on stderr, one per line, answering the write's result for the same reason
 /// [`print_lines`] does: a full disk is the write's failure, not a panic.
-fn print_error_lines(lines: &[String]) -> std::io::Result<()> {
+///
+/// `pub(crate)` because a command's own advisory line writes through it too: `clean-db`'s
+/// `NODE_ENV=production` warning is written before its delete, so an `eprintln!` there turned a
+/// full disk into exit 101 on the run that had not started yet.
+pub(crate) fn print_error_lines(lines: &[String]) -> std::io::Result<()> {
     let mut stderr = std::io::stderr().lock();
 
     for line in lines {

@@ -240,9 +240,14 @@ pub fn run(context: &Context, args: &[String]) -> Result<CommandOutput, CliError
         .get("NODE_ENV")
         .is_some_and(|value| value == "production")
     {
-        eprintln!(
+        // The capture writes this before the delete, and the order stays: it is advisory data on
+        // stderr, so its write goes through the renderer's fallible writer like every other line
+        // this surface emits. `eprintln!` panicked at 101 on a full disk here — before a single
+        // row was touched, so a wrapper saw "crashed" on a run that had not started.
+        let _ = crate::app::print_error_lines(&[
             "WARNING: NODE_ENV=production detected. This operation permanently deletes data."
-        );
+                .to_owned(),
+        ]);
     }
 
     context.block_on(clean(context, &options))
