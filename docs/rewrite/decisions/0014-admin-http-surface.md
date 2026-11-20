@@ -385,7 +385,7 @@ has no mode to check: the parent already opened it.
 
 **Revocation is the file's lifetime, with no server-side store.** The file form calls
 `std::fs::metadata`, `std::fs::read_to_string` and a small JSON parse **per call** — measured at
-`9.70 µs` for a 20-byte document over 10 000 grants in a debug build (`crates/nostream-mcp`'s
+`9.67 µs` for a 20-byte document over 10 000 grants in a debug build (`crates/nostream-mcp`'s
 `Credential::grant`, the same path `call_tool` takes), against a tool call that reaches an LMDB
 read or a settings write. That is the price of a revocation that needs no session store, no
 notification path and no restart: narrowing a running door is `printf '{"scopes": []}' >` the file.
