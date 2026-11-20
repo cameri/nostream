@@ -120,15 +120,21 @@ pub struct Tool {
     pub needs: Requires,
 }
 
+/// The router's own answer for a name it does not register, word for word
+/// (`ToolRouter::call`, `rmcp`): the door answers an unknown name before the scope decision so a
+/// rowless tool is refused rather than dispatched, and it must be the same refusal the router
+/// would have given.
+const TOOL_NOT_FOUND: &str = "tool not found";
+
 /// The scope a call needs (R28).
 ///
-/// A name the table does not carry needs [`Requires::Write`], not [`Requires::Read`]: the router
-/// grows one `#[tool]` method at a time, and a tool that arrived without its row is the case to
-/// fail closed on. The safe direction is the other way round from the one that reads well — a
-/// miss there would let a document that grants nothing but reads call a write — so the default
-/// here is the write, and `every_registered_tool_has_a_table_row` (`tests/audit.rs`) reads the
-/// router's own list against the table, which makes the missing row a red case rather than a
-/// silent grant.
+/// A name the table does not carry needs [`Requires::Write`], not [`Requires::Read`]: a name the
+/// table does not carry is the case to fail closed on, and the safe direction is the other way
+/// round from the one that reads well — a miss there would let a document that grants nothing but
+/// reads call a write. [`ServerHandler::call_tool`] refuses such a name before it asks this
+/// question, with the router's own `tool not found`, so the default is the answer to a total
+/// function rather than a path a call travels; `every_registered_tool_has_a_table_row`
+/// (`tests/audit.rs`) is what keeps the table and the router one list.
 pub fn required_scope(tool: &str) -> Requires {
     row(tool).map_or(Requires::Write, |entry| entry.needs)
 }
@@ -146,10 +152,12 @@ type ArgumentsCheck = fn(Option<&Map<String, Value>>) -> bool;
 /// deliberately vacuous, because its arguments are a raw map and its `inputSchema` is the half
 /// that refuses.
 ///
-/// The dispatch path looks a name up here and has no "everything else" arm, so a tool added to
-/// the router without a row cannot execute unaudited, and cannot execute ungated either:
-/// `every_registered_tool_has_a_table_row` reads the router's own list, and both
-/// [`arguments_parse`] and [`required_scope`] answer this table alone.
+/// The dispatch path looks a name up here and has no "everything else" arm: a name the table does
+/// not carry is refused with the router's own `-32602 tool not found`, before the scope decision
+/// and before any line is written, so a tool added to the router without a row is unreachable
+/// rather than unaudited — and cannot execute ungated either. `every_registered_tool_has_a_table_row`
+/// reads the router's own list, so the two are one list by case as well as by shape, and this
+/// refusal is the fallback for the day they are not.
 pub const TOOLS: &[Tool] = &[
     Tool {
         name: TOOL_SETTINGS_GET,
@@ -179,6 +187,9 @@ fn row(tool: &str) -> Option<&'static Tool> {
 }
 
 /// Whether `tool`'s arguments parse; `None` when the table does not name it.
+///
+/// `call_tool` refuses such a name before it asks, so the `None` is this function's contract and
+/// not a branch a call reaches.
 pub fn arguments_parse(tool: &str, arguments: Option<&Map<String, Value>>) -> Option<bool> {
     row(tool).map(|entry| (entry.parses)(arguments))
 }
@@ -467,7 +478,11 @@ impl AdminMcp {
     /// R28's line: an authenticated call the document's scopes deny. It carries the tool and the
     /// scope it needed, never an argument value, and it is written before the refusal is
     /// returned, so a denied write is visible in `admin-audit.jsonl` rather than absent from it.
-    fn record_denial(&self, tool: &str, scope: &str) {
+    ///
+    /// The name is one of [`TOOLS`]' constants rather than the caller's text: `call_tool` refuses
+    /// a name the table does not carry before it reaches this, so the size of the line is the
+    /// table's, not the caller's.
+    fn record_denial(&self, tool: &'static str, scope: &str) {
         let detail = json!({ "tool": tool, "scope": scope });
         if let Err(error) = self.state.append_audit(AUDIT_DENIED, None, Some(detail)) {
             tracing::warn!(%error, tool, "the MCP denial was not recorded");
@@ -559,8 +574,10 @@ impl ServerHandler for AdminMcp {
     ///
     /// `tools/list` is not gated (R8): a client discovers the surface before it presents a
     /// credential, and the refusal is at the call. The order is the console's — the enabled
-    /// predicate, then the credential — with the scopes after them, because a scope is only
-    /// meaningful once the document that names it has been read (R28).
+    /// predicate, then the credential — after which the table answers: whether the name is one the
+    /// router serves, then what scope it needs, then whether its arguments parse (R9, R28). A scope
+    /// is only meaningful once the document that names it has been read, and a name the table does
+    /// not carry is a refusal rather than a tool.
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
@@ -573,21 +590,29 @@ impl ServerHandler for AdminMcp {
                 return Ok(tool_refusal(refusal).into());
             }
         };
-        if let Requires::Write = required_scope(&request.name)
+        // The table answers first, and an absence is a refusal, not a dispatch: a name it does
+        // not carry is not a tool this router serves, so it is answered exactly as the router
+        // answers it — `-32602 tool not found` — before the scopes are consulted and before any
+        // line is written. A tool added to the router without its row is therefore unreachable
+        // rather than unaudited (R9), and the name a line records is one of these constants.
+        let Some(entry) = row(&request.name) else {
+            return Err(rmcp::ErrorData::invalid_params(TOOL_NOT_FOUND, None));
+        };
+        if let Requires::Write = entry.needs
             && !scopes.includes(SCOPE_WRITE)
         {
-            self.record_denial(&request.name, SCOPE_WRITE);
+            self.record_denial(entry.name, SCOPE_WRITE);
             return Ok(tool_refusal(&format!(
                 "{FORBIDDEN}: {} needs the \"{SCOPE_WRITE}\" scope",
-                request.name
+                entry.name
             ))
             .into());
         }
-        // `Some(false)` — the router answers the deserialisation failure — and `None` — no such
-        // tool, and the router answers `-32602` — both reach no tool, so neither writes a line
-        // (R9, Assumption 5).
-        if let Some(true) = arguments_parse(&request.name, request.arguments.as_ref()) {
-            self.record_dispatch(&request.name, request.arguments.as_ref());
+        // `false` — the router answers a deserialisation failure with its own error result —
+        // reaches no tool, so it writes no line (R9, Assumption 5); `true` writes the line before
+        // the handler runs, which is what the check is for.
+        if (entry.parses)(request.arguments.as_ref()) {
+            self.record_dispatch(entry.name, request.arguments.as_ref());
         }
         let call = ToolCallContext::new(self, request, context);
         self.tool_router.call(call).await

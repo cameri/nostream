@@ -10,6 +10,7 @@
 //! | `a_file_rewrite_changes_the_decision` | rewriting the file on a running server narrows the write, and rewriting it back restores it: the file's lifetime is the credential's |
 //! | `an_inherited_descriptor_authenticates` | the descriptor form answers `tools/list` and a read, and keeps the grant it was handed when the file it came from changes |
 //! | `only_the_writing_tool_needs_a_scope` | the table names every registered tool and declares a scope for each: the three read tools read, `settings_set` needs `write`, and a name the table does not carry needs `write` |
+//! | `an_unregistered_tool_is_refused_before_the_scopes` | a name the surface does not register is refused with the router's own `-32602` before the scope decision, so a read-only document writes no denial line for it |
 //! | `a_group_readable_descriptor_refuses_to_start` | a `0644` document on a descriptor is refused as the same file by path is |
 //! | `a_device_descriptor_refuses_to_start` | a device on the descriptor is refused before a byte is read, so `/dev/zero` cannot hang the start |
 //! | `an_oversized_document_is_refused` | a document over the size bound is refused on both forms, naming its size and the cap |
@@ -282,9 +283,39 @@ async fn only_the_writing_tool_needs_a_scope() {
         "the one tool that changes the relay is the one a document opts into"
     );
 
-    // A name the table does not carry needs the write: that is what a later slice's tool meets
-    // before its row lands, and the reason a missing row fails closed rather than open.
+    // A name the table does not carry needs the write: that is this helper's answer for it, and
+    // the reason a missing row fails closed rather than open. `call_tool` refuses such a name
+    // before it asks — see `an_unregistered_tool_is_refused_before_the_scopes` — so a rowless tool
+    // never reaches dispatch at all.
     assert_eq!(required_scope("delete_event"), Requires::Write);
+}
+
+/// A name the surface does not register is refused before the scope decision, so a document that
+/// grants no write writes nothing for it: the answer is the router's own `-32602 tool not found`,
+/// the same one a `write` document gets (R9, R28). A registered tool that arrived without its row
+/// is refused by the same check, which is what makes it unreachable rather than unaudited.
+#[tokio::test]
+async fn an_unregistered_tool_is_refused_before_the_scopes() {
+    let fixture = TestMcp::start_with(Fixture {
+        grant: Grant::Read,
+        ..Fixture::default()
+    })
+    .await;
+    let client = fixture.client().await;
+
+    let error = client
+        .try_call("delete_event", json!({}))
+        .await
+        .expect_err("a name the table does not carry is not a tool");
+    let rmcp::ServiceError::McpError(error) = error else {
+        panic!("a protocol error, not a transport failure: {error:?}");
+    };
+    assert_eq!(error.code.0, -32602, "{error:?}");
+    assert!(error.message.contains("tool not found"), "{error:?}");
+    assert!(
+        fixture.audit_entries().is_empty(),
+        "an unknown name is not a denied write, so it writes no line"
+    );
 }
 
 /// The descriptor is a way to deliver the document, not a way around its rules: a `0644` file on
@@ -309,16 +340,25 @@ async fn a_group_readable_descriptor_refuses_to_start() {
 }
 
 /// A device on the descriptor is refused before a byte is read, so `/dev/zero` — which never ends
-/// a read — cannot hang the start (R27).
+/// a read — cannot hang the start (R27). The call runs on a thread of its own under a deadline:
+/// the failure this case exists to catch is one that never returns, and a bound inside the case's
+/// own thread could not fire on a call that blocks it, so a regression would hang the suite
+/// instead of failing it.
 #[tokio::test]
 async fn a_device_descriptor_refuses_to_start() {
     let zero = std::fs::File::open("/dev/zero").expect("/dev/zero is a device this host has");
-    let refused = Credential::from_descriptor(zero.as_raw_fd())
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let answer = Credential::from_descriptor(zero.as_raw_fd())
+            .map(|_| ())
+            .map_err(|error| error.to_string());
+        let _ = sender.send(answer);
+    });
+    let refused = receiver
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("reading /dev/zero as a token document returned in five seconds")
         .expect_err("a device is not a token document");
-    assert!(
-        refused.to_string().contains("not a regular file"),
-        "{refused}"
-    );
+    assert!(refused.contains("not a regular file"), "{refused}");
 }
 
 /// The document's size is bounded, so neither read is an amount of work the path chooses: a file
