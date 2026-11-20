@@ -426,7 +426,10 @@ export class PeeringBuyerService implements IPeeringBuyerService {
       PeeringInvoiceStatus.PAYING,
     )
     if (!claimed) {
-      return (await this.invoiceRepository.findByHash(invoice.paymentHash)) ?? invoice
+      // A restart can leave the row in PAYING. Check the wallet before letting
+      // the redelivery return, and finalize or release it when the outcome is known.
+      const current = (await this.invoiceRepository.findByHash(invoice.paymentHash)) ?? invoice
+      return current.status === PeeringInvoiceStatus.PAYING ? this.recoverInvoice(current, now) : current
     }
 
     const reservation = await this.reserve(claimed, peerBudget, auto, now)

@@ -469,6 +469,18 @@ describe('PeeringBuyerService', () => {
     expect(paymentsService.payInvoice).not.to.have.been.called
   })
 
+
+  it('recovers a PAYING row when the claim is lost to a restart', async () => {
+    invoiceRepository.claim.resolves(undefined)
+    invoiceRepository.findByHash.resolves(invoice({ status: PeeringInvoiceStatus.PAYING }))
+    paymentsService.getInvoiceFromPaymentsProcessor = sandbox.stub().resolves({ status: 'completed' })
+
+    const result = await service.handleInvoice(peer, advertisement, event, now)
+
+    expect(result.status).to.equal(PeeringInvoiceStatus.PAID)
+    expect(paymentsService.payInvoice).not.to.have.been.called
+  })
+
   it('summarizes per-peer and global budget spend', async () => {
     const window = peeringBudgetWindow(now, 2592000)
     invoiceRepository.countInWindow.resolves({ received: 2, paid: 1, held: 1 })
