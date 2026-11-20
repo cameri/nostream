@@ -280,6 +280,17 @@ fn ac6_a_command_failure_keeps_exit_one() {
         "Error: --count must be a positive integer\n"
     );
 
+    // V5's second boundary: a bare `--port` is the port's refusal at exit 1, not clap's exit 2.
+    for spelling in [vec!["start", "--port"], vec!["start", "--port="]] {
+        let output = cli(&spelling, &[]);
+        assert_eq!(code(&output), 1, "{spelling:?}: {}", stderr(&output));
+        assert_eq!(
+            stderr(&output),
+            "Error: Port must be a safe integer between 1 and 65535\n",
+            "{spelling:?}"
+        );
+    }
+
     let output = cli(&["start", "--port", "70000"], &[]);
     assert_eq!(code(&output), 1);
     assert_eq!(
@@ -816,10 +827,12 @@ fn ac21_update_is_the_stash_pull_start_sequence() {
         "a created stash is reapplied: {logged}"
     );
 
+    // The pull's own code is the run's: a shim exiting 2 is the value that tells "the step's
+    // code" from a constant 1.
     fs::write(
         &git,
         format!(
-            "#!/bin/sh\necho \"git $*\" >> {log}\nif [ \"$1\" = pull ]; then exit 1; fi\nexit 0\n",
+            "#!/bin/sh\necho \"git $*\" >> {log}\nif [ \"$1\" = pull ]; then exit 2; fi\nexit 0\n",
             log = log.display()
         ),
     )
@@ -830,7 +843,7 @@ fn ac21_update_is_the_stash_pull_start_sequence() {
     }
 
     let output = run_env(work.path(), &["update"], &[]);
-    assert_eq!(code(&output), 1);
+    assert_eq!(code(&output), 2, "{}", stderr(&output));
     assert_eq!(
         stderr(&output),
         "Update failed while pulling latest changes. Restored stashed local changes.\n"

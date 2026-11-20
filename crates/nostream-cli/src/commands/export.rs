@@ -402,14 +402,26 @@ async fn watch_signals(flag: Arc<AtomicU8>) {
 }
 
 /// What the export loop writes, page by page.
+///
+/// `bound` is the backend's own page bound, and it is what a page is compared against: a caller
+/// that compares against `MAX_PAGE_ROWS` reads a backend's smaller full page as a short result
+/// and stops early (`repositories.rs`'s `scan_live` contract says compare with
+/// `min(limit, page_bound())`).
 pub trait ExportSource {
     /// The next page after `after`, at most one page of the store.
     fn page(&self, after: Option<ScanCursor>) -> StorageFuture<'_, Vec<EventRecord>>;
+
+    /// The most rows one page can hold, as the backend answers it.
+    fn bound(&self) -> u64;
 }
 
 impl ExportSource for dyn EventRepository + '_ {
     fn page(&self, after: Option<ScanCursor>) -> StorageFuture<'_, Vec<EventRecord>> {
         Box::pin(async move { collect_scan(self.scan_live(after, self.page_bound()).await?).await })
+    }
+
+    fn bound(&self) -> u64 {
+        self.page_bound()
     }
 }
 
@@ -434,6 +446,10 @@ impl ExportSource for FirstPage<'_> {
             Some(first) if after.is_none() => Box::pin(async move { Ok(first.clone()) }),
             _ => self.source.page(after),
         }
+    }
+
+    fn bound(&self) -> u64 {
+        self.source.page_bound()
     }
 }
 
@@ -460,7 +476,7 @@ async fn export_structured<S: ExportSource, W: Write>(
             .page(after)
             .await
             .map_err(|error| CliError::command(error.to_string()))?;
-        let full = page.len() as u64 >= nostream_storage::MAX_PAGE_ROWS;
+        let full = page.len() as u64 >= source.bound();
 
         for record in &page {
             if let Some(signal) = signal(interrupt) {
@@ -530,7 +546,7 @@ async fn export_stream<S: ExportSource>(
                 .page(after)
                 .await
                 .map_err(|error| CliError::command(error.to_string()))?;
-            let full = page.len() as u64 >= nostream_storage::MAX_PAGE_ROWS;
+            let full = page.len() as u64 >= source.bound();
 
             for record in &page {
                 if let Some(signal) = signal(interrupt) {
@@ -849,6 +865,39 @@ mod tests {
 
             Box::pin(async move { Ok(rows) })
         }
+
+        fn bound(&self) -> u64 {
+            self.0.len() as u64
+        }
+    }
+
+    /// A backend whose full page is one row, which is the case `page_bound` exists for: a loop
+    /// that compares against `MAX_PAGE_ROWS` reads the first page as short and stops there.
+    struct OneRowPages(Vec<EventRecord>);
+
+    impl ExportSource for OneRowPages {
+        fn page(&self, after: Option<ScanCursor>) -> StorageFuture<'_, Vec<EventRecord>> {
+            let rows: Vec<EventRecord> = self
+                .0
+                .iter()
+                .filter(|record| match after {
+                    None => true,
+                    Some(cursor) => {
+                        record.event.created_at > cursor.created_at
+                            || (record.event.created_at == cursor.created_at
+                                && record.event.id > cursor.event_id)
+                    }
+                })
+                .take(1)
+                .cloned()
+                .collect();
+
+            Box::pin(async move { Ok(rows) })
+        }
+
+        fn bound(&self) -> u64 {
+            1
+        }
     }
 
     /// A writer that sets the interrupt flag once it has been handed its first line, which is
@@ -912,5 +961,29 @@ mod tests {
             String::from_utf8(printed).expect("utf-8"),
             "SIGINT received. Stopping export...\nExport interrupted by SIGINT.\n"
         );
+    }
+
+    /// A backend's page is judged against the backend's own bound, not `MAX_PAGE_ROWS`: a store
+    /// that reports a one-row page and is read against 5 000 stops after one row.
+    #[tokio::test]
+    async fn a_full_page_is_read_against_the_sources_own_bound() {
+        let source = OneRowPages((0..3).map(record).collect());
+        let flag = AtomicU8::new(SIGNAL_NONE);
+        let mut writer: Vec<u8> = Vec::new();
+        let mut printed: Vec<u8> = Vec::new();
+
+        let exported = export_structured(
+            &source,
+            StructuredFormat::Jsonl,
+            &mut writer,
+            &flag,
+            &mut printed,
+        )
+        .await
+        .expect("the loop runs");
+
+        assert_eq!(exported.rows, 3);
+        let written = String::from_utf8(writer).expect("utf-8");
+        assert_eq!(written.lines().count(), 3, "every page is read: {written}");
     }
 }

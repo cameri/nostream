@@ -85,7 +85,10 @@ pub(crate) async fn update(
 
     if pulled != 0 {
         if !stash_created {
-            return Err(failed("Update failed while pulling latest changes.", 1));
+            return Err(failed(
+                "Update failed while pulling latest changes.",
+                pulled,
+            ));
         }
 
         let restored = run_git(&git(&["stash", "pop"])).await?;
@@ -93,7 +96,7 @@ pub(crate) async fn update(
         if restored == 0 {
             return Err(failed(
                 "Update failed while pulling latest changes. Restored stashed local changes.",
-                1,
+                pulled,
             ));
         }
 

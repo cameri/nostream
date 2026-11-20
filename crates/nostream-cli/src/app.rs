@@ -463,7 +463,16 @@ enum Command {
         #[arg(short = 'd', long)]
         detach: bool,
         /// Host port for the relay
-        #[arg(long, value_name = "port")]
+        ///
+        /// A bare `--port` is the port's own refusal at exit 1, not the parser's: the capture's
+        /// check reads the option's value whatever it is (`src/cli/commands/start.ts:74-83`,
+        /// V5), so clap must hand an empty value through instead of failing first.
+        #[arg(
+            long,
+            value_name = "port",
+            num_args = 0..=1,
+            default_missing_value = ""
+        )]
         port: Option<String>,
         /// Additional arguments passed to docker compose
         #[arg(
