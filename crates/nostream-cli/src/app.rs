@@ -124,6 +124,8 @@ pub enum Invocation {
     Version,
     /// A top-level command the parser reads.
     Command,
+    /// `start` with a `--port` that received no value: the port's own message, at exit 1.
+    Port,
     /// A word that is no command: `Unknown command: <word>`, at exit 2.
     Unknown(String),
 }
@@ -144,28 +146,47 @@ pub fn pre_parse(argv: &[String]) -> Invocation {
     match first.as_str() {
         "-h" | "--help" => Invocation::Help,
         "-v" | "--version" => Invocation::Version,
-        word if COMMANDS.contains(&word) => Invocation::Command,
+        word if COMMANDS.contains(&word) => {
+            // V5's second boundary: the capture reads its own `argv` for the flag
+            // (`src/cli/commands/start.ts:74-78`) and throws the port's message, so a flag whose
+            // value never arrived is answered here rather than as the parser's missing-value
+            // error at exit 2.
+            if word == "start" && port_without_a_value(argv) {
+                Invocation::Port
+            } else {
+                Invocation::Command
+            }
+        }
         word => Invocation::Unknown(word.to_owned()),
     }
+}
+
+/// Whether a `start` invocation names `--port` with no value after it. A following word that
+/// starts with `-` is another flag rather than a value, which is also how the parser reads it.
+fn port_without_a_value(argv: &[String]) -> bool {
+    argv.iter().enumerate().any(|(index, word)| {
+        word == "--port"
+            && match argv.get(index + 1) {
+                Some(next) => next.starts_with('-'),
+                None => true,
+            }
+    })
 }
 
 /// The process entry point, from the arguments after the binary's own name.
 pub fn run(argv: Vec<String>) -> ExitCode {
     match pre_parse(&argv) {
-        Invocation::Help => {
-            print_lines(&page_lines());
-            ExitCode::SUCCESS
-        }
+        Invocation::Help => print_page(0),
         Invocation::Version => {
             println!("{}", version_line());
             ExitCode::SUCCESS
         }
+        Invocation::Port => render(Err(CliError::command(commands::start::PORT_MESSAGE))),
         Invocation::Unknown(word) => {
             // The marker is the error and the page is the help: the capture writes the first
             // with `logError` (stderr) and the second with `outputHelp` (stdout) (V46).
             eprintln!("Unknown command: {word}");
-            print_lines(&page_lines());
-            ExitCode::from(2)
+            print_page(2)
         }
         Invocation::Command => {
             let cli = Cli::parse_from(std::iter::once(PROGRAM.to_owned()).chain(argv));
@@ -174,6 +195,20 @@ pub fn run(argv: Vec<String>) -> ExitCode {
                 Err(error) => return render(Err(error)),
             };
             render(dispatch(cli.command, &context))
+        }
+    }
+}
+
+/// Prints the help page and answers the caller's own code, with `render`'s rule for a write that
+/// failed: a closed reader ends the output at that code rather than at exit 101, and any other
+/// error is reported at 1.
+fn print_page(code: u8) -> ExitCode {
+    match print_lines(&page_lines()) {
+        Ok(()) => ExitCode::from(code),
+        Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => ExitCode::from(code),
+        Err(error) => {
+            eprintln!("Error: unable to write output: {error}");
+            ExitCode::from(1)
         }
     }
 }

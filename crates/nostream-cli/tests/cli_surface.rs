@@ -280,9 +280,19 @@ fn ac6_a_command_failure_keeps_exit_one() {
         "Error: --count must be a positive integer\n"
     );
 
-    // V5's second boundary — a bare `--port` at exit 1 with this message — is not claimed here:
-    // routing it through clap changes the page to `[<port>]`, which AC8 forbids. See
-    // `build.md`'s remaining-work row for finding 5.
+    // V5's second boundary: the capture reads its own `argv` for the flag
+    // (`src/cli/commands/start.ts:74-78`), so a `--port` with no value after it is the port's
+    // own message at exit 1 — answered before the parser runs, at both bare spellings.
+    for argv in [vec!["start", "--port"], vec!["start", "--port", "--detach"]] {
+        let output = cli(&argv, &[]);
+        assert_eq!(code(&output), 1, "{argv:?}");
+        assert_eq!(
+            stderr(&output),
+            "Error: Port must be a safe integer between 1 and 65535\n",
+            "{argv:?}"
+        );
+    }
+
     let output = cli(&["start", "--port", "70000"], &[]);
     assert_eq!(code(&output), 1);
     assert_eq!(
@@ -335,6 +345,12 @@ fn ac8_the_pages_carry_the_captures_flags() {
     ] {
         assert!(start.contains(phrase), "start names `{phrase}`: {start}");
     }
+    // The value is required on the page even though a bare flag is answered by hand (V5's
+    // second boundary, AC6): an optional value would render `--port [<port>]`.
+    assert!(
+        !start.contains("[<port>]"),
+        "start's page renders `--port <port>`, not an optional value: {start}"
+    );
 
     let info = stdout(&cli(&["info", "--help"], &[]));
     for phrase in ["--tor-hostname", "--i2p-hostname", "--json"] {
