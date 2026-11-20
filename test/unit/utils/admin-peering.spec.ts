@@ -31,6 +31,8 @@ describe('admin peering rows', () => {
       stale: false,
     })
     expect(rows[0].state?.status).to.equal('live')
+    expect(rows[0].relationship).to.equal('free')
+    expect(rows[0].terms).to.be.undefined
   })
 
   it('marks an enabled peer stale when it has no state or the state is old', () => {
@@ -132,6 +134,8 @@ describe('admin peering rows', () => {
       termPeriodSeconds: 2592000,
     })
     expect(rows[0].billing?.periodEnd).to.equal(periodEnd)
+    expect(rows[0].relationship).to.equal('active')
+    expect(rows[0].terms).to.deep.equal({ amountMsats: '21000', periodSeconds: 2592000 })
   })
 
   it('shows a billing row for a peer removed from settings', () => {
@@ -162,7 +166,7 @@ describe('admin peering rows', () => {
     )
 
     expect(rows).to.have.length(1)
-    expect(rows[0]).to.include({ configured: false, enabled: false })
+    expect(rows[0]).to.include({ configured: false, enabled: false, relationship: 'lapsed' })
     expect(rows[0].billing?.status).to.equal('lapsed')
   })
 

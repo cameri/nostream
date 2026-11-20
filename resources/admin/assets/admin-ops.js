@@ -121,14 +121,18 @@
     return `${Math.round(seconds / 86400)}d`
   }
 
-  const peeringBillingBadge = (billing) => {
-    if (!billing?.status) {
-      return '<span class="status-badge"><span class="status-led" aria-hidden="true"></span>Not billed</span>'
+  const peeringStateBadge = (relationship) => {
+    const status = String(relationship || 'removed')
+    const degraded = ['lapsed', 'unpaid', 'suspended', 'removed'].includes(status)
+    return `<span class="status-badge${degraded ? ' status-degraded' : ''}"><span class="status-led" aria-hidden="true"></span>${escapeHtml(status)}</span>`
+  }
+
+  const peeringTerms = (terms) => {
+    if (!terms?.amountMsats || !terms?.periodSeconds) {
+      return 'Free'
     }
 
-    const status = String(billing.status)
-    const degraded = status === 'lapsed' || status === 'unpaid'
-    return `<span class="status-badge${degraded ? ' status-degraded' : ''}"><span class="status-led" aria-hidden="true"></span>${escapeHtml(status)}</span>`
+    return `${Math.round(Number(BigInt(terms.amountMsats) / 1000n))} sats / ${Math.round(terms.periodSeconds / 86400)}d`
   }
 
   const peeringSignalBadge = (row) => {
@@ -209,9 +213,10 @@
       .join('')
   }
 
-  const renderPeering = (rows) => {    if (!Array.isArray(rows) || !rows.length) {
+  const renderPeering = (rows) => {
+    if (!Array.isArray(rows) || !rows.length) {
       elements.peeringBody.innerHTML =
-        '<tr><td colspan="10" class="admin-muted small">No peering peers configured.</td></tr>'
+        '<tr><td colspan="12" class="admin-muted small">No peering peers configured.</td></tr>'
       return
     }
 
@@ -224,13 +229,15 @@
         return `<tr>
           <td><code class="small" title="${escapeAttr(title)}">${escapeHtml(shortPubkey(row.pubkey))}</code></td>
           <td class="small">${escapeHtml(row.relayUrl)}</td>
-          <td>${peeringBillingBadge(row.billing)}</td>
+          <td class="small">${escapeHtml(peeringTerms(row.terms))}</td>
+          <td>${peeringStateBadge(row.relationship)}</td>
           <td class="small">${escapeHtml(formatTime(row.billing?.periodEnd))}</td>
           <td class="small">${escapeHtml(formatTime(state?.lastReconciledAt))}</td>
           <td>${escapeHtml(formatLag(state?.lagSeconds))}</td>
+          <td class="small">${escapeHtml(state?.receivedEvents ?? 0)}</td>
           <td>${escapeHtml(state?.missingEvents ?? '—')}</td>
+          <td class="small">${escapeHtml(requests?.eventsServed ?? 0)}</td>
           <td>${escapeHtml(requests?.requests ?? 0)}</td>
-          <td>${escapeHtml(requests?.eventsServed ?? 0)}</td>
           <td>${peeringSignalBadge(row)}</td>
         </tr>`
       })
