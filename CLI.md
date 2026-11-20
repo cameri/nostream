@@ -1,20 +1,37 @@
 # Nostream CLI
 
-Nostream ships a unified command-line interface:
+Nostream ships a unified command-line interface, `nostream-cli`, whose program name on every
+page and message is `nostream`:
 
 ```bash
 nostream --help
-pnpm run cli -- --help
+nostream --version
 ```
 
-When run with no arguments in an interactive terminal, `nostream` launches an interactive TUI.
-In non-interactive environments, it prints help and exits successfully.
+With no arguments it prints the help page on stdout and exits successfully, in a terminal and
+out of one alike; the page, `--help` and an unknown command are answered before the argument
+parser runs.
 
 ## Exit Codes
 
 - `0`: success
 - `1`: runtime/validation error
 - `2`: usage error (invalid command/options)
+
+An unknown command prints `Unknown command: <word>` on stderr and the help page on stdout, at
+exit `2`.
+
+A failure carries the `Error: ` prefix only when the command threw it — the parser's own usage
+errors and the commands' thrown validations. A message a command reports itself is printed bare,
+with the code it chose:
+
+```bash
+nostream invite create --uses 0    # Error: --uses must be a positive integer, exit 2
+nostream seed --count 0            # Error: --count must be a positive integer, exit 1
+nostream config get payments.x     # Path not found: payments.x, exit 1
+```
+
+`--json` failures are the envelope `{"error":{"message":…,"code":N}}` on stderr.
 
 ## Core Commands
 
@@ -28,8 +45,37 @@ nostream setup [--yes] [--start]
 nostream seed [--count 100]
 nostream invite create [--uses N] [--expires-in <seconds>] [--json]
 nostream import [file.jsonl|file.json] [--file file.jsonl|file.json] [--batch-size 1000]
-nostream export [output] [--output output] [--format jsonl|json]
+nostream export [output] [--output output] [--format jsonl|json|gzip|gz|xz] [-z]
+nostream clean-db [--all|--older-than=<days>|--kinds=<1,7,4>] [--dry-run] [--force]
 ```
+
+`--version` and `-v` print `nostream/<version>`.
+
+`info`, `seed`, `invite create`, `export` and `clean-db` read the store the settings name, and
+take `--data-dir <DIR>` for the LMDB root: the environment lives at `<DIR>/lmdb`, the layout
+`nostream-cli migrate pg-to-lmdb --target <DIR>` writes. With the lmdb backend selected and no
+`--data-dir`, the command fails with `Error: the lmdb backend needs --data-dir <path>`.
+
+## Cleaning events
+
+`clean-db` deletes events by age, by kind, or every event. Nothing else is touched: invite
+codes, invoices and users survive.
+
+```
+nostream clean-db [options]
+
+  --all                  Delete all events.
+  --older-than=<days>    Delete events older than the given number of days.
+  --kinds=<1,7,4>        Delete events for specific kinds.
+  --dry-run              Show how many rows would be deleted without deleting them.
+  --force                Skip interactive confirmation prompt.
+  --help                 Show this help message.
+```
+
+`--all` cannot be combined with `--older-than` or `--kinds`, and at least one of the three is
+required. Without `--force` a terminal is asked to type `DELETE`; a piped stdin refuses with
+`Interactive confirmation is unavailable. Re-run with --force.` and exit 1. `NODE_ENV=production`
+prints a warning on stderr and changes nothing else.
 
 ## NIP-43 invite codes
 
@@ -102,24 +148,20 @@ nostream config set limits.event.content[0].maxLength 2048
 nostream config set nip05.domainWhitelist '["example.com","relay.io"]' --type json
 ```
 
-## Development Commands
+## Development
 
-```bash
-nostream dev db:clean [--all|--older-than=30|--kinds=1,7,4] [--dry-run] [--force]
-nostream dev db:reset [--yes]
-nostream dev seed:relay
-nostream dev docker:clean [--yes]
-nostream dev test:unit
-nostream dev test:cli
-nostream dev test:integration
-```
+The TypeScript development loop (`db:reset`, `seed:relay`, `docker:clean`, the `test:*`
+wrappers) is not part of this binary: the wrapper died with the TypeScript line (#869). Its one
+real operator operation, `db:clean`, is the top-level `clean-db` above. The Rust suite is the
+one `cargo test --workspace --all-features` runs.
 
 ## TUI Navigation
 
-Run:
+The interactive settings editor is not ported yet: `nostream tui` is a labelled stub, and the
+no-argument path prints the help page rather than launching it. What the capture's TUI offered:
 
 ```bash
-nostream
+nostream tui
 ```
 
 Main menu includes:

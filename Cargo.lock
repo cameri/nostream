@@ -1468,6 +1468,7 @@ dependencies = [
  "chrono",
  "clap",
  "flate2",
+ "futures-util",
  "heed",
  "hex",
  "nostream-config",
