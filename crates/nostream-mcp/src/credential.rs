@@ -13,6 +13,7 @@
 //! form, deliberately — one small file per call is the price of a revocation that needs no
 //! server-side store.
 
+use std::io::Read;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -131,10 +132,12 @@ impl Credential {
 
     /// The same document on a descriptor the parent passed (`--admin-token-fd`), read once.
     ///
-    /// `/proc/self/fd/<n>` is the readable path to a descriptor this process inherited and needs
-    /// no `unsafe`: the workspace denies `unsafe_code` and its one carve-out is the storage
-    /// crate's (`CLAUDE.md`). It reads a regular file and a pipe alike, from the descriptor's own
-    /// offset.
+    /// It reads a regular file and a pipe alike, from the descriptor's own offset.
+    ///
+    /// `shortcut: /proc/self/fd/<n> is the readable path to an inherited descriptor and needs no
+    /// unsafe — the workspace denies unsafe_code and its one carve-out is the storage crate's
+    /// (CLAUDE.md) — upgrade when the daemon has to run where /proc is not mounted, which is the
+    /// point at which a raw-fd handle earns its audited unsafe block`
     pub fn from_descriptor(fd: i32) -> Result<Self, McpError> {
         let path = PathBuf::from(format!("/proc/self/fd/{fd}"));
         let text = std::fs::read_to_string(&path).map_err(|error| {
@@ -162,14 +165,23 @@ impl Credential {
 }
 
 /// One token file, checked and read: the mode's file rule, in one place (R27).
+///
+/// The file is opened once and checked on the descriptor it was opened as, rather than by path
+/// and then again by path: a `metadata` that answered `0600` and a read that then opened whatever
+/// the name pointed at would leave a window between the check and the use.
+///
+/// `shortcut: the mode is the only ownership check — the process's own euid is not readable
+/// through std without adding libc, and 0600 already decides who may read the file, group and
+/// other write bits included — upgrade when a root-run mode has to refuse a file owned by another
+/// user, which needs a dependency this crate was not given`
 fn read_file(path: &Path) -> Result<Scopes, McpError> {
-    let metadata = std::fs::metadata(path).map_err(|error| {
-        McpError::Credential(format!(
-            "the admin token file {} could not be read: {error}",
-            path.display()
-        ))
-    })?;
-    let mode = metadata.permissions().mode() & 0o777;
+    let mut file = std::fs::File::open(path).map_err(|error| unreadable(path, &error))?;
+    let mode = file
+        .metadata()
+        .map_err(|error| unreadable(path, &error))?
+        .permissions()
+        .mode()
+        & 0o777;
     if mode & GROUP_OR_OTHER != 0 {
         return Err(McpError::Credential(format!(
             "the admin token file {} is mode {mode:04o}: it must be {TOKEN_FILE_MODE:04o}, \
@@ -177,11 +189,15 @@ fn read_file(path: &Path) -> Result<Scopes, McpError> {
             path.display()
         )));
     }
-    let text = std::fs::read_to_string(path).map_err(|error| {
-        McpError::Credential(format!(
-            "the admin token file {} could not be read: {error}",
-            path.display()
-        ))
-    })?;
+    let mut text = String::new();
+    file.read_to_string(&mut text)
+        .map_err(|error| unreadable(path, &error))?;
     TokenDocument::parse(&text, &path.display().to_string())?.scopes()
+}
+
+fn unreadable(path: &Path, error: &std::io::Error) -> McpError {
+    McpError::Credential(format!(
+        "the admin token file {} could not be read: {error}",
+        path.display()
+    ))
 }

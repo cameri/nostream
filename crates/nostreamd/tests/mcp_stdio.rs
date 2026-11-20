@@ -479,6 +479,20 @@ async fn the_mode_needs_one_credential_flag() {
     assert_eq!(code, Some(2), "clap refuses the pair: {stderr}");
     assert!(stderr.contains("--admin-token-file"), "{stderr}");
     assert!(stderr.contains("--admin-token-fd"), "{stderr}");
+
+    // A credential flag on the relay path is refused rather than ignored: a daemon started with
+    // one and no `--mcp-stdio` would look configured and serve the console. `--check` is there so
+    // that a silently accepted flag validates the settings and exits rather than binding a socket.
+    let mut without_mode = vec![
+        "--config-dir".to_owned(),
+        prepared.config_dir.display().to_string(),
+        "--admin-token-file".to_owned(),
+        prepared.token.display().to_string(),
+    ];
+    without_mode.push("--check".to_owned());
+    let (code, stderr) = refusal(&without_mode, &[]).await;
+    assert_eq!(code, Some(2), "{stderr}");
+    assert!(stderr.contains("--mcp-stdio"), "{stderr}");
 }
 
 /// Proof 5: the descriptor form, end to end — the parent opens the document as descriptor 3 and
