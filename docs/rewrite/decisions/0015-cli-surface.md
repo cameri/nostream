@@ -225,14 +225,17 @@ was a fabricated key, and because a kind beyond `u16`'s range cannot exist in a 
 `delete_by_criteria` walks the criteria's range in `CLEAN_BATCH_ROWS` rows at a time: one read
 transaction collects a batch's ids, one write transaction deletes them (D5's delete-list). The
 shape exists because LMDB has a single writer per environment: the first cut deleted inside one
-write transaction and held that writer for the whole run — 19.46 s at 160 001 rows.
+write transaction and held that writer for the whole run — **19.46 s** in that cut's own run at
+160 001 rows, before the curve existed; the sweep below re-measured the same shape at **17.94 s**,
+and that is the figure every later comparison uses.
 
 The batch size is the measured curve, not a guess, and the curve was taken at 160 001 rows on
-this host with `CARGO_PROFILE_DEV_DEBUG=0` builds:
+this host with `CARGO_PROFILE_DEV_DEBUG=0` builds (one sweep, each shape run after the one above
+it):
 
 | batch | wall clock | write txns | mean writer hold |
 |---|---|---|---|
-| one transaction | 17.94 s | 1 | 17.94 s (held throughout) |
+| one transaction (the sweep's run) | 17.94 s | 1 | 17.94 s (held throughout) |
 | 40 000 | 18.41–25.33 s | 5 | 5.02 s |
 | **10 000** (shipped) | **28.15–31.52 s** | **17** | **1.83 s** |
 | 1 000 | 80.61–129.06 s | 161 | 0.71–0.80 s |

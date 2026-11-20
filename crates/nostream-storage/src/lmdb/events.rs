@@ -704,12 +704,13 @@ fn kind_of(record: &EventRecord) -> Result<i32, StorageError> {
 /// is a batch rather than a whole store's id list.
 ///
 /// The size is the measured curve, not a guess. A `clean-db --older-than` over 160 001 rows costs
-/// a commit per batch, and a commit's cost does not shrink with the batch: one transaction
-/// finished in 17.94 s with the writer held throughout, 40 000 rows a batch took 18.41–25.33 s in
-/// 5 commits (5.02 s mean hold), 10 000 took 28.15–31.52 s in 17 (1.83 s), and 1 000 took
-/// 80.61–129.06 s in 161 (0.71–0.80 s). 10 000 is the point where the run is within 1.6× of the
-/// one-transaction wall clock while the writer is released an order of magnitude sooner; the
-/// price is written bytes, which ADR 0015's D13 records.
+/// a commit per batch, and a commit's cost does not shrink with the batch: in one sweep, one
+/// transaction finished in 17.94 s with the writer held throughout, 40 000 rows a batch took
+/// 18.41–25.33 s in 5 commits (5.02 s mean hold), 10 000 took 28.15–31.52 s in 17 (1.83 s), and
+/// 1 000 took 80.61–129.06 s in 161 (0.71–0.80 s). 10 000 is the point where the run is within
+/// 1.6× of the one-transaction wall clock while the writer is released an order of magnitude
+/// sooner; the price is written bytes, which ADR 0015's D13 records. The first cut's own run,
+/// before the sweep, measured 19.46 s for that same one-transaction shape — D13 labels both.
 pub(crate) const CLEAN_BATCH_ROWS: usize = 10_000;
 
 /// The live rows after `after`, oldest first, at most `min(limit, MAX_PAGE_ROWS)` of them.
@@ -833,8 +834,9 @@ pub(crate) struct CriteriaBatch {
 ///
 /// Nothing is deleted here, which is what lets the caller run this outside a write transaction:
 /// LMDB allows one writer per environment, so a delete that collected and removed every batch
-/// inside one transaction held the writer for the whole run (`clean-db --older-than` measured
-/// 18.53 s at 160 001 rows). `None` means the walk found no key past `after`.
+/// inside one transaction held the writer for the whole run — the reader's own run measured
+/// 18.53 s at 160 001 rows, a third sample of the shape the sweep above prices at 17.94 s.
+/// `None` means the walk found no key past `after`.
 pub(crate) fn collect_criteria_batch(
     txn: &RoTxn<'_>,
     databases: &Databases,
