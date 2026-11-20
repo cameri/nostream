@@ -69,10 +69,14 @@ pub fn selected_backend(settings: &Settings) -> EventStoreBackend {
 /// Whether the environment names a Postgres server at all: `DB_URI` or `DB_HOST`, the two keys
 /// whose absence the capture reads as "not configured".
 ///
-/// The connection itself is assembled once, in
-/// `nostream_storage::postgres`'s `master_options` — `DB_URI` winning over the `DB_*` parts, the
-/// capture's defaults for the parts, percent-encoded credentials — and reached through
-/// `PostgresBackend::from_lookup`. This is the presence rule alone, which is the CLI's decision.
+/// The connection is assembled once, by
+/// `PostgresBackend::from_lookup` over `nostream_storage::postgres`'s `master_options`:
+/// `DB_URI` wins over the `DB_*` parts, the parts get the capture's defaults — **`localhost`
+/// included**, when no `DB_HOST` is set — and every field reaches `PgConnectOptions` directly,
+/// so no URL is composed and no credential is encoded. This presence rule is the CLI's own and
+/// is deliberately **narrower** than that assembly: the capture's `DB_URI || DB_HOST` test is
+/// what a script sees, so `DB_PORT`/`DB_USER` alone is refused with
+/// `PostgreSQL is not configured (set DB_URI or DB_HOST)` rather than dialling the default host.
 pub fn postgres_configured(env: &Environment) -> bool {
     env.get("DB_URI").is_some() || env.get("DB_HOST").is_some()
 }
@@ -163,8 +167,9 @@ mod tests {
             "DB_HOST",
             "db.internal"
         )])));
-        // The parts without a host name no server: `master_options` needs `DB_HOST` when there
-        // is no `DB_URI`, and the message says so rather than dialling localhost.
+        // The rule is narrower than the assembly on purpose: `master_options` would default the
+        // host to `localhost`, and the capture's `DB_URI || DB_HOST` test — which is what this
+        // rule reproduces — refuses the parts alone instead.
         assert!(!postgres_configured(&environment(&[
             ("DB_PORT", "5432"),
             ("DB_USER", "postgres"),

@@ -197,8 +197,10 @@ impl PostgresBackend {
     }
 
     /// Connects the master pool, and the replica pool when `READ_REPLICA_ENABLED=true`, from a
-    /// settings lookup: the one assembly of a connection string the workspace has. `from_env`
-    /// passes the process environment; the CLI passes its `.env`-layered one.
+    /// settings lookup: the one assembly of a Postgres connection the workspace has. It builds
+    /// `PgConnectOptions` field by field from `master_parts`/`replica_parts` — no URL is
+    /// composed and no value is encoded, because nothing is parsed back out. `from_env` passes
+    /// the process environment; the CLI passes its `.env`-layered one.
     pub async fn from_lookup<F>(lookup: &F) -> Result<Self, StorageError>
     where
         F: Fn(&str) -> Option<String> + Sync,
