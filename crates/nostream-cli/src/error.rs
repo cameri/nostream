@@ -97,4 +97,22 @@ impl CliError {
             code,
         }
     }
+
+    /// This failure in the shape a command that accepted `--json` reports it.
+    ///
+    /// The capture envelopes **every** throw from such a command, with the class's own code —
+    /// 2 for a usage failure, 1 otherwise (`src/cli/index.ts:116-135`) — so a script that asks
+    /// for the flag gets one shape on both paths. A failure that is already the envelope is
+    /// passed through, and without the flag the class's shape stands.
+    pub fn enveloped(self, json: bool) -> Self {
+        if !json {
+            return self;
+        }
+
+        match self {
+            Self::Json { .. } => self,
+            Self::Usage(message) => Self::json(message, 2),
+            other => Self::json(other.to_string(), 1),
+        }
+    }
 }

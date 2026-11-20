@@ -92,7 +92,7 @@ pub(crate) async fn info(
     context: &Context,
     options: &InfoOptions,
 ) -> Result<CommandOutput, CliError> {
-    let settings = settings(context)?;
+    let settings = settings(context).map_err(|error| error.enveloped(options.json))?;
     let payload = payload(context, &settings, options.data_dir.as_deref()).await;
 
     if options.tor_hostname {

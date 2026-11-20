@@ -789,6 +789,42 @@ fn a_broken_settings_file_is_prefixed_everywhere() {
     }
 }
 
+/// A command that accepted `--json` renders one shape on both paths: the capture envelopes every
+/// throw from it, with the class's code (`src/cli/index.ts:116-135`). Round 2 measured
+/// `config list --json`, `config get … --json` and `info --json` printing their settings failure
+/// as prose, leaving a script only the exit status to branch on.
+#[test]
+fn a_json_settings_failure_takes_the_envelope() {
+    let work = Work::new();
+    let config = work.path().join("config");
+    fs::create_dir_all(&config).expect("the config directory");
+    fs::write(
+        config.join("settings.yaml"),
+        "eventStore:\n  backend: [lmdb\n",
+    )
+    .expect("the settings write");
+    let env = [("NOSTR_CONFIG_DIR", config.to_str().expect("a utf-8 path"))];
+
+    for args in [
+        &["config", "list", "--json"][..],
+        &["config", "get", "info.name", "--json"][..],
+        &["info", "--json"][..],
+    ] {
+        let output = run_env(work.path(), args, &env);
+        let reported = stderr(&output);
+        assert_eq!(code(&output), 1, "{args:?}: {reported}");
+        assert!(stdout(&output).is_empty(), "{args:?}: {}", stdout(&output));
+        assert!(
+            reported.starts_with("{\"error\":{\"message\":\"failed to parse "),
+            "{args:?}: {reported}"
+        );
+        assert!(
+            reported.trim_end().ends_with("\"code\":1}}"),
+            "{args:?}: {reported}"
+        );
+    }
+}
+
 #[test]
 fn ac17_the_port_override_file_is_named_then_removed() {
     let (work, log) = compose_work();

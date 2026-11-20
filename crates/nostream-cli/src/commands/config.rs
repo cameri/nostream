@@ -18,11 +18,15 @@ pub fn validate(
 }
 
 /// Runs `config list`.
+///
+/// A failure from a command that accepted `--json` is the envelope, the code its class carries
+/// (`src/cli/index.ts:116-135`); without the flag it keeps the class's own shape.
 pub fn list(cwd: &Path, config_dir: Option<&Path>, json: bool) -> Result<CommandOutput, CliError> {
     crate::config::list(&resolve_paths(cwd, config_dir), json)
+        .map_err(|error| error.enveloped(json))
 }
 
-/// Runs `config get <path>`.
+/// Runs `config get <path>`, whose not-found failure is already the envelope under `--json`.
 pub fn get(
     cwd: &Path,
     config_dir: Option<&Path>,
@@ -30,6 +34,7 @@ pub fn get(
     json: bool,
 ) -> Result<CommandOutput, CliError> {
     crate::config::get(&resolve_paths(cwd, config_dir), path, json)
+        .map_err(|error| error.enveloped(json))
 }
 
 /// One `config set` request, as the parser read it.
