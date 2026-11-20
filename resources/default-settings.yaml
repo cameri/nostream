@@ -109,6 +109,11 @@ nip43:
   # Pubkeys allowed to request invite codes. Empty means any authenticated pubkey
   # may request one; non-empty restricts minting to the listed pubkeys.
   inviteRequestWhitelist: []
+  # Publish a kind 13534 membership list, signed by the relay's own key, and refresh it
+  # after every successful join or leave. This makes every member's pubkey public to
+  # anyone who can read the relay, so it is off by default. The list is a convenience
+  # for clients, not the source of truth for who may publish.
+  publishMembershipList: false
 nip45:
   enabled: true
 nip50:

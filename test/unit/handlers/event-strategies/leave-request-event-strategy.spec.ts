@@ -144,4 +144,62 @@ describe('LeaveRequestEventStrategy', () => {
     const result = emitStub.firstCall.args[1]
     expect(result[2]).to.be.true
   })
+
+  describe('membership list', () => {
+    let refresh: sinon.SinonStub
+
+    beforeEach(() => {
+      refresh = sinon.stub().resolves()
+      strategy = new LeaveRequestEventStrategy(adapter, userRepository, cache, settings, { refresh } as any)
+    })
+
+    it('refreshes the list after admission is revoked', async () => {
+      await strategy.execute(event)
+
+      expect(refresh).to.have.been.calledOnce
+      expect(refresh).to.have.been.calledAfter(userRepository.revokeAdmission as sinon.SinonStub)
+    })
+
+    it('still revokes and answers OK when the refresh fails', async () => {
+      refresh.rejects(new Error('db down'))
+
+      await strategy.execute(event)
+
+      expect((userRepository.revokeAdmission as sinon.SinonStub).calledOnce).to.be.true
+      const result = emitStub.firstCall.args[1]
+      expect(result[2]).to.be.true
+    })
+
+    it('does not refresh for a leave that changes nothing, because the user is not admitted', async () => {
+      ;(userRepository.findByPubkey as sinon.SinonStub).resolves({ isAdmitted: false })
+
+      await strategy.execute(event)
+
+      expect(refresh).not.to.have.been.called
+    })
+
+    it('does not refresh for a user that does not exist', async () => {
+      ;(userRepository.findByPubkey as sinon.SinonStub).resolves(undefined)
+
+      await strategy.execute(event)
+
+      expect(refresh).not.to.have.been.called
+    })
+
+    it('does not refresh when the request is rejected', async () => {
+      event.tags = []
+
+      await strategy.execute(event)
+
+      expect(refresh).not.to.have.been.called
+    })
+
+    it('does not refresh when the user is not authenticated', async () => {
+      ;(adapter.getAuthenticatedPubkeys as sinon.SinonStub).returns(new Set())
+
+      await strategy.execute(event)
+
+      expect(refresh).not.to.have.been.called
+    })
+  })
 })

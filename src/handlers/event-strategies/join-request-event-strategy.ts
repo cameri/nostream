@@ -6,6 +6,7 @@ import { createEventCommandResult } from '../../telemetry/event-metrics'
 import { createLogger } from '../../factories/logger-factory'
 import { Event } from '../../@types/event'
 import { IEventStrategy } from '../../@types/message-handlers'
+import { MembershipListPublisher } from '../../utils/nip43-membership'
 import { Settings } from '../../@types/settings'
 import { WebSocketAdapterEvent } from '../../constants/adapter'
 
@@ -21,6 +22,7 @@ export class JoinRequestEventStrategy implements IEventStrategy<Event, Promise<v
     private readonly userRepository: IUserRepository,
     private readonly cache: ICacheAdapter,
     private readonly settings: () => Settings,
+    private readonly membershipList?: MembershipListPublisher,
   ) {}
 
   public async execute(event: Event): Promise<void> {
@@ -76,6 +78,13 @@ export class JoinRequestEventStrategy implements IEventStrategy<Event, Promise<v
       await this.cache.deleteKey(admissionCacheKey(event.pubkey))
     } catch (error) {
       logger('unable to invalidate admission cache for %s: %o', event.pubkey, error)
+    }
+
+    // The member is admitted whether or not the list could be refreshed, so a failure here must not fail the join.
+    try {
+      await this.membershipList?.refresh()
+    } catch (error) {
+      logger('unable to refresh the membership list after admitting %s: %o', event.pubkey, error)
     }
 
     const relayUrl = currentSettings.info?.relay_url ?? 'this relay'

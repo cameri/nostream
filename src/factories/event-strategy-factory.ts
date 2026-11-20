@@ -34,6 +34,7 @@ import { IEventStrategy } from '../@types/message-handlers'
 import { InviteRequestEventStrategy } from '../handlers/event-strategies/invite-request-event-strategy'
 import { JoinRequestEventStrategy } from '../handlers/event-strategies/join-request-event-strategy'
 import { LeaveRequestEventStrategy } from '../handlers/event-strategies/leave-request-event-strategy'
+import { MembershipListPublisher } from '../utils/nip43-membership'
 import { ParameterizedReplaceableEventStrategy } from '../handlers/event-strategies/parameterized-replaceable-event-strategy'
 import { ReplaceableEventStrategy } from '../handlers/event-strategies/replaceable-event-strategy'
 import { ReportEventStrategy } from '../handlers/event-strategies/report-event-strategy'
@@ -87,9 +88,22 @@ export const eventStrategyFactory =
       // ephemeral handler, because kinds 28934/28935/28936 fall in the ephemeral
       // range (20000-29999) and would otherwise be broadcast to every subscriber.
     } else if (isNip43JoinRequest(event)) {
-      return new JoinRequestEventStrategy(adapter, inviteCodeRepository, userRepository, cache, settings)
+      return new JoinRequestEventStrategy(
+        adapter,
+        inviteCodeRepository,
+        userRepository,
+        cache,
+        settings,
+        new MembershipListPublisher(settings, userRepository, eventRepository, adapter),
+      )
     } else if (isNip43LeaveRequest(event)) {
-      return new LeaveRequestEventStrategy(adapter, userRepository, cache, settings)
+      return new LeaveRequestEventStrategy(
+        adapter,
+        userRepository,
+        cache,
+        settings,
+        new MembershipListPublisher(settings, userRepository, eventRepository, adapter),
+      )
     } else if (isNip43InviteRequest(event)) {
       return new InviteRequestEventStrategy(adapter)
       // NIP-90: DVM job requests (kind 5000-5999) checked early, same reasoning
