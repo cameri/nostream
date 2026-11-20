@@ -34,6 +34,7 @@ use std::collections::BTreeSet;
 
 use common::{Fixture, Stores, TestMcp, event, id_of, payload, text};
 use nostream_mcp::{TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET};
+use nostream_storage::repositories::EventRepository;
 use serde_json::{Value, json};
 
 fn ids(events: &[Value]) -> BTreeSet<String> {
@@ -709,4 +710,52 @@ async fn the_settings_schema_forbids_what_the_handler_refuses() {
         null_value["error"], "Validation failed",
         "an explicit null is a value the schema allows and the validator judges"
     );
+}
+
+/// A page that spent its slots and lost one to a vanished row is complete, not short.
+///
+/// `truncated` answers "may more rows match", and a page's size is the slots it spent: the
+/// store selects a bounded number of keys, then reads their values in batches, so a replacement
+/// (which hard-deletes the row it supersedes) or a retention pass can remove a selected key
+/// between the two. `StreamedEvent::Vanished` is the store's own signal for that slot, and a
+/// caller that counted the surviving rows would answer `truncated: false` with a matching row
+/// still unread — the "silent short page" the page obligation forbids.
+#[tokio::test]
+async fn a_page_that_lost_a_slot_is_still_marked_truncated() {
+    use std::sync::Arc;
+
+    let fixture = TestMcp::start_with_events(
+        Fixture::default(),
+        Some(Arc::new(
+            |backend: Arc<nostream_storage::lmdb::LmdbBackend>| {
+                Arc::new(common::VanishingRepository::new(backend, 2)) as Arc<dyn EventRepository>
+            },
+        )),
+    )
+    .await;
+    let seeded = [event(1, 1, 1_699_999_900), event(2, 1, 1_699_999_901)];
+    fixture.seed(&seeded).await;
+    let client = fixture.client().await;
+
+    // Both selected slots are the page, and the second one vanished: one row survives, and
+    // another row may still match.
+    let result = client
+        .call(TOOL_LIST_EVENTS, json!({ "kinds": [1], "limit": 2 }))
+        .await;
+    assert_eq!(result.is_error, Some(false), "{}", text(&result));
+    let full = payload(&result);
+    let events = full["events"].as_array().unwrap();
+    assert_eq!(events.len(), 1, "the vanished slot carries no row: {full}");
+    assert_eq!(
+        full["truncated"], true,
+        "two slots were spent, so the page is complete and more may match: {full}"
+    );
+
+    // The control: the same page under a bound it does not reach is not truncated, so the
+    // marker answers the page's size rather than being always true.
+    let result = client
+        .call(TOOL_LIST_EVENTS, json!({ "kinds": [1], "limit": 3 }))
+        .await;
+    let control = payload(&result);
+    assert_eq!(control["truncated"], false, "{control}");
 }

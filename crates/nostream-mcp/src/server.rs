@@ -15,7 +15,7 @@ use nostream_admin::controllers::admin_json_body_middleware::settings_patch;
 use nostream_admin::controllers::patch_settings::{self, SettingsWrite};
 use nostream_admin::utils::session;
 use nostream_core::{Filter, Kind};
-use nostream_storage::repositories::{EventRecord, collect_records};
+use nostream_storage::repositories::{EventRecord, collect_page, collect_records};
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::tool::ToolCallContext;
 use rmcp::handler::server::wrapper::Parameters;
@@ -296,7 +296,8 @@ impl AdminMcp {
     }
 
     /// One `EventRepository` read over one [`Filter`], through `collect_records` so a vanished
-    /// slot never reaches the payload (R15).
+    /// slot never reaches the payload (R15), and through `collect_page` where the page's size
+    /// decides something, so a spent slot is not read as a short page.
     #[tool(
         description = "List stored events matching the given kinds, authors, ids, since and until. Rows come back oldest first, and `limit` is the page size — the first rows in that order, at most 500; `truncated` is true when the page is full, so more rows may match"
     )]
@@ -337,8 +338,10 @@ impl AdminMcp {
     /// No `limit` goes to the store, because the store picks its direction from it: a filter
     /// carrying one is answered newest-first, which would make the payload's order depend on an
     /// unrelated argument. Ascending is the store's unlimited page, whose bound is
-    /// [`MAX_ROWS_PER_PAGE`], so `limit` is applied to that page here and the marker is
-    /// `len >= limit`.
+    /// [`MAX_ROWS_PER_PAGE`], so `limit` is applied to that page here and the marker counts
+    /// **slots**, not rows: a page that selected a key a concurrent replacement or a retention
+    /// pass then removed spends that slot and yields no row, and counting the surviving rows
+    /// would answer `truncated: false` to a caller with more rows still to read.
     async fn events(&self, criteria: ListEventsArgs) -> Result<(Vec<EventRecord>, bool), McpError> {
         let page = page_size(&criteria)?;
         let filter = Filter {
@@ -354,8 +357,8 @@ impl AdminMcp {
         };
         let filters = [filter];
         let stream = self.state.stores().events.find_by_filters(&filters).await?;
-        let mut records = collect_records(stream).await?;
-        let truncated = records.len() >= page;
+        let (mut records, slots) = collect_page(stream).await?;
+        let truncated = slots >= page;
         records.truncate(page);
         Ok((records, truncated))
     }

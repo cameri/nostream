@@ -1469,6 +1469,8 @@ dependencies = [
 name = "nostream-mcp"
 version = "0.1.0"
 dependencies = [
+ "futures-core",
+ "futures-util",
  "nostream-admin",
  "nostream-config",
  "nostream-core",

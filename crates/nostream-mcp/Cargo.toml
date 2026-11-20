@@ -19,6 +19,8 @@ thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+futures-core.workspace = true
+futures-util.workspace = true
 nostream-services.workspace = true
 rmcp = { workspace = true, features = ["client"] }
 serde_yaml.workspace = true

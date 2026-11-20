@@ -12,6 +12,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use futures_util::StreamExt;
 use nostream_admin::state::AdminStateConfig;
 use nostream_admin::utils::session;
 use nostream_admin::{AdminState, GrafanaSettings};
@@ -19,11 +20,14 @@ use nostream_config::SettingsPaths;
 use nostream_core::clock::TestClock;
 use nostream_core::nip05::Nip05Fetch;
 use nostream_core::random::SystemRandom;
-use nostream_core::{Event, EventId, Kind, Pubkey, Signature};
+use nostream_core::{Event, EventId, Filter, Kind, Pubkey, Signature};
 use nostream_mcp::{AdminMcp, MCP_SERVER_NAME};
 use nostream_services::{HttpClient, ReqwestClient, ServiceStores};
+use nostream_storage::error::StorageError;
 use nostream_storage::lmdb::LmdbBackend;
-use nostream_storage::repositories::{EventRecord, EventRepository};
+use nostream_storage::repositories::{
+    EventRecord, EventRepository, QueryStream, StorageFuture, StreamedEvent,
+};
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ClientCapabilities, ClientConfig, Implementation,
     ProtocolVersion, Tool,
@@ -117,6 +121,10 @@ impl Fixture {
     }
 }
 
+/// Builds the event repository a case wants over the harness's own backend.
+pub type EventRepositoryFactory =
+    Arc<dyn Fn(Arc<LmdbBackend>) -> Arc<dyn EventRepository> + Send + Sync>;
+
 /// One composed server over a temporary config dir, and what it was composed with.
 pub struct TestMcp {
     pub state: Arc<AdminState>,
@@ -135,6 +143,16 @@ impl TestMcp {
 
     /// Builds a case's composition.
     pub async fn start_with(fixture: Fixture) -> Self {
+        Self::start_with_events(fixture, None).await
+    }
+
+    /// The same, with the event repository a case supplies in place of the backend — for the
+    /// cases that need a page the store cannot be made to produce on demand, such as one whose
+    /// selected key was removed before its value was read.
+    pub async fn start_with_events(
+        fixture: Fixture,
+        events: Option<EventRepositoryFactory>,
+    ) -> Self {
         let temp = tempfile::tempdir().unwrap();
         let config_dir = temp.path().join("config");
         std::fs::create_dir_all(&config_dir).unwrap();
@@ -155,7 +173,10 @@ impl TestMcp {
         let backend = Arc::new(backend);
         let stores = match fixture.stores {
             Stores::Seeded => Arc::new(ServiceStores {
-                events: Arc::clone(&backend) as Arc<dyn EventRepository>,
+                events: events.as_ref().map_or_else(
+                    || Arc::clone(&backend) as Arc<dyn EventRepository>,
+                    |wrap| wrap(Arc::clone(&backend)),
+                ),
                 users: Arc::clone(&backend)
                     as Arc<dyn nostream_storage::repositories::UserRepository>,
                 invoices: Arc::clone(&backend)
@@ -403,4 +424,129 @@ fn lines(path: &Path) -> Vec<Value> {
         .filter(|line| !line.trim().is_empty())
         .map(|line| serde_json::from_str(line).unwrap())
         .collect()
+}
+
+/// The real backend, with one page slot reported as vanished.
+///
+/// `StreamedEvent::Vanished` is what the LMDB stream emits for a key it selected and could not
+/// read — a replacement hard-deletes the row it supersedes and a retention pass removes a
+/// soft-deleted one, and both can land between the selection and the batch read. That window
+/// cannot be opened from outside the store, so a case that needs the marker takes a real page
+/// and has the `nth` record inside it answered as the marker instead. Every other method is the
+/// backend's own.
+pub struct VanishingRepository {
+    inner: Arc<LmdbBackend>,
+    nth: usize,
+}
+
+impl VanishingRepository {
+    /// The backend, with the `nth` record of every page reported as vanished.
+    pub fn new(inner: Arc<LmdbBackend>, nth: usize) -> Self {
+        Self { inner, nth }
+    }
+}
+
+impl EventRepository for VanishingRepository {
+    fn create<'a>(&'a self, record: &'a EventRecord) -> StorageFuture<'a, u64> {
+        self.inner.create(record)
+    }
+
+    fn create_many<'a>(&'a self, records: &'a [EventRecord]) -> StorageFuture<'a, u64> {
+        self.inner.create_many(records)
+    }
+
+    fn upsert<'a>(&'a self, record: &'a EventRecord) -> StorageFuture<'a, u64> {
+        self.inner.upsert(record)
+    }
+
+    fn upsert_many<'a>(&'a self, records: &'a [EventRecord]) -> StorageFuture<'a, u64> {
+        self.inner.upsert_many(records)
+    }
+
+    fn find_by_filters<'a>(
+        &'a self,
+        filters: &'a [Filter],
+    ) -> StorageFuture<'a, QueryStream<'a, StreamedEvent>> {
+        Box::pin(async move {
+            let stream = self.inner.find_by_filters(filters).await?;
+            let items: Vec<Result<StreamedEvent, StorageError>> = stream.collect().await;
+            let nth = self.nth;
+            let mut seen = 0usize;
+            let mapped = items.into_iter().map(move |item| {
+                item.map(|event| match event {
+                    StreamedEvent::Record(record) => {
+                        seen += 1;
+                        if seen == nth {
+                            StreamedEvent::Vanished
+                        } else {
+                            StreamedEvent::Record(record)
+                        }
+                    }
+                    marker => marker,
+                })
+            });
+            Ok(Box::pin(futures_util::stream::iter(mapped)) as QueryStream<'a, StreamedEvent>)
+        })
+    }
+
+    fn count_by_filters<'a>(&'a self, filters: &'a [Filter]) -> StorageFuture<'a, u64> {
+        self.inner.count_by_filters(filters)
+    }
+
+    fn page_bound(&self) -> u64 {
+        self.inner.page_bound()
+    }
+
+    fn search_rule(&self) -> nostream_storage::repositories::SearchRule {
+        self.inner.search_rule()
+    }
+
+    fn empty_tag_rule(&self) -> nostream_storage::repositories::EmptyTagRule {
+        self.inner.empty_tag_rule()
+    }
+
+    fn find_reconciliation_items<'a>(
+        &'a self,
+        filter: &'a Filter,
+    ) -> StorageFuture<'a, QueryStream<'a, nostream_storage::repositories::ReconciliationItem>>
+    {
+        self.inner.find_reconciliation_items(filter)
+    }
+
+    fn delete_by_pubkey_and_ids<'a>(
+        &'a self,
+        pubkey: &'a Pubkey,
+        ids: &'a [EventId],
+    ) -> StorageFuture<'a, u64> {
+        self.inner.delete_by_pubkey_and_ids(pubkey, ids)
+    }
+
+    fn delete_by_addresses<'a>(
+        &'a self,
+        pubkey: &'a Pubkey,
+        addresses: &'a [(Kind, String)],
+        not_after: i64,
+    ) -> StorageFuture<'a, u64> {
+        self.inner.delete_by_addresses(pubkey, addresses, not_after)
+    }
+
+    fn delete_by_pubkey_except_kinds<'a>(
+        &'a self,
+        pubkey: &'a Pubkey,
+        excluded_kinds: &'a [Kind],
+    ) -> StorageFuture<'a, u64> {
+        self.inner
+            .delete_by_pubkey_except_kinds(pubkey, excluded_kinds)
+    }
+
+    fn has_active_request_to_vanish<'a>(&'a self, pubkey: &'a Pubkey) -> StorageFuture<'a, bool> {
+        self.inner.has_active_request_to_vanish(pubkey)
+    }
+
+    fn delete_expired_and_retained<'a>(
+        &'a self,
+        options: &'a nostream_storage::repositories::EventRetentionOptions,
+    ) -> StorageFuture<'a, nostream_storage::repositories::EventPurgeCounts> {
+        self.inner.delete_expired_and_retained(options)
+    }
 }
