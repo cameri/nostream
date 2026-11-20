@@ -16,7 +16,8 @@ describe('cli documentation alignment', () => {
   it('documents the guided TUI configure flow and fallback behavior', () => {
     const cliDoc = fs.readFileSync(path.join(projectRoot, 'CLI.md'), 'utf-8')
 
-    expect(cliDoc).to.include('When run with no arguments in an interactive terminal, `nostream` launches an interactive TUI.')
+    expect(cliDoc).to.include('With no arguments it prints the help page on stdout and exits successfully')
+    expect(cliDoc).to.include('no-argument path prints the help page rather than launching it.')
     expect(cliDoc).to.include('Configure menu offers guided editing for common categories such as payments, network, and limits.')
     expect(cliDoc).to.include('Advanced dot-path get/set remains available for full settings access.')
   })
