@@ -1830,3 +1830,50 @@ fn ac49_clean_db_help_is_the_captures_page() {
     assert_eq!(page.matches("nostream clean-db").count(), 5, "{page}");
     assert!(!page.contains("dev db:clean"), "{page}");
 }
+
+#[test]
+fn ac40_the_scan_pages_past_one_page_bound() {
+    let (work, config, data) = info_work();
+    let rows = 12_001;
+
+    block_on_store(async {
+        let backend = LmdbBackend::open(&work.data())
+            .await
+            .expect("the store opens");
+        let events: Vec<Event> = (0..rows)
+            .map(|index| note(11, 1, 1_700_000_000 + index))
+            .collect();
+        let records: Vec<EventRecord> = events.iter().map(EventRecord::from_event).collect();
+        backend.create_many(&records).await.expect("the rows write");
+    });
+
+    let output_path = work.path().join("all.jsonl");
+    let output = run_env(
+        work.path(),
+        &[
+            "export",
+            &output_path.display().to_string(),
+            "--data-dir",
+            &data,
+        ],
+        &[("NOSTR_CONFIG_DIR", &config)],
+    );
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+
+    let written = fs::read_to_string(&output_path).expect("the export writes");
+    let lines: Vec<&str> = written.lines().collect();
+    assert_eq!(lines.len(), rows as usize, "three pages, none truncated");
+
+    let times: Vec<i64> = lines
+        .iter()
+        .map(|line| {
+            serde_json::from_str::<serde_json::Value>(line).expect("a row")["created_at"]
+                .as_i64()
+                .expect("a timestamp")
+        })
+        .collect();
+    assert!(
+        times.windows(2).all(|pair| pair[0] <= pair[1]),
+        "the export ascends through every page"
+    );
+}
