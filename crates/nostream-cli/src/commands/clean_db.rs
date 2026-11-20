@@ -166,19 +166,29 @@ fn option_value(
     }
 }
 
-/// `parseOlderThanDays`: digits only, then a positive safe integer, one message for both.
+/// The capture's numeric bound, `Number.isSafeInteger` (`src/clean-db.ts:54-65`): above it the
+/// parser refuses, and nothing downstream has to guess what the value meant (Amendment 3).
+const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+
+/// `parseOlderThanDays`: digits only, then a positive **safe** integer, one message for both.
+///
+/// The safe-integer bound is the capture's, not a nicety: an unrepresentable value used to reach
+/// the criteria builder, where it became `before: None` — the unfiltered delete.
 fn parse_older_than_days(value: &str) -> Result<u64, CliError> {
     let days = value
         .bytes()
         .all(|byte| byte.is_ascii_digit())
         .then(|| value.parse::<u64>().ok())
         .flatten()
-        .filter(|days| *days > 0);
+        .filter(|days| (1..=MAX_SAFE_INTEGER).contains(days));
 
     days.ok_or_else(|| CliError::reported_line("--older-than must be a positive integer"))
 }
 
-/// `parseKinds`: a comma-separated list of non-negative integers, deduplicated in order.
+/// `parseKinds`: a comma-separated list of non-negative safe integers, deduplicated in order.
+///
+/// The capture has two refusal branches here — a part that is not digits, and a part that is a
+/// number it cannot hold — and its messages differ (`src/clean-db.ts:74-84`).
 fn parse_kinds(value: &str) -> Result<Vec<Kind>, CliError> {
     let parts: Vec<&str> = value
         .split(',')
@@ -195,12 +205,19 @@ fn parse_kinds(value: &str) -> Result<Vec<Kind>, CliError> {
     let mut kinds: Vec<Kind> = Vec::new();
 
     for part in parts {
-        let digits = part.bytes().all(|byte| byte.is_ascii_digit());
-        let parsed = digits.then(|| part.parse::<u64>().ok()).flatten();
-
-        let Some(kind) = parsed else {
+        if !part.bytes().all(|byte| byte.is_ascii_digit()) {
             return Err(CliError::reported_line(
                 "--kinds must be a comma-separated list of non-negative integers",
+            ));
+        }
+
+        let Some(kind) = part
+            .parse::<u64>()
+            .ok()
+            .filter(|kind| *kind <= MAX_SAFE_INTEGER)
+        else {
+            return Err(CliError::reported_line(
+                "--kinds must contain valid integers",
             ));
         };
 
@@ -237,11 +254,11 @@ pub fn run(context: &Context, args: &[String]) -> Result<CommandOutput, CliError
 async fn clean(context: &Context, options: &CleanDbOptions) -> Result<CommandOutput, CliError> {
     let settings = crate::config::effective_settings(&SettingsPaths::resolve(&context.cwd))
         .map_err(|error| CliError::reported_line(error.to_string()))?;
+    let criteria = options.criteria(Utc::now().timestamp())?;
     let opened = store::open(&settings, options.data_dir.as_deref(), &context.env)
         .await
         .map_err(|error| CliError::reported_line(error.to_string()))?;
     let events = opened.events();
-    let criteria = options.criteria(Utc::now().timestamp());
 
     if options.dry_run {
         let every_row = EventCleanCriteria::default();
@@ -293,15 +310,38 @@ async fn clean(context: &Context, options: &CleanDbOptions) -> Result<CommandOut
 impl CleanDbOptions {
     /// `applySelectiveFilters`: `created_at < now - days*86400` **and** `kind IN kinds`, with
     /// neither condition set selecting every row (V40, V49).
-    pub fn criteria(&self, now_seconds: i64) -> EventCleanCriteria {
-        EventCleanCriteria {
-            before: self
-                .older_than_days
-                .and_then(|days| i64::try_from(days).ok())
-                .map(|days| now_seconds - days * 86_400),
+    ///
+    /// The age bound is fallible on purpose: a `days` value whose cutoff does not fit a
+    /// 64-bit second count is a refusal, never an absent bound, because an absent bound is
+    /// the unfiltered delete (Amendment 3). The parser refuses every value above the
+    /// capture's safe integer first, so this arm only answers the values between that bound
+    /// and what the arithmetic can hold.
+    pub fn criteria(&self, now_seconds: i64) -> Result<EventCleanCriteria, CliError> {
+        let before = match self.older_than_days {
+            Some(days) => {
+                let days = i64::try_from(days).map_err(|_| too_large(days))?;
+                let cutoff = days
+                    .checked_mul(86_400)
+                    .and_then(|age| now_seconds.checked_sub(age))
+                    .ok_or_else(|| too_large(days as u64))?;
+                Some(cutoff)
+            }
+            None => None,
+        };
+
+        Ok(EventCleanCriteria {
+            before,
             kinds: (!self.kinds.is_empty()).then(|| self.kinds.clone()),
-        }
+        })
     }
+}
+
+/// The refusal a `--older-than` value gets when no cutoff can represent it: the capture's own
+/// query would fail on the same value, so this is a report at exit 1 and not a usage error.
+fn too_large(days: u64) -> CliError {
+    CliError::reported_line(format!(
+        "--older-than {days} is too large to express as a cutoff"
+    ))
 }
 
 /// `askForConfirmation`: one line, trimmed, exactly `DELETE`. End of input is the cancel path
@@ -380,11 +420,28 @@ mod tests {
         for value in ["--older-than=0", "--older-than=-1", "--older-than=abc"] {
             assert_eq!(message(&[value]), "--older-than must be a positive integer");
         }
+        // Amendment 3: every value the capture's `Number.isSafeInteger` refuses, including the
+        // one that fits `u64` and the two that fit `i64`.
+        for value in [
+            "--older-than=9007199254740992",
+            "--older-than=9223372036854775807",
+            "--older-than=18446744073709551615",
+            "--older-than=18446744073709551616",
+        ] {
+            assert_eq!(message(&[value]), "--older-than must be a positive integer");
+        }
         assert_eq!(message(&["--kinds="]), "Missing value for --kinds");
         assert_eq!(
             message(&["--kinds=1,abc"]),
             "--kinds must be a comma-separated list of non-negative integers"
         );
+        for value in [
+            "--kinds=9007199254740992",
+            "--kinds=18446744073709551615",
+            "--kinds=18446744073709551616",
+        ] {
+            assert_eq!(message(&[value]), "--kinds must contain valid integers");
+        }
         assert_eq!(message(&["--unknown"]), "Unknown option: --unknown");
         assert_eq!(
             message(&["--older-than-days=7"]),
@@ -402,7 +459,7 @@ mod tests {
         let now = 1_700_000_000;
 
         assert_eq!(
-            options.criteria(now),
+            options.criteria(now).expect("a representable cutoff"),
             EventCleanCriteria {
                 before: Some(now - 30 * 86_400),
                 kinds: Some(vec![Kind(1), Kind(7)]),
@@ -410,7 +467,27 @@ mod tests {
         );
 
         let all = parse_args(&args(&["--all"])).expect("all");
-        assert_eq!(all.criteria(now), EventCleanCriteria::default());
+        assert_eq!(
+            all.criteria(now).expect("no cutoff"),
+            EventCleanCriteria::default()
+        );
+    }
+
+    /// A safe integer whose cutoff does not fit the clock is a refusal, not `before: None`
+    /// (Amendment 3): the absent bound is the unfiltered delete.
+    #[test]
+    fn a_cutoff_that_does_not_fit_is_refused_not_dropped() {
+        let options = parse_args(&args(&["--older-than=213503982334602"])).expect("a safe integer");
+
+        let refused = options
+            .criteria(1_700_000_000)
+            .expect_err("the cutoff does not fit")
+            .to_string();
+
+        assert_eq!(
+            refused,
+            "--older-than 213503982334602 is too large to express as a cutoff"
+        );
     }
 
     #[test]
