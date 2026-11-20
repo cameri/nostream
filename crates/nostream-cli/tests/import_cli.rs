@@ -12,7 +12,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use nostream_cli::commands::import::{self, ImportFormat, ParsedArgs};
+use nostream_cli::commands::import::{self, DEFAULT_BATCH_SIZE, ImportFormat, ParsedArgs};
 use nostream_core::Kind;
 use nostream_services::testing::{RecordingPersister, signed_event};
 
@@ -69,11 +69,14 @@ fn the_parser_rejects_every_bad_invocation() {
             .to_string(),
         "Missing value for --batch-size"
     );
+    // `--file` is the alias R5 adds (`CLI.md` shows it and the capture's parser refused it), so
+    // it is a valid invocation here and not a refusal.
     assert_eq!(
-        import::parse_args(&args(&["--file", "events.jsonl"]))
-            .unwrap_err()
-            .to_string(),
-        "Unknown option: --file"
+        import::parse_args(&args(&["--file", "events.jsonl"])).expect("the alias runs"),
+        ParsedArgs::Run {
+            file: PathBuf::from("events.jsonl"),
+            batch_size: DEFAULT_BATCH_SIZE,
+        }
     );
     assert_eq!(
         import::parse_args(&args(&["--help"])).expect("help"),
@@ -150,9 +153,15 @@ fn the_binary_exits_one_and_says_why() {
     assert_eq!(output.status.code(), Some(1));
     assert!(stderr(&output).contains("Missing value for --batch-size"));
 
+    // `--file` is the alias R5 adds; with no such file it fails on the missing input, not on the
+    // option.
     let output = cli(&["--file", "events.jsonl"]);
     assert_eq!(output.status.code(), Some(1));
-    assert!(stderr(&output).contains("Unknown option: --file"));
+    assert!(
+        stderr(&output).contains("Input file does not exist"),
+        "{}",
+        stderr(&output)
+    );
 
     let directory = tempfile::tempdir().expect("tempdir");
     let missing = directory.path().join("gone.jsonl");
@@ -200,7 +209,7 @@ fn the_help_route_does_not_print_a_second_import_page() {
     // The port answers every word that is no command with the capture's marker, so `help` is
     // refused before any parser runs and no second import page can be rendered.
     assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
-    assert_eq!(stderr(&output), "Unknown command: help\n");
+    assert_eq!(stderr(&output), "Unknown command: help");
     assert!(
         !String::from_utf8_lossy(&output.stdout).contains("The .jsonl or .json file to import"),
         "{}",
