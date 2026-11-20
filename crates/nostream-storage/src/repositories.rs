@@ -738,9 +738,13 @@ pub trait EventRepository: Send + Sync {
     /// count. The row's index entries go with it, so no read path can still find it.
     ///
     /// The delete is a **delete-list**, and it is not atomic across backends by design: LMDB
-    /// commits one batch at a time so a relay sharing the store keeps its writer between
-    /// batches, and a failure part-way leaves the batches already committed deleted. The count
-    /// is the rows this call removed; a re-run removes only what is left.
+    /// commits one batch of `CLEAN_BATCH_ROWS` at a time so a relay sharing the store keeps its
+    /// writer between batches, so a failure part-way leaves the batches already committed
+    /// deleted. **A failure after one commit answers
+    /// [`StorageError::Partial`](crate::StorageError::Partial), whose message names the rows that
+    /// are gone** — the count is not lost on the `Err` path, so no caller can read a run that
+    /// stopped half-way as a run that changed nothing. On the `Ok` path the count is the rows
+    /// this call removed, and a re-run removes only what is left.
     fn delete_by_criteria<'a>(&'a self, criteria: &'a EventCleanCriteria)
     -> StorageFuture<'a, u64>;
 

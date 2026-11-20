@@ -475,6 +475,20 @@ impl LmdbBackend {
     }
 }
 
+/// The error a criteria delete stops with: the plain failure when no batch had committed, and
+/// [`StorageError::Partial`] carrying the rows that did, so a run that got half-way through can
+/// never be read as a run that changed nothing.
+fn partial_delete(deleted: u64, cause: StorageError) -> StorageError {
+    if deleted == 0 {
+        return cause;
+    }
+
+    StorageError::Partial {
+        deleted,
+        cause: Box::new(cause),
+    }
+}
+
 impl EventRepository for LmdbBackend {
     fn create<'a>(&'a self, record: &'a EventRecord) -> StorageFuture<'a, u64> {
         Box::pin(async move {
@@ -692,8 +706,12 @@ impl EventRepository for LmdbBackend {
 
             // A read transaction collects one batch's ids and a write transaction deletes them,
             // so the single writer is held for a batch rather than for the whole run — the shape
-            // retention already uses. A failure leaves the batches already committed deleted,
-            // which the capture's `clean-db` tolerates: `--dry-run` still counts first.
+            // retention already uses, at `CLEAN_BATCH_ROWS` rows a batch. The trade is that the
+            // delete is no longer one atomic statement: the batches already committed stay
+            // deleted whatever happens next, which the capture's single `DELETE` cannot
+            // produce. So a run that stops part-way answers `StorageError::Partial` with the
+            // rows it committed, and an operator is never told "nothing happened" about rows
+            // that are gone (`docs/rewrite/decisions/0015-cli-surface.md` D13).
             loop {
                 let batch = {
                     let criteria = criteria.clone();
@@ -701,7 +719,8 @@ impl EventRepository for LmdbBackend {
                     self.read(move |txn, databases| {
                         events::collect_criteria_batch(txn, databases, &criteria, after.as_deref())
                     })
-                    .await?
+                    .await
+                    .map_err(|error| partial_delete(deleted, error))?
                 };
 
                 let Some(batch) = batch else {
@@ -719,7 +738,8 @@ impl EventRepository for LmdbBackend {
                     .write(move |txn, databases| {
                         events::delete_criteria_batch(txn, databases, &ids)
                     })
-                    .await?;
+                    .await
+                    .map_err(|error| partial_delete(deleted, error))?;
             }
         })
     }
@@ -1456,5 +1476,79 @@ mod tests {
         }
         assert!(written > 0, "the map held rows before it filled");
         transaction.abort();
+    }
+
+    /// A delete that stops part-way reports what it committed (round 2's finding 1). The loop
+    /// commits one batch per write transaction, so the third of five batches failing must leave
+    /// two batches deleted **and** answer [`StorageError::Partial`] with their row count: the
+    /// `Err` path is the only place an operator learns that rows are gone.
+    #[tokio::test]
+    async fn a_delete_that_stops_part_way_reports_the_rows_it_committed() {
+        use nostream_core::{Event, Signature};
+
+        let directory = tempfile::tempdir().expect("tempdir");
+        let backend = LmdbBackend::open(directory.path())
+            .await
+            .expect("the store opens");
+
+        let batch = events::CLEAN_BATCH_ROWS;
+        let total = 5 * batch;
+        let records: Vec<EventRecord> = (0..total)
+            .map(|step| {
+                let mut id = [0u8; 32];
+                id[..8].copy_from_slice(&(step as u64).to_be_bytes());
+                EventRecord::from_event(&Event {
+                    id: EventId::from_byte_array(id),
+                    pubkey: Pubkey::from_byte_array([7; 32]),
+                    created_at: 1_700_000_000 + step as i64,
+                    kind: Kind(1),
+                    tags: Vec::new(),
+                    content: format!("row {step}"),
+                    sig: Signature::from_byte_array([0; 64]),
+                })
+            })
+            .collect();
+        EventRepository::create_many(&backend, &records)
+            .await
+            .expect("the rows are written");
+
+        // The third batch's first row keeps its header — the walk still selects it — and loses
+        // its body, so that batch's write transaction fails after the first two committed.
+        let corrupt = records[2 * batch].event.id;
+        backend
+            .write(move |txn, databases| {
+                let value = databases
+                    .events
+                    .get(txn, corrupt.as_bytes())?
+                    .expect("the row is there")
+                    .to_vec();
+                let mut broken = value[..1 + encoding::EVENT_HEADER_LEN].to_vec();
+                broken.push(b'{');
+                databases.events.put(txn, corrupt.as_bytes(), &broken)?;
+                Ok(())
+            })
+            .await
+            .expect("the row is corrupted");
+
+        let outcome = backend
+            .delete_by_criteria(&EventCleanCriteria::default())
+            .await;
+        match outcome {
+            Err(StorageError::Partial { deleted, .. }) => assert_eq!(
+                deleted,
+                (2 * batch) as u64,
+                "two batches committed before the third failed"
+            ),
+            other => panic!("a stopped delete must report its committed rows: {other:?}"),
+        }
+
+        assert_eq!(
+            backend
+                .count_by_criteria(&EventCleanCriteria::default())
+                .await
+                .expect("a count"),
+            (total - 2 * batch) as u64,
+            "the rows the failed batch held are still there"
+        );
     }
 }

@@ -74,6 +74,23 @@ pub enum StorageError {
     #[error("the lmdb task did not finish")]
     LmdbTaskCancelled,
 
+    /// A delete stopped after some of its batches had committed. `deleted` is the rows that are
+    /// gone, and it is in the message because the caller's own number never arrives: the rows a
+    /// failed run removed are exactly what an operator cannot re-derive from the error alone.
+    ///
+    /// The LMDB arm of [`EventRepository::delete_by_criteria`] is the only producer — it commits
+    /// one batch per transaction so a relay sharing the store keeps its writer — while the
+    /// Postgres arm deletes in one statement and cannot stop half-way.
+    ///
+    /// [`EventRepository::delete_by_criteria`]:
+    /// crate::repositories::EventRepository::delete_by_criteria
+    #[error("{deleted} events were deleted before the failure: {cause}")]
+    Partial {
+        deleted: u64,
+        #[source]
+        cause: Box<StorageError>,
+    },
+
     /// A value must be valid UTF-8 to be stored through the string codecs.
     #[error("lmdb values must be valid utf-8")]
     NotUtf8,
@@ -146,6 +163,25 @@ mod tests {
         assert_eq!(
             StorageError::DuplicateEvent.to_string(),
             "the event id already exists"
+        );
+    }
+
+    #[test]
+    fn a_partial_delete_names_the_rows_it_deleted() {
+        // `nostream clean-db` prints this string as its one bare line at exit 1 (via
+        // `CliError::reported_line`), so the count reaching an operator is this assertion.
+        let error = StorageError::Partial {
+            deleted: 4_000,
+            cause: Box::new(StorageError::InvalidRow {
+                table: "events",
+                column: "value",
+                value: "expected value".to_owned(),
+            }),
+        };
+        assert_eq!(
+            error.to_string(),
+            "4000 events were deleted before the failure: events.value holds a value the row type \
+             cannot represent: expected value"
         );
     }
 }

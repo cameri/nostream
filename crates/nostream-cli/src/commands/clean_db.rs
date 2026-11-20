@@ -295,6 +295,9 @@ async fn clean(context: &Context, options: &CleanDbOptions) -> Result<CommandOut
         return Ok(CommandOutput::print(vec!["Deleted all events.".to_owned()]));
     }
 
+    // A run that stops after some batches committed answers `StorageError::Partial`, whose
+    // message opens with the rows already gone, so this one bare line at exit 1 can never be
+    // read as "nothing happened" (ADR 0015, D13).
     let deleted = events
         .delete_by_criteria(&criteria)
         .await

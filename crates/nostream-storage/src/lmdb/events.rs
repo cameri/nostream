@@ -702,7 +702,7 @@ fn kind_of(record: &EventRecord) -> Result<i32, StorageError> {
 
 /// Rows one `delete_by_criteria` batch holds before it deletes and resumes, so the run's memory
 /// is a batch rather than a whole store's id list.
-const CLEAN_BATCH_ROWS: usize = 1_000;
+pub(crate) const CLEAN_BATCH_ROWS: usize = 1_000;
 
 /// The live rows after `after`, oldest first, at most `min(limit, MAX_PAGE_ROWS)` of them.
 ///
