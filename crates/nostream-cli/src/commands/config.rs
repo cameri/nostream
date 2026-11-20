@@ -43,7 +43,9 @@ pub struct SetRequest<'a> {
     pub value: &'a str,
     /// `--type`, which the capture treats as `inferred` for anything but `json`.
     pub value_type: Option<&'a str>,
-    /// Validation runs unless `--no-validate`.
+    /// Validate the merged document before writing it, which is the default. A `--no-validate`
+    /// run arrives as `false`; the dispatch resolves the capture's one boolean
+    /// (`validate || !no_validate`), so this field never sees a flag.
     pub validate: bool,
     /// `--restart`: stop and start the stack after the write.
     pub restart: bool,
