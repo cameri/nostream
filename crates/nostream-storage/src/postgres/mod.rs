@@ -195,7 +195,9 @@ impl PostgresBackend {
     /// `PgConnectOptions` field by field from `master_parts`/`replica_parts` — no URL is
     /// composed and no value is encoded, because nothing is parsed back out. The caller owns the
     /// lookup, so a deployment's `.env` layer is reachable: the CLI passes its own environment's
-    /// `get`. `master_only_from_lookup` is the copy's door on the same assembly.
+    /// `get`. `master_only_from_env` is the copy's door on the same assembly its own callers use:
+    /// it hands its lookup to the private `master_only_from_lookup`, which reads the one
+    /// `master_options` this file defines.
     pub async fn from_lookup<F>(lookup: &F) -> Result<Self, StorageError>
     where
         F: Fn(&str) -> Option<String> + Sync,

@@ -2176,9 +2176,10 @@ fn a_symlinked_target_is_refused() {
 // AC19: the source is named, and an unconfigured one fails at once.
 // ---------------------------------------------------------------------------------------
 
-// `from_env` falls back to `postgres@localhost:5432/postgres` when nothing is set, so a run with
-// no `DB_URI` dials whatever local server is listening and copies it, and when nothing is
-// listening it waits out the pool's acquire timeout.
+// The capture's `from_env`, whose defaults this port inherits and whose constructor is now the
+// `from_lookup` assembly, falls back to `postgres@localhost:5432/postgres` when nothing is set, so
+// a run with no `DB_URI` would dial whatever local server is listening and copy it, and when
+// nothing is listening it would wait out the pool's acquire timeout.
 #[test]
 fn an_unconfigured_source_is_refused_at_once() {
     let directory = tempfile::tempdir().expect("a temporary directory");

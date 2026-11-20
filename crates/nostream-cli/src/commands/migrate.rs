@@ -669,8 +669,9 @@ fn sync_directory_of(path: &Path, root: &Path, target: &Path) -> Result<(), CliE
 }
 
 /// The source the run reads, as the setting that named it: `db.internal:5432/nostream (from
-/// DB_URI)`. An unconfigured source is refused here, because `from_env` would otherwise fall
-/// back to a local server's `postgres` database and copy whatever it holds.
+/// DB_URI)`. An unconfigured source is refused here, because the capture's `from_env`, whose
+/// defaults this port inherits, fell back to a local server's `postgres` database and copied
+/// whatever it held.
 fn describe_source() -> Result<String, CliError> {
     if let Some(uri) = std::env::var("DB_URI")
         .ok()
