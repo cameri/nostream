@@ -334,10 +334,14 @@ scope column names the read tools explicitly and keeps `settings_set` as the onl
 the table does not carry is **refused there**, with the router's own `-32602 tool not found`,
 before the scope decision and before any line is written — so a tool that arrived without its row
 is unreachable rather than unaudited, and the name an audit line records is always one of the
-table's constants. The scope column's own default (`required_scope` answers `write` for a name the
-table lacks) is the helper's answer to a question `call_tool` no longer has to ask, not a path a
-call travels. "One line per executed call" therefore means what it says — a call the router's own
-deserialiser refuses, and a call to a name the router does not register, reach no tool and write
+table's constants. The refusal asks the router as well as the table: the two are one list by
+case, but a call is dispatched from the router's own map, so a name is served only when both
+carry it — a row whose `#[tool]` method is absent is refused exactly as an absent row is, rather
+than answered `-32602` after a line was written for a call that reached no tool. The scope
+column's own default (`required_scope` answers `write` for a name the table lacks) is the
+helper's answer to a question `call_tool` no longer has to ask, not a path a call travels. "One
+line per executed call" therefore means what it says — a call the router's own deserialiser
+refuses, and a call to a name neither the table nor the router carries, reach no tool and write
 nothing, and every other call writes its line before the handler runs. The rule the argument check
 keeps is *no stricter than that deserialiser*, not "the shape the `inputSchema` states": the line
 is written before the dispatch, which is unconditional, so a stricter check would let a call run
@@ -375,17 +379,19 @@ a FIFO swapped in between it and the open stalls one call, which is the same wri
 drop in their own `0600` document — the boundary below.
 
 **One size, too, and it bounds the read.** A token document names scopes and carries nothing else,
-so it is bounded at 4 KiB (`MAX_TOKEN_DOCUMENT_BYTES`) and refused above that, naming the size it
-found and the cap. The bound is applied twice, because one place is not enough: a comparison on
+so it is bounded at 4 KiB (`MAX_TOKEN_DOCUMENT_BYTES`) and refused above that, naming the cap —
+and the size its metadata stated, when the metadata is the half that refused. The read's own
+refusal names the cap alone, because the `take` stops one byte past it and the document's true
+size was never read. The bound is applied twice, because one place is not enough: a comparison on
 metadata both forms already read refuses a document that says it is large, and the read itself is
 taken through `take(cap + 1)` so a document that does not say so is still refused rather than read
 whole — a procfs file whose `st_size` is `0` (`/proc/self/environ` answers `0` and then a body as
-long as the environment is), or a document a writer grows between the `stat` and the read. Without
-the first, the file form's per-call read would be an amount of work the path chooses; without the
-second it would be an amount the path's own metadata chooses. The descriptor form's single read
-could be asked for a
-`/dev/zero` that never ends — the type check above is what refuses the device — and the bound is
-what keeps a wrong path from being simply a large one.
+long as the environment is), or a document a writer grows between the `stat` and the read. The
+read reserves its buffer at that same bound, so the bound is one allocation instead of a doubling
+sequence. Without the first, the file form's per-call read would be an amount of work the path
+chooses; without the second it would be an amount the path's own metadata chooses. The descriptor
+form's single read could be asked for a `/dev/zero` that never ends — the type check above is what
+refuses the device — and the bound is what keeps a wrong path from being simply a large one.
 
 Exactly one of the two is required; both is a refusal, and neither is a refusal naming both.
 `NOSTREAM_ADMIN_TOKEN` is retired: a mode started with it **refuses to start**, naming the variable
