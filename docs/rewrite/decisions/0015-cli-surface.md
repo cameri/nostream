@@ -13,11 +13,12 @@ returning `CliError::NotImplemented` and exit 1, and three commands worked (`con
 eight command modules, and the two halves disagree on the things a script sees: the help page,
 the stream each failure writes to, and the exit code per class.
 
-The twelve decisions below are the ones a reader would otherwise have to reconstruct from the
+The thirteen decisions below are the ones a reader would otherwise have to reconstruct from the
 diff. Each is recorded with its cost, because every one of them buys something by giving up
 something else. D10, D11 and D12 were added by the job's first review round: the `--older-than`
 bound, the spawn seam and the out-of-range kind were each decided in the code and had no
-decision to point at.
+decision to point at. D13 is the second round's: the clean-up delete's batch size, its write
+volume and the count a stopped run reports.
 
 ## Decisions
 
@@ -189,3 +190,49 @@ asked for and hard-deleted the rows carrying it.
 **Cost:** a message the capture does not print, and one exit code (1) where the capture would
 eventually fail from its own query. Refusing early is the choice because the alternative on LMDB
 was a fabricated key, and because a kind beyond `u16`'s range cannot exist in a NIP-01 event.
+
+### D13 — The clean-up delete commits one batch of 10 000 rows, and a stopped run reports what it committed
+
+`delete_by_criteria` walks the criteria's range in `CLEAN_BATCH_ROWS` rows at a time: one read
+transaction collects a batch's ids, one write transaction deletes them (D5's delete-list). The
+shape exists because LMDB has a single writer per environment: the first cut deleted inside one
+write transaction and held that writer for the whole run — 19.46 s at 160 001 rows.
+
+The batch size is the measured curve, not a guess, and the curve was taken at 160 001 rows on
+this host with `CARGO_PROFILE_DEV_DEBUG=0` builds:
+
+| batch | wall clock | write txns | mean writer hold |
+|---|---|---|---|
+| one transaction | 17.94 s | 1 | 17.94 s (held throughout) |
+| 40 000 | 18.41–25.33 s | 5 | 5.02 s |
+| **10 000** (shipped) | **28.15–31.52 s** | **17** | **1.83 s** |
+| 1 000 | 80.61–129.06 s | 161 | 0.71–0.80 s |
+
+A commit's cost does not shrink with the batch, so 161 of them add about 63 s that one does not.
+10 000 is the end of the curve this decision takes: within 1.6× of the one-transaction wall clock,
+with the writer released ten times sooner, and 17 commits rather than 161. 40 000 is the parity
+point and gives the writer back for 5 s at a time; 1 000 is four and a half times the run for a
+hold the next size up already nearly matches. The value is pinned by
+`the_writer_is_released_between_batches`, which fails if a batch grows enough to make a 25 001-row
+delete one transaction.
+
+The price is written bytes. Deleting by the same criteria in one transaction wrote **1.41 MB**
+through 15 write syscalls at 160 001 rows, because the pages it frees are marked loose and never
+reach the disk; the 1 000-row shape wrote **5.31 GB** through 995 353 write syscalls, because
+every commit's dirty set is written and every commit ends in one `fdatasync`. The file grows less
+as a result — 69.8 MB against 242.9 MB at 160 001 rows — so the trade is growth for writes, not
+gigabytes for nothing. The 10 000-row shape's write volume sits between the two and was not
+measured; its commit count, which is what charges it, is 17.
+
+Because the delete is no longer one atomic statement, a run **can** stop half-way, and the state
+that leaves is reported rather than prevented: once a batch has committed, a later failure answers
+`StorageError::Partial` carrying the rows already gone, and `nostream clean-db` prints it as its
+one bare line at exit 1 — `4000 events were deleted before the failure: …`. The capture has no
+such state: `src/clean-db.ts:211-216` is one `deleteQuery.del()`, which either removed every
+selected row or none.
+
+**Cost:** a `clean-db --older-than` over a large store is about 1.6× the wall clock of the single
+statement it replaced, writes far more bytes than the rows it removes, and leaves behind a
+half-deleted store the capture cannot produce — so a re-run is the operator's step after a
+failure, and `--dry-run` (202 ms at 160 001 rows, one read walk) is the cheap way to learn what a
+run will do.
