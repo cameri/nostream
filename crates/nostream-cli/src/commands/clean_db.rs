@@ -5,11 +5,12 @@
 //! `HELP_TEXT` for `--help`, and selects rows with [`EventCleanCriteria`] — the same predicate
 //! for the count and the delete (C2, V49).
 //!
-//! Every failure here is reported **bare**, with exit 1: the capture's own entry point catches
-//! them all and prints them with `console.error` (`src/clean-db.ts:270-277`), so none of them
-//! carries the `Error: ` prefix (V63 class B). The `NODE_ENV=production` warning is written
-//! straight to stderr before the run, as the capture's `console.warn` is, and leaves the exit
-//! code alone.
+//! The capture's own entry point catches the parser's and the database's failures and prints
+//! them with `console.error` (`src/clean-db.ts:270-277`), so those are reported **bare**, with
+//! exit 1 (V63 class B). The store the command opens is the port's own seam, and its refusal is
+//! C3's class A — `Error: <message>`, exit 1 — the same shape `export`, `seed` and `invite`
+//! give it. The `NODE_ENV=production` warning is written straight to stderr before the run, as
+//! the capture's `console.warn` is, and leaves the exit code alone.
 
 use std::io::IsTerminal;
 use std::path::PathBuf;
@@ -250,11 +251,11 @@ pub fn run(context: &Context, args: &[String]) -> Result<CommandOutput, CliError
 /// `runCleanDb`'s body over the configured store.
 async fn clean(context: &Context, options: &CleanDbOptions) -> Result<CommandOutput, CliError> {
     let settings = crate::config::effective_settings(&SettingsPaths::resolve(&context.cwd))
-        .map_err(|error| CliError::reported_line(error.to_string()))?;
-    let criteria = options.criteria(Utc::now().timestamp())?;
+        .map_err(|error| CliError::command(error.to_string()))?;
+    let criteria = options.criteria(Utc::now().timestamp());
     let opened = store::open(&settings, options.data_dir.as_deref(), &context.env)
         .await
-        .map_err(|error| CliError::reported_line(error.to_string()))?;
+        .map_err(|error| CliError::command(error.to_string()))?;
     let events = opened.events();
 
     if options.dry_run {
@@ -308,37 +309,25 @@ impl CleanDbOptions {
     /// `applySelectiveFilters`: `created_at < now - days*86400` **and** `kind IN kinds`, with
     /// neither condition set selecting every row (V40, V49).
     ///
-    /// The age bound is fallible on purpose: a `days` value whose cutoff does not fit a
-    /// 64-bit second count is a refusal, never an absent bound, because an absent bound is
-    /// the unfiltered delete (Amendment 3). The parser refuses every value above the
-    /// capture's safe integer first, so this arm only answers the values between that bound
-    /// and what the arithmetic can hold.
-    pub fn criteria(&self, now_seconds: i64) -> Result<EventCleanCriteria, CliError> {
-        let before = match self.older_than_days {
-            Some(days) => {
-                let days = i64::try_from(days).map_err(|_| too_large(days))?;
-                let cutoff = days
-                    .checked_mul(86_400)
-                    .and_then(|age| now_seconds.checked_sub(age))
-                    .ok_or_else(|| too_large(days as u64))?;
-                Some(cutoff)
-            }
-            None => None,
-        };
-
-        Ok(EventCleanCriteria {
-            before,
+    /// The cutoff is always a value, never `None`: `None` is the unfiltered delete, which is what
+    /// an unrepresentable `days` turned into once. A span too large to subtract saturates at the
+    /// far end of the clock, so the predicate selects nothing — the answer for "older than
+    /// 285 million years" — rather than everything (ADR 0015, D10; Amendment 3).
+    pub fn criteria(&self, now_seconds: i64) -> EventCleanCriteria {
+        EventCleanCriteria {
+            before: self.older_than_days.map(|days| cutoff(now_seconds, days)),
             kinds: (!self.kinds.is_empty()).then(|| self.kinds.clone()),
-        })
+        }
     }
 }
 
-/// The refusal a `--older-than` value gets when no cutoff can represent it: the capture's own
-/// query would fail on the same value, so this is a report at exit 1 and not a usage error.
-fn too_large(days: u64) -> CliError {
-    CliError::reported_line(format!(
-        "--older-than {days} is too large to express as a cutoff"
-    ))
+/// `now - days*86400`, saturating where the arithmetic cannot hold the answer.
+fn cutoff(now_seconds: i64, days: u64) -> i64 {
+    i64::try_from(days)
+        .ok()
+        .and_then(|days| days.checked_mul(86_400))
+        .and_then(|age| now_seconds.checked_sub(age))
+        .unwrap_or(i64::MIN)
 }
 
 /// `askForConfirmation`: one line, trimmed, exactly `DELETE`. End of input is the cancel path
@@ -456,7 +445,7 @@ mod tests {
         let now = 1_700_000_000;
 
         assert_eq!(
-            options.criteria(now).expect("a representable cutoff"),
+            options.criteria(now),
             EventCleanCriteria {
                 before: Some(now - 30 * 86_400),
                 kinds: Some(vec![Kind(1), Kind(7)]),
@@ -464,27 +453,29 @@ mod tests {
         );
 
         let all = parse_args(&args(&["--all"])).expect("all");
-        assert_eq!(
-            all.criteria(now).expect("no cutoff"),
-            EventCleanCriteria::default()
-        );
+        assert_eq!(all.criteria(now), EventCleanCriteria::default());
     }
 
-    /// A safe integer whose cutoff does not fit the clock is a refusal, not `before: None`
-    /// (Amendment 3): the absent bound is the unfiltered delete.
+    /// A safe integer whose span the clock cannot hold is a cutoff that selects nothing, and it
+    /// is never `before: None` — the absent bound is the unfiltered delete (Amendment 3, ADR
+    /// 0015's D10).
     #[test]
-    fn a_cutoff_that_does_not_fit_is_refused_not_dropped() {
-        let options = parse_args(&args(&["--older-than=213503982334602"])).expect("a safe integer");
+    fn a_cutoff_past_the_clock_selects_nothing_and_stays_a_bound() {
+        let now = 1_700_000_000;
 
-        let refused = options
-            .criteria(1_700_000_000)
-            .expect_err("the cutoff does not fit")
-            .to_string();
+        for days in ["213503982334602", "9007199254740991"] {
+            let options = parse_args(&args(&[&format!("--older-than={days}")]))
+                .expect("a safe positive integer is accepted by the parser");
 
-        assert_eq!(
-            refused,
-            "--older-than 213503982334602 is too large to express as a cutoff"
-        );
+            assert_eq!(
+                options.criteria(now),
+                EventCleanCriteria {
+                    before: Some(i64::MIN),
+                    kinds: None,
+                },
+                "`--older-than={days}` saturates at the far end of the clock"
+            );
+        }
     }
 
     #[test]

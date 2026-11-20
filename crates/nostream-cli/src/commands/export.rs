@@ -672,15 +672,49 @@ pub fn rate_per_second(value: f64, elapsed_ms: f64) -> f64 {
     value / (elapsed_ms / 1_000.0).max(MIN_ELAPSED_SECONDS)
 }
 
-/// `formatCount`: a whole number as the capture prints it, else two decimals.
+/// `formatCount`: a whole number as the capture prints it, else two decimals, with the integer
+/// part grouped in threes — `toLocaleString('en-US')` (`src/scripts/export-events.ts:71-87`), so
+/// a 20 000-row run prints `20,602.95 events/s` and not `20602.95`.
 pub fn format_count(value: f64) -> String {
     let rounded = (value * 100.0).round() / 100.0;
 
-    if rounded.fract() == 0.0 {
+    let rendered = if rounded.fract() == 0.0 {
         format!("{rounded:.0}")
     } else {
         format!("{rounded:.2}")
+    };
+
+    group_thousands(&rendered)
+}
+
+/// `toLocaleString('en-US')`'s grouping: commas every three digits of the integer part, and the
+/// fraction untouched.
+fn group_thousands(rendered: &str) -> String {
+    let (integer, fraction) = match rendered.split_once('.') {
+        Some((integer, fraction)) => (integer, Some(fraction)),
+        None => (rendered, None),
+    };
+
+    let (sign, digits) = match integer.strip_prefix('-') {
+        Some(digits) => ("-", digits),
+        None => ("", integer),
+    };
+
+    let mut grouped = String::with_capacity(rendered.len() + digits.len() / 3 + 1);
+    grouped.push_str(sign);
+    for (index, digit) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index) % 3 == 0 {
+            grouped.push(',');
+        }
+        grouped.push(digit);
     }
+
+    if let Some(fraction) = fraction {
+        grouped.push('.');
+        grouped.push_str(fraction);
+    }
+
+    grouped
 }
 
 /// A write to the caller's stream failed, which no command can recover from.
@@ -718,10 +752,17 @@ mod tests {
     }
 
     #[test]
-    fn the_count_is_whole_or_two_decimals() {
+    fn the_count_is_whole_or_two_decimals_with_the_captures_separators() {
         assert_eq!(format_count(1.0), "1");
         assert_eq!(format_count(1.5), "1.50");
         assert_eq!(format_count(0.0), "0");
+        assert_eq!(format_count(999.0), "999");
+        assert_eq!(format_count(1_000.0), "1,000");
+        assert_eq!(format_count(20_602.95), "20,602.95");
+        assert_eq!(format_count(4_064.6), "4,064.60");
+        assert_eq!(format_count(200_000.0), "200,000");
+        assert_eq!(format_count(1_234_567.891), "1,234,567.89");
+        assert_eq!(group_thousands("-1234.50"), "-1,234.50");
     }
 
     #[test]

@@ -10,6 +10,7 @@
 //! directory its files resolve against, the environment with the `.env` layer behind it, and the
 //! runtime its futures run on.
 
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -463,16 +464,7 @@ enum Command {
         #[arg(short = 'd', long)]
         detach: bool,
         /// Host port for the relay
-        ///
-        /// A bare `--port` is the port's own refusal at exit 1, not the parser's: the capture's
-        /// check reads the option's value whatever it is (`src/cli/commands/start.ts:74-83`,
-        /// V5), so clap must hand an empty value through instead of failing first.
-        #[arg(
-            long,
-            value_name = "port",
-            num_args = 0..=1,
-            default_missing_value = ""
-        )]
+        #[arg(long, value_name = "port")]
         port: Option<String>,
         /// Additional arguments passed to docker compose
         #[arg(
@@ -686,10 +678,17 @@ struct ErrorBody<'a> {
 /// `--json` failure is the envelope. `Import` and `Migrate` keep the prefixes they shipped.
 pub fn render(result: Result<CommandOutput, CliError>) -> ExitCode {
     match result {
-        Ok(output) => {
-            print_lines(&output.lines);
-            output.exit_code()
-        }
+        Ok(output) => match print_lines(&output.lines) {
+            Ok(()) => output.exit_code(),
+            // A closed reader — `nostream config list | head -1` — ends the output and leaves the
+            // command's own code alone: `println!` panics on a broken pipe, and exit 101 is
+            // outside the surface's 0/1/2 vocabulary (V1).
+            Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => output.exit_code(),
+            Err(error) => {
+                eprintln!("Error: unable to write output: {error}");
+                ExitCode::from(1)
+            }
+        },
         Err(error) => {
             let code = match error {
                 CliError::Usage(message) => {
@@ -744,8 +743,12 @@ pub fn render(result: Result<CommandOutput, CliError>) -> ExitCode {
 }
 
 /// Prints lines on stdout, one per line.
-fn print_lines(lines: &[String]) {
+fn print_lines(lines: &[String]) -> std::io::Result<()> {
+    let mut stdout = std::io::stdout().lock();
+
     for line in lines {
-        println!("{line}");
+        writeln!(stdout, "{line}")?;
     }
+
+    Ok(())
 }

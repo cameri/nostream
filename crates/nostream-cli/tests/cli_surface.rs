@@ -280,17 +280,9 @@ fn ac6_a_command_failure_keeps_exit_one() {
         "Error: --count must be a positive integer\n"
     );
 
-    // V5's second boundary: a bare `--port` is the port's refusal at exit 1, not clap's exit 2.
-    for spelling in [vec!["start", "--port"], vec!["start", "--port="]] {
-        let output = cli(&spelling, &[]);
-        assert_eq!(code(&output), 1, "{spelling:?}: {}", stderr(&output));
-        assert_eq!(
-            stderr(&output),
-            "Error: Port must be a safe integer between 1 and 65535\n",
-            "{spelling:?}"
-        );
-    }
-
+    // V5's second boundary — a bare `--port` at exit 1 with this message — is not claimed here:
+    // routing it through clap changes the page to `[<port>]`, which AC8 forbids. See
+    // `build.md`'s remaining-work row for finding 5.
     let output = cli(&["start", "--port", "70000"], &[]);
     assert_eq!(code(&output), 1);
     assert_eq!(
@@ -395,6 +387,56 @@ fn ac11_config_list_prints_both_shapes() {
     assert_eq!(code(&output), 0, "{}", stderr(&output));
     let parsed: serde_json::Value = serde_json::from_str(&stdout(&output)).expect("JSON");
     assert!(parsed.get("payments").is_some());
+}
+
+/// A reader that closes early ends the output at the command's own code: `println!` panics on
+/// the broken pipe, and 101 is outside the surface's 0/1/2 vocabulary (V1). The document is
+/// larger than the pipe buffer, so the child has to write into a pipe nobody is reading.
+#[test]
+fn a_closed_reader_ends_config_list_without_a_panic() {
+    let work = Work::new();
+    let config = work.path().join("config");
+    fs::create_dir_all(&config).expect("the config directory");
+
+    let mut document = String::from("eventStore:\n  backend: lmdb\nlimits:\n  rateLimiter:\n    whitelist:\n");
+    for index in 0..4_000 {
+        document.push_str(&format!(
+            "      - 1{index}abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123\n"
+        ));
+    }
+    fs::write(config.join("settings.yaml"), document).expect("the settings write");
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["config", "list"])
+        .current_dir(work.path())
+        .env("NOSTR_CONFIG_DIR", &config)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("the binary starts");
+
+    {
+        use std::io::Read;
+
+        let mut stdout = child.stdout.take().expect("a stdout pipe");
+        let mut first = [0u8; 1_024];
+        let read = stdout.read(&mut first).expect("the first bytes");
+        assert!(read > 0, "the command printed nothing");
+        // Dropping the handle closes the read end, so the child's next write is EPIPE.
+    }
+
+    let output = child.wait_with_output().expect("the child finishes");
+    let reported = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "a closed reader is not a failure: {reported}"
+    );
+    assert!(
+        !reported.contains("panicked"),
+        "no panic on the broken pipe: {reported}"
+    );
 }
 
 #[test]

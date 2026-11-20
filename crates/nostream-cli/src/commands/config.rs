@@ -46,9 +46,9 @@ pub struct SetRequest<'a> {
 
 /// Runs `config set <path> <value>`, and the restart `--restart` asks for.
 ///
-/// shortcut: a failed `--restart` reports its own step's failure but not the `Updated <path>`
-/// line the capture prints before restarting, because a command returns either its lines or its
-/// failure and not both; upgrade when a criterion pins the pair.
+/// A failed restart does not swallow the write: the settings file already changed, so the
+/// `Updated <path>` line is reported with the restart's own failure and its code, as the
+/// capture logs the line before it restarts (`src/cli/commands/config.ts:152-155`).
 pub fn set(
     context: &Context,
     config_dir: Option<&Path>,
@@ -71,7 +71,19 @@ pub fn set(
         return Ok(output);
     }
 
-    let restarted = context.block_on(restart(context))?;
+    let restarted = match context.block_on(restart(context)) {
+        Ok(restarted) => restarted,
+        Err(CliError::Reported { lines, exit_code }) => {
+            let mut reported = output.lines;
+            reported.extend(lines);
+            return Err(CliError::Reported {
+                lines: reported,
+                exit_code,
+            });
+        }
+        Err(other) => return Err(other),
+    };
+
     let mut lines = output.lines;
     lines.extend(restarted.lines);
     Ok(CommandOutput::with_code(lines, restarted.exit_code))
