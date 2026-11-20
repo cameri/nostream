@@ -1,6 +1,7 @@
-//! AC5, AC29, AC30, AC33 — the stdio mode in the real binary: the flag, the JSON-RPC stream, the
-//! banner's stream, the absent socket, the exit code, the unwired store's answer, and the two
-//! ways the mode refuses to start with a credential it cannot accept.
+//! AC5, AC29, AC30, AC33, AC36, AC37 — the stdio mode in the real binary: the flag, the JSON-RPC
+//! stream, the banner's stream, the absent socket, the exit code, the unwired store's answer, the
+//! ways the mode refuses to start with a credential it cannot accept, and the payments refusal
+//! that belongs to the relay path rather than to this door.
 //!
 //! | case | what it proves |
 //! |---|---|
@@ -13,6 +14,7 @@
 //! | `the_help_text_names_the_credential` | `--help` names the two flags, the document's shape and scopes, the file rule and the retired variable |
 //! | `a_console_session_token_in_the_environment_refuses_to_start` | the retired variable is named rather than ignored, even when it carries a token the console would accept |
 //! | `a_group_readable_token_file_refuses_to_start` | mode 0644 fails the start, and the message names both modes |
+//! | `a_fifo_token_file_refuses_to_start` | a FIFO in the token file's place is refused, not opened: a read of one would stall the door |
 //! | `the_mode_needs_one_credential_flag` | neither flag is an error naming both, and both is an error naming both |
 //! | `an_inherited_descriptor_authenticates` | a document delivered on descriptor 3 answers `tools/list` and a read, with nothing on the command line or in the environment |
 //!
@@ -309,20 +311,23 @@ async fn refusal(arguments: &[String], environment: &[(&str, &str)]) -> (Option<
     )
 }
 
-/// The binary with **no** `SECRET`, for the payments refusal: the relay path must answer it and
-/// the stdio door must not. Bounded, because a build that lost the refusal would serve a relay
-/// here instead of exiting.
-async fn without_a_secret(arguments: &[String]) -> (Option<i32>, String) {
+/// The binary, bounded, for the cases whose bug would be a process that neither refuses nor exits:
+/// a build that lost the payments refusal would serve a relay, and a FIFO token file that is not
+/// refused yields no open at all. Twenty seconds. `secret: None` removes `SECRET`.
+async fn bounded(arguments: &[String], secret: Option<&str>) -> (Option<i32>, String) {
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_nostreamd"));
     command
         .args(arguments)
         .current_dir(workspace_root())
-        .env_remove("SECRET")
         .env("WORKER_COUNT", "1")
         .env_remove("NOSTREAM_ADMIN_TOKEN")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    match secret {
+        Some(secret) => command.env("SECRET", secret),
+        None => command.env_remove("SECRET"),
+    };
     let mut child = command.spawn().expect("the binary runs");
     let mut pipe = child.stderr.take().expect("stderr is piped");
     let status = match tokio::time::timeout(Duration::from_secs(20), child.wait()).await {
@@ -502,6 +507,34 @@ async fn a_group_readable_token_file_refuses_to_start() {
     assert!(stderr.contains("0600"), "the mode it needs: {stderr}");
 }
 
+/// A FIFO in the token file's place is refused rather than opened: the door re-reads the document
+/// on every call, and opening a FIFO read-only waits for a writer that never comes (R27).
+#[tokio::test]
+async fn a_fifo_token_file_refuses_to_start() {
+    let prepared = Prepared::new();
+    let fifo = prepared.token.with_file_name("admin-token.fifo");
+    let made = std::process::Command::new("mkfifo")
+        .args(["-m", "0600"])
+        .arg(&fifo)
+        .status()
+        .expect("mkfifo runs");
+    assert!(made.success(), "the fixture writes the FIFO at 0600");
+
+    let arguments = vec![
+        "--config-dir".to_owned(),
+        prepared.config_dir.display().to_string(),
+        "--log-level".to_owned(),
+        "info".to_owned(),
+        "--mcp-stdio".to_owned(),
+        "--admin-token-file".to_owned(),
+        fifo.display().to_string(),
+    ];
+    let (code, stderr) = bounded(&arguments, Some(SECRET)).await;
+
+    assert_eq!(code, Some(1), "{stderr}");
+    assert!(stderr.contains("not a regular file"), "{stderr}");
+}
+
 #[tokio::test]
 async fn the_mode_needs_one_credential_flag() {
     let prepared = Prepared::new();
@@ -618,7 +651,7 @@ async fn the_relay_path_still_needs_a_secret_for_payments() {
         "--config-dir".to_owned(),
         prepared.config_dir.display().to_string(),
     ];
-    let (code, stderr) = without_a_secret(&arguments).await;
+    let (code, stderr) = bounded(&arguments, None).await;
 
     assert_eq!(code, Some(1), "{stderr}");
     assert!(

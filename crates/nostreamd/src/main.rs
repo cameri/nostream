@@ -41,7 +41,7 @@ struct Cli {
 
     /// Serve the admin MCP server on stdin/stdout and exit when stdin closes. Binds no socket.
     ///
-    /// Every call is decided by a scoped token document, delivered either by a file
+    /// Every call is decided by a scoped token document, delivered either by a regular file
     /// (`--admin-token-file <path>`, which must be mode 0600 and is re-read on every call, so
     /// deleting or rewriting it revokes or narrows the credential) or on an inherited descriptor
     /// (`--admin-token-fd <n>`, read once at start and valid for the life of the process).
@@ -57,8 +57,8 @@ struct Cli {
     #[arg(long)]
     mcp_stdio: bool,
 
-    /// The token document the MCP mode reads, on every call. Mode 0600 or the mode refuses to
-    /// start; deleting or rewriting the file is the revocation.
+    /// The token document the MCP mode reads, on every call. A regular file at mode 0600 or the
+    /// mode refuses to start; deleting or rewriting the file is the revocation.
     #[arg(
         long,
         value_name = "PATH",

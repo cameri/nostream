@@ -84,7 +84,7 @@ an environment variable. Deliver it one of two ways; exactly one is required:
 
 | Flag | What it reads |
 |---|---|
-| `--admin-token-file <path>` | The document in a file. It must be mode `0600` (owner read and write, nothing for group or other) or the mode refuses to start, naming the mode it found and the mode it needs. It is re-read on **every call**, so deleting or rewriting it is the revocation: narrowing it to reads takes effect on the next call, with nothing restarted. |
+| `--admin-token-file <path>` | The document in a **regular** file. It must be mode `0600` (owner read and write, nothing for group or other) or the mode refuses to start, naming the mode it found and the mode it needs; a FIFO, a device or a directory there is refused the same way, because the mode re-opens the file on every call and opening a FIFO waits for a writer. It is re-read on **every call**, so deleting or rewriting it is the revocation: narrowing it to reads takes effect on the next call, with nothing restarted. |
 | `--admin-token-fd <n>` | The same document on an inherited descriptor, conventionally `3` (`exec 3<token.json`). It is read **once at start**, so its lifetime is the process's — a rewrite of the file it came from changes nothing until the process is restarted. |
 
 The document is JSON, and `scopes` is optional:

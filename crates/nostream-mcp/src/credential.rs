@@ -64,6 +64,11 @@ impl Scopes {
 ///
 /// The set is closed. A document carrying any other key — a half-migrated one still holding a
 /// session token under `token`, say — is refused rather than read for less than it says.
+///
+/// A refusal can quote the document, because serde names the value it could not accept
+/// (`{"scopes": "…"}` echoes that string). That is the document's own text and not a secret — it
+/// carries scope names, never a token, by design — so quoting it tells the operator which value
+/// to fix, where suppressing it would leave them with a message about a column.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct TokenDocument {
@@ -166,22 +171,36 @@ impl Credential {
 
 /// One token file, checked and read: the mode's file rule, in one place (R27).
 ///
-/// The file is opened once and checked on the descriptor it was opened as, rather than by path
-/// and then again by path: a `metadata` that answered `0600` and a read that then opened whatever
-/// the name pointed at would leave a window between the check and the use.
+/// The file is opened once and its mode checked on the descriptor it was opened as, rather than by
+/// path and then again by path: a `metadata` that answered `0600` and a read that then opened
+/// whatever the name pointed at would leave a window between the check and the use. Its type is
+/// the one thing checked before that open, because opening a FIFO read-only waits for a writer —
+/// a token path that became one would stall the door instead of failing it — and checked again on
+/// the descriptor, so a swap to a device or a directory is refused as well. Whoever can write the
+/// file's directory can also drop in their own `0600` document, which D19 accepts as the boundary;
+/// a FIFO swapped in between the two checks is that same writer stalling one call.
+///
+/// `shortcut: the type is checked by path before the open, because refusing a FIFO on the
+/// descriptor would take `O_NONBLOCK`, which needs `libc` or a hardcoded kernel constant this
+/// crate has neither of — upgrade when a stalled call has to be impossible rather than merely
+/// inside the boundary, which needs that flag`
 ///
 /// `shortcut: the mode is the only ownership check — the process's own euid is not readable
 /// through std without adding libc, and 0600 already decides who may read the file, group and
 /// other write bits included — upgrade when a root-run mode has to refuse a file owned by another
 /// user, which needs a dependency this crate was not given`
 fn read_file(path: &Path) -> Result<Scopes, McpError> {
+    // Before the open: a FIFO's open blocks, so the type has to be known first.
+    let kind = std::fs::metadata(path).map_err(|error| unreadable(path, &error))?;
+    if !kind.is_file() {
+        return Err(not_regular(path));
+    }
     let mut file = std::fs::File::open(path).map_err(|error| unreadable(path, &error))?;
-    let mode = file
-        .metadata()
-        .map_err(|error| unreadable(path, &error))?
-        .permissions()
-        .mode()
-        & 0o777;
+    let metadata = file.metadata().map_err(|error| unreadable(path, &error))?;
+    if !metadata.is_file() {
+        return Err(not_regular(path));
+    }
+    let mode = metadata.permissions().mode() & 0o777;
     if mode & GROUP_OR_OTHER != 0 {
         return Err(McpError::Credential(format!(
             "the admin token file {} is mode {mode:04o}: it must be {TOKEN_FILE_MODE:04o}, \
@@ -193,6 +212,14 @@ fn read_file(path: &Path) -> Result<Scopes, McpError> {
     file.read_to_string(&mut text)
         .map_err(|error| unreadable(path, &error))?;
     TokenDocument::parse(&text, &path.display().to_string())?.scopes()
+}
+
+fn not_regular(path: &Path) -> McpError {
+    McpError::Credential(format!(
+        "the admin token file {} is not a regular file: the door re-reads it on every call, and a \
+         pipe or a device there would stall that read",
+        path.display()
+    ))
 }
 
 fn unreadable(path: &Path, error: &std::io::Error) -> McpError {
