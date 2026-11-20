@@ -60,7 +60,7 @@ only deliberate divergence — D9's `config validate` exit 2, D10's saturation, 
 message and D13's partial count are each a byte or a code the capture does not print — but it is
 the one divergence *of the version page*, which is what this decision is about.
 
-### D3 — Three failure shapes, and the `Error: ` prefix belongs to the class
+### D3 — The failure shapes, and the `Error: ` prefix belongs to the class
 
 The capture writes `Error: ` in exactly one place: its top-level handler
 (`printHandledError`, `src/cli/index.ts:40-42`), which runs only for a failure **thrown out of a
@@ -72,11 +72,25 @@ reproduces the split as three shapes:
   the command chose;
 - `CliError::Json` — `{"error":{"message":…,"code":N}}` on stderr, with the code.
 
-Every command picks its shape from the capture's own class, site by site, never by convenience.
+and one it composes: `CliError::ReportedAfter` carries data a command already **earned** and the
+inner failure that followed. The earned lines go to **stdout**, where a successful run writes
+them, and the inner failure keeps its own shape and code on **stderr**; nested wrappers flatten
+outer-first. `render` still decides both, so the wrapper renders nothing itself
+(`app::failure_lines` recurses into it). `config set --restart` is its one producer: the file is
+written before the restart runs, so `Updated <path>` is a fact whatever the restart answers, and
+the capture gets the split from that sequencing (`logInfo` at `src/cli/commands/config.ts:151`,
+then `restartRelay` at `:154`, whose failures are the spinner's at `:65,71,75`) rather than from a
+class of its own.
 
-**Cost:** a classification a builder must follow message by message. Its value is that five
-measured strings stay exactly as the capture prints them instead of being rewritten to a house
-style.
+Every command picks its shape from the capture's own class, site by site, never by convenience.
+The composed shape is the exception that proves the rule: the capture has no class for it, so it
+is chosen by the outer command's sequencing, and a command may use it only for lines it has
+already produced.
+
+**Cost:** a classification a builder must follow message by message, plus two streams from one
+invocation on the composed path and a shape the failure itself cannot name. Its value is that
+five measured strings stay exactly as the capture prints them instead of being rewritten to a
+house style.
 
 ### D4 — `start` and `stop` drive Docker Compose, not `nostreamd`
 

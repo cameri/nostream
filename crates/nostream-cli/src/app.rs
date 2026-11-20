@@ -727,6 +727,10 @@ struct ErrorBody<'a> {
 /// prefixed `Error: ` and exits 2 (`Usage`) or 1 (`Command`); a failure the command reports
 /// itself is written bare, line by line, with the code it chose (`Config`, `Reported`); and a
 /// `--json` failure is the envelope. `Import` and `Migrate` keep the prefixes they shipped.
+///
+/// The fourth is composed here rather than classed: `ReportedAfter` writes the lines the command
+/// already earned to stdout, then hands the inner failure to `failure_lines`, which is the only
+/// place a class becomes a stream and a code (ADR 0015 D3).
 pub fn render(result: Result<CommandOutput, CliError>) -> ExitCode {
     match result {
         Ok(output) => match print_lines(&output.lines) {

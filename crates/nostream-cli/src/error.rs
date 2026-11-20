@@ -7,6 +7,11 @@
 //! than one line); and a `--json` failure is the capture's `{"error":{…}}` envelope (`Json`).
 //! Each command picks its shape from the capture's own class — `src/cli/index.ts:38-42`,
 //! `:116-135` and `src/utils/output.ts:27-29` — never by convenience.
+//!
+//! A fourth, `ReportedAfter`, is **composed** rather than classed: the lines a command already
+//! earned go to stdout and the failure that followed keeps its own shape and code on stderr.
+//! The capture has no class for it — its one producer, `config set --restart`, gets the split
+//! from writing the file before it restarts — and D3 records the rule.
 
 use thiserror::Error;
 
