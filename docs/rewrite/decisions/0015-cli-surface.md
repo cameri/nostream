@@ -13,12 +13,12 @@ returning `CliError::NotImplemented` and exit 1, and three commands worked (`con
 eight command modules, and the two halves disagree on the things a script sees: the help page,
 the stream each failure writes to, and the exit code per class.
 
-The thirteen decisions below are the ones a reader would otherwise have to reconstruct from the
+The fourteen decisions below are the ones a reader would otherwise have to reconstruct from the
 diff. Each is recorded with its cost, because every one of them buys something by giving up
-something else. D10, D11 and D12 were added by the job's first review round: the `--older-than`
-bound, the spawn seam and the out-of-range kind were each decided in the code and had no
-decision to point at. D13 is the second round's: the clean-up delete's batch size, its write
-volume and the count a stopped run reports.
+something else. D10–D12 were added by the job's first review round and D13–D14 by its second and third: the
+`--older-than` bound, the spawn seam and the out-of-range kind were decided in the code and had
+no decision to point at; the clean-up delete's batch shape and the bootstrap's legacy-settings
+guard are the same case.
 
 ## Decisions
 
@@ -181,11 +181,12 @@ The capture's CLI shells `docker`, `git`, `openssl` and `pnpm` itself (`src/cli/
 sockets (`CLAUDE.md`'s crate table), so the seam lives there — `nostream_services::process::{run,
 capture}` with five failure classes and a caller-owned runtime — and the CLI calls it. Its callers
 are `start`, `stop`, `update`, `info` and `clean` — the last spawns `docker system prune` and
-`docker volume prune` — plus the two modules those commands drive, `compose.rs` (through `start`
-and `stop`) and `bootstrap.rs` (the uid probe and the settings copy `start` runs first). Nine call
-sites in five files (`bootstrap.rs`, `compose.rs`, `commands/clean.rs`, `commands/info.rs`,
-`commands/update.rs`); every argument reaches a child as one whole argv element: no call site
-builds a shell string.
+`docker volume prune` — plus the two modules those commands drive: `compose.rs` (through `start`
+and `stop`) and `bootstrap.rs` (the uid probe `start` runs first). Nine call sites in five files
+(`bootstrap.rs`, `compose.rs`, `commands/clean.rs`, `commands/info.rs`, `commands/update.rs`).
+The settings copy `start` also runs first is **not** a child process: it is `std::fs::copy`
+(`bootstrap.rs:66`), and D14 governs when it may happen. Every argument reaches a child as one
+whole argv element: no call site builds a shell string.
 
 **Cost:** a dependency edge `nostream-cli → nostream-services` that the crate did not have, and a
 seam whose shape is the services crate's rather than the CLI's. The gain is that the rule stays
@@ -250,3 +251,22 @@ statement it replaced, writes far more bytes than the rows it removes, and leave
 half-deleted store the capture cannot produce — so a re-run is the operator's step after a
 failure, and `--dry-run` (202 ms at 160 001 rows, one read walk) is the cheap way to learn what a
 run will do.
+
+### D14 — The bootstrap keeps a deployment's legacy `settings.json`
+
+`ensureConfigBootstrap` in the capture copies the defaults into a config directory that has no
+`settings.yaml`. The port copies them only when **neither** `settings.yaml` nor the deprecated
+`settings.json` exists (`crates/nostream-cli/src/bootstrap.rs:52`), because the relay's loader
+still falls back to `settings.json` and a deployment holding only that file would otherwise have
+its admission policy, payment settings and limits replaced by the defaults on the first `start`
+or `setup` — a silent override loss, not an error anyone would see.
+
+**Cost:** a deliberate divergence from the capture's own condition, taken because the capture's
+later fix does the same and because the alternative loses operator data without a message. Both
+paths follow symlinks and treat a dangling link as absent, matching the loader
+(`nostream-config/src/paths.rs:33-34` against `load.rs:168,178`); a dangling `settings.yaml` link
+therefore makes the copy land through the link, outside the config directory — create-only,
+fixed non-secret content, and predating this job. The `migrate` command's refusal of a source
+named only in `.env` is the same kind of exception and is recorded here rather than left in a
+doc comment: migration needs a source *and* a target, so a missing source is refused instead of
+defaulted, unlike every other store command which reads the `.env` layer.

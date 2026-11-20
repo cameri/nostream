@@ -79,9 +79,11 @@ prints a warning on stderr and changes nothing else.
 
 What a run costs: the LMDB delete commits one batch of 10 000 rows at a time so a relay sharing
 the store keeps its writer between batches. On a 160 001-row store that is 17 commits and about
-1.6× the wall clock of one statement (28 s against 18 s), and it writes far more bytes than the
-rows it removes — 5.31 GB for the 1 000-row batch shape against 1.41 MB in one transaction, while
-the store file grows less (69.8 MB against 242.9 MB). `--dry-run` counts the same rows with one
+1.6× the wall clock of one statement (28 s against 18 s). It also writes more bytes than the
+rows it removes, and the two measured ends of that trade bracket the shipped shape: the 1 000-row
+batch shape wrote **5.31 GB** where one transaction wrote **1.41 MB**, and it grows the store file
+less (**69.8 MB** against **242.9 MB**). The shipped 10 000-row shape's write volume sits between
+the two and was not measured; its commit count, which is what charges it, is 17. `--dry-run` counts the same rows with one
 read walk (202 ms on that store), so run it first on a big store.
 
 A run that stops after some batches committed says so: the failure's line opens with the rows
