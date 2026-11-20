@@ -602,6 +602,36 @@ fn a_failed_restart_keeps_the_written_line() {
     assert!(written.contains("after"), "{written}");
 }
 
+/// A restart that cannot even spawn its child is a failure of the restart, not of the write.
+/// With no `docker` on `PATH` the settings file is already written, so `Updated <path>` is the
+/// operator's only notice that it landed — and the class this arm answers is `Command`, not the
+/// `Reported` class the shim case above produces (round 3's code finding 1).
+#[test]
+fn a_restart_that_cannot_spawn_keeps_the_written_line() {
+    let (work, _log) = compose_work();
+    let config = work.path().join("config");
+    fs::create_dir_all(&config).expect("the config directory");
+    fs::write(config.join("settings.yaml"), "info:\n  name: before\n").expect("the settings write");
+
+    // A `PATH` holding only the shim directory: no `docker` binary, so the spawn fails before the
+    // child exists and the arm answers `CliError::Command` rather than the shim's exit code.
+    let output = Command::new(env!("CARGO_BIN_EXE_nostream-cli"))
+        .args(["config", "set", "info.name", "after", "--restart"])
+        .current_dir(work.path())
+        .env_clear()
+        .env("PATH", shims(work.path()))
+        .env("HOME", work.path())
+        .env("NOSTR_CONFIG_DIR", &config)
+        .output()
+        .expect("the binary runs");
+
+    assert_eq!(code(&output), 1, "{}", stderr(&output));
+    assert_eq!(stdout(&output), "Updated info.name\n");
+    assert_eq!(stderr(&output), "Error: docker is not installed\n");
+    let written = fs::read_to_string(config.join("settings.yaml")).expect("the settings");
+    assert!(written.contains("after"), "{written}");
+}
+
 #[test]
 fn ac14_config_env_lists_masks_gets_sets_and_validates() {
     let work = Work::new();

@@ -27,19 +27,20 @@ pub enum CliError {
     #[error("{}", lines.join(" | "))]
     Reported { lines: Vec<String>, exit_code: u8 },
 
-    /// Lines the command already earned, then the failure it reports: the first go to
-    /// **stdout**, where a successful run writes them, and only the failure's lines to stderr
-    /// at `exit_code`.
+    /// Lines the command already earned, then **any** failure it reports: the first go to
+    /// **stdout**, where a successful run writes them, and only the failure's own lines to
+    /// stderr at that failure's code.
     ///
     /// `config set --restart` is the case this exists for: the file is written before the
     /// restart runs, so `Updated <path>` is a fact whatever the restart does — the capture logs
     /// it with `logInfo` (stdout) and only the failed step with `spinner.fail` (stderr), which
-    /// an all-stderr `Reported` cannot reproduce (`src/cli/commands/config.ts:152-155`).
-    #[error("{}", lines.join(" | "))]
+    /// an all-stderr `Reported` cannot reproduce (`src/cli/commands/config.ts:152-155`). It holds
+    /// the inner failure rather than its rendered lines so every class keeps one renderer:
+    /// `app::failure_lines` recurses into it and decides stream and code for the class it finds.
+    #[error("{failure}")]
     ReportedAfter {
         output: Vec<String>,
-        lines: Vec<String>,
-        exit_code: u8,
+        failure: Box<CliError>,
     },
 
     /// A thrown usage failure (`CliUsageError`): `Error: <message>` on stderr, exit code 2.

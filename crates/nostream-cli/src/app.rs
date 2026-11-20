@@ -772,15 +772,28 @@ fn failure_lines(error: CliError) -> Failure {
         CliError::Command(message) => (vec![format!("Error: {message}")], 1),
         CliError::Config(line) => (vec![line], 1),
         CliError::Reported { lines, exit_code } => (lines, exit_code),
-        CliError::ReportedAfter {
-            output,
-            lines,
-            exit_code,
-        } => {
-            return Failure::ReportedFirst {
-                output,
-                lines,
-                code: exit_code,
+        CliError::ReportedAfter { output, failure } => {
+            return match failure_lines(*failure) {
+                Failure::Lines { lines, code } => Failure::ReportedFirst {
+                    output,
+                    lines,
+                    code,
+                },
+                // A wrapper inside a wrapper: the earned lines keep the order the commands
+                // wrote them in, outer first.
+                Failure::ReportedFirst {
+                    output: inner_output,
+                    lines,
+                    code,
+                } => {
+                    let mut all = output;
+                    all.extend(inner_output);
+                    Failure::ReportedFirst {
+                        output: all,
+                        lines,
+                        code,
+                    }
+                }
             };
         }
         CliError::Json { message, code } => {

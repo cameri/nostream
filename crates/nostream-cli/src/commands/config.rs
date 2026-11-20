@@ -78,16 +78,16 @@ pub fn set(
         return Ok(output);
     }
 
+    // Every class, not just `Reported`: a restart whose child cannot be spawned answers
+    // `CliError::Command` from `run_compose`, and the write's line is just as much a fact then.
     let restarted = match context.block_on(restart(context)) {
         Ok(restarted) => restarted,
-        Err(CliError::Reported { lines, exit_code }) => {
+        Err(failure) => {
             return Err(CliError::ReportedAfter {
                 output: output.lines,
-                lines,
-                exit_code,
+                failure: Box::new(failure),
             });
         }
-        Err(other) => return Err(other),
     };
 
     let mut lines = output.lines;
