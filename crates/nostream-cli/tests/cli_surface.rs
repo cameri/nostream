@@ -123,9 +123,14 @@ fn shims(cwd: &Path) -> PathBuf {
 
 /// Writes one `PATH` shim: a bash script that appends `"$*"` to `log` and exits 0.
 fn write_shim(cwd: &Path, name: &str, log: &Path) -> PathBuf {
+    write_shim_exiting(cwd, name, log, 0)
+}
+
+/// `write_shim`, for a child that must fail: the same log line, then `code`.
+fn write_shim_exiting(cwd: &Path, name: &str, log: &Path, code: u8) -> PathBuf {
     let path = shims(cwd).join(name);
     let body = format!(
-        "#!/bin/sh\necho \"{name} $*\" >> {log}\nexit 0\n",
+        "#!/bin/sh\necho \"{name} $*\" >> {log}\nexit {code}\n",
         log = log.display()
     );
     fs::write(&path, body).expect("the shim writes");
@@ -361,6 +366,16 @@ fn ac8_the_pages_carry_the_captures_flags() {
     for phrase in ["--file", "Path to .jsonl/.json file"] {
         assert!(import.contains(phrase), "import names `{phrase}`: {import}");
     }
+    // The page's program name is `nostream`, as on every other page (AC1's rule, R4): the
+    // binary's file name is the only place `nostream-cli` belongs.
+    assert!(
+        import.contains("Usage: nostream import"),
+        "import's page names the program: {import}"
+    );
+    assert!(
+        !import.contains("nostream-cli"),
+        "no page names the binary: {import}"
+    );
 }
 
 #[test]
@@ -561,6 +576,31 @@ fn ac13_config_set_refuses_an_invalid_value_unless_told_not_to() {
         &env,
     );
     assert!(stdout(&output).contains("broken-strategy"));
+}
+
+#[test]
+fn a_failed_restart_keeps_the_written_line() {
+    let (work, log) = compose_work();
+    write_shim_exiting(work.path(), "docker", &log, 1);
+    let config = work.path().join("config");
+    fs::create_dir_all(&config).expect("the config directory");
+    fs::write(config.join("settings.yaml"), "info:\n  name: before\n").expect("the settings write");
+
+    let output = run_env(
+        work.path(),
+        &["config", "set", "info.name", "after", "--restart"],
+        &[("NOSTR_CONFIG_DIR", config.to_str().expect("a utf-8 path"))],
+    );
+
+    // The file is already written when the restart runs, so its line is the operator's only
+    // notice that the value landed; the restart's own step and code follow it.
+    assert_eq!(code(&output), 1, "{}", stderr(&output));
+    assert_eq!(
+        stderr(&output),
+        "Updated info.name\nRestart failed while stopping relay\n"
+    );
+    let written = fs::read_to_string(config.join("settings.yaml")).expect("the settings");
+    assert!(written.contains("after"), "{written}");
 }
 
 #[test]
@@ -1968,6 +2008,26 @@ fn ac49_clean_db_help_is_the_captures_page() {
     }
     assert_eq!(page.matches("nostream clean-db").count(), 5, "{page}");
     assert!(!page.contains("dev db:clean"), "{page}");
+}
+
+#[test]
+fn clean_dbs_store_refusal_carries_the_prefix() {
+    let work = Work::new();
+    let config = work.with_lmdb_settings("eventStore:\n  backend: lmdb\n");
+
+    // The parser's and the database's own failures are the capture's and print bare; the store
+    // seam is the port's, and its refusal is C3's class A, the shape `export` and `seed` give it.
+    let output = run_env(
+        work.path(),
+        &["clean-db", "--all", "--force"],
+        &[("NOSTR_CONFIG_DIR", config.to_str().expect("a utf-8 path"))],
+    );
+
+    assert_eq!(code(&output), 1, "{}", stderr(&output));
+    assert_eq!(
+        stderr(&output),
+        "Error: the lmdb backend needs --data-dir <path>\n"
+    );
 }
 
 #[test]
