@@ -19,7 +19,7 @@ and the daemon answered no HTTP request at all — a plain `GET` died in the Web
 (`crates/nostream-relay/src/relay.rs:315-329`), measured as `curl: (52) Empty reply from
 server` on every admin path.
 
-The eighteen decisions below are the ones a reader would otherwise have to reconstruct from
+The nineteen decisions below are the ones a reader would otherwise have to reconstruct from
 the diff. Each is recorded with its reason and the evidence that produced it.
 
 ## Decisions
@@ -307,14 +307,15 @@ costs the column its meaning.
 `settings_set` (the paths requested, never a value), and `remoteAddress` is omitted because a
 stdio caller has no address (`state.rs:509-525`). The line is appended at dispatch, before the
 tool's work, so the file's order is the dispatch order: `mcp.settings_set` precedes the
-`settings.updated` line the shared write path then appends, and a call the credential gate
-refuses appends nothing at all — matching `admin_auth_middleware.rs:52-63`, which logs a warning
-and writes nothing.
+`settings.updated` line the shared write path then appends, and a call the credential refuses
+appends nothing at all — matching `admin_auth_middleware.rs:52-63`, which logs a warning and
+writes nothing. A call the credential *authenticates* and then denies for its scopes is D19's:
+it writes one `mcp.denied` line, because the door knows who asked.
 
 **The mode is its own process, and the record says so.** `nostreamd --mcp-stdio` returns before
 the daemon's `serve` loop starts (`crates/nostreamd/src/main.rs:139-147`), so the process that
 serves a tool call composes its own `AdminState` over the same config directory rather than
-sharing the console's: the same session credential, the same `admin-audit.jsonl`, and a
+sharing the console's: the same settings files, the same `admin-audit.jsonl`, and a
 repository bundle of its own — `unavailable::stores()` in `crates/nostreamd/src/mcp_stdio.rs`,
 composed independently of the relay path's at `crates/nostreamd/src/main.rs:187`, which D7's
 same-`Arc` rule covers for the console and not for this mode. Wiring the store means wiring the
@@ -335,6 +336,79 @@ entry keeps is *no stricter than that deserialiser*, not "the shape the `inputSc
 the line is written before the dispatch, which is unconditional, so a stricter check would let a
 call run unaudited. `settings_set`'s entry is therefore vacuous by design — its arguments are a
 raw map and its schema is the half that refuses.
+
+### D19 — The stdio door's credential is a scoped token document of its own
+
+Slice 1 first authenticated `nostreamd --mcp-stdio` with the console's credential: a session token
+minted by `POST /admin/login`, handed to the mode in **`NOSTREAM_ADMIN_TOKEN`** and verified with
+the console's own `session_key`/`is_valid_token` pair (D18). The operator retired that on
+2026-11-20 — *"narrow the credential"* — for two reasons, and both are measured:
+
+1. **An environment variable is not a credential boundary.** `/proc/<pid>/environ` is readable by
+   anything with the right to inspect the process, and the variable is inherited by every child
+   the daemon starts. A secret there is one `ps`-adjacent read away from any process that can see
+   the daemon's environment at all.
+2. **A session token cannot be revoked per door.** Every admin door shares one HMAC key derived
+   from `SECRET`, and a session's only lifetime is the clock: revoking this door's access meant
+   rotating `SECRET` — logging every console operator out — or waiting out the TTL. There was no
+   way to narrow *this* door and leave the console alone.
+
+The credential is now the mode's own artifact, a **token document** delivered one of two ways:
+
+| flag | delivery | lifetime |
+|---|---|---|
+| `--admin-token-file <path>` | a file, which must be mode `0600` (`mode & 0o077 == 0`) | **the file's**: it is re-read on the path that decides every call, so deleting or rewriting it is the revocation |
+| `--admin-token-fd <n>` | a descriptor the parent passed, conventionally `3` | **the process's**: it is read once at start, so a rewrite of its source changes nothing until a restart |
+
+Exactly one of the two is required; both is a refusal, and neither is a refusal naming both.
+`NOSTREAM_ADMIN_TOKEN` is retired: a mode started with it **refuses to start**, naming the variable
+and the flag that replaces it, because a silent ignore would leave a half-migrated deployment
+serving calls nobody could attribute.
+
+**The document declares what it may do.** `{"scopes": ["write"]}`, with `scopes` optional, and the
+set closed (`deny_unknown_fields`): a document still carrying a session token under `token` is
+refused for its shape rather than read for less than it says. Reading is not a scope — every
+accepted document may call `settings_get`, `list_events` and `get_event` — and `write` is the one
+name a document may add, the right to call `settings_set`. A name the door does not know refuses
+the load, naming the scope and the accepted set, because a typo narrowed silently would answer
+`Forbidden` to calls the operator believed it allowed with the typo nowhere in sight. A call the
+document's scopes deny is refused **and audited**: action `mcp.denied`, `detail`
+`{"tool", "scope"}`, no argument values. A call with no readable document answers `Unauthorized`
+and appends nothing, because there is nothing to attribute it to — that is D18's rule, unchanged.
+
+**What is deliberately not checked, and why.** Beyond the mode the file must carry, no ownership
+check is made: the process's own effective uid is not readable through `std` without adding
+`libc`, and `0600` is already the rule that decides who can read the file — including the group
+and other *write* bits, which is what would let another user replace the document. A symlink is
+followed, so a `0600` link to a `0644` target is refused on the target's mode. The descriptor form
+has no mode to check: the parent already opened it.
+
+**Revocation is the file's lifetime, with no server-side store.** The file form calls
+`std::fs::metadata`, `std::fs::read_to_string` and a small JSON parse **per call** — measured at
+`9.70 µs` for a 20-byte document over 10 000 grants in a debug build (`crates/nostream-mcp`'s
+`Credential::grant`, the same path `call_tool` takes), against a tool call that reaches an LMDB
+read or a settings write. That is the price of a revocation that needs no session store, no
+notification path and no restart: narrowing a running door is `printf '{"scopes": []}' >` the file.
+The descriptor form's asymmetry is stated rather than implied away, in `CONFIGURATION.md`, in the
+mode's `--help`, in the crate's docs and here: it is read once, so its lifetime is the process's.
+
+**What D19 does not change.** The console's HTTP surface keeps `SECRET`, `POST /admin/login` and
+session tokens exactly as D3–D18 recorded them. `admin.enabled` still gates this door, because a
+surface the operator turned off is off on every transport. `SECRET` no longer gates it: the door
+derives no session key, so requiring `SECRET` would refuse a correctly configured deployment for
+a reason that has nothing to do with the credential it presents.
+
+**Measured red for each proof, at `d6b37425`** — the tests are `crates/nostream-mcp/tests/auth.rs`
+and `crates/nostreamd/tests/mcp_stdio.rs`:
+
+| proof | at `d6b37425` |
+|---|---|
+| a session token in the variable refuses the start | the mode served: exit `0`, and stderr carried only `mcp server on stdio` |
+| a `0644` token file refuses the start | `error: unexpected argument '--admin-token-file' found`, exit `2` |
+| a read-only token is refused the write and audited | `left: Some(false) right: Some(true)` — the write succeeded |
+| an unknown scope refuses the load | `error[E0433]: cannot find Credential in nostream_mcp` |
+| a descriptor-delivered token authenticates | `error: unexpected argument '--admin-token-fd' found`, exit `2` |
+| a rewrite changes the write decision | `left: Some(false) right: Some(true)` — the rewrite changed nothing |
 
 ## Evidence
 
