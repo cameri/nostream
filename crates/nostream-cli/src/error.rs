@@ -1,7 +1,7 @@
 //! The CLI error type. `anyhow` lives in the binary; the library keeps its own type.
 //!
 //! Three failure **shapes** and their exit codes are the capture's, not this crate's choice
-//! (`docs/rewrite/decisions/0015-cli-surface.md` D2): a failure thrown out of a command is
+//! (`docs/rewrite/decisions/0015-cli-surface.md` D3): a failure thrown out of a command is
 //! prefixed `Error: ` and exits 2 (`Usage`) or 1 (`Command`); a failure the command reports
 //! itself is printed bare and exits with the code it chose (`Config`, and `Reported` for more
 //! than one line); and a `--json` failure is the capture's `{"error":{…}}` envelope (`Json`).
