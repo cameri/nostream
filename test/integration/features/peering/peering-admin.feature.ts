@@ -3,7 +3,7 @@ import { expect } from 'chai'
 import { randomBytes } from 'node:crypto'
 import Sinon from 'sinon'
 
-import { PeeringInvoice, PeeringInvoiceStatus } from '../../../../src/@types/peering'
+import { PeeringInvoice, PeeringInvoiceReason, PeeringInvoiceStatus } from '../../../../src/@types/peering'
 import { PeeringPeer, Settings } from '../../../../src/@types/settings'
 import { GetAdminPeeringController } from '../../../../src/controllers/admin/get-admin-peering-controller'
 import { PostAdminPeeringInvoiceDecisionController } from '../../../../src/controllers/admin/post-admin-peering-invoice-decision-controller'
@@ -27,7 +27,7 @@ const heldInvoice = (peerPubkey: string, paymentHash: string, now: Date): Peerin
   bolt11: 'lnbc1invoice',
   amountMsats: 1_000n,
   status: PeeringInvoiceStatus.HELD,
-  reason: 'budget_exceeded',
+  reason: PeeringInvoiceReason.BUDGET_EXCEEDED,
   autoPaid: false,
   budgetPeriodStart: null,
   budgetPeriodEnd: null,
