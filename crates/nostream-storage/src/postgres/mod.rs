@@ -195,9 +195,13 @@ impl PostgresBackend {
     /// `PgConnectOptions` field by field from `master_parts`/`replica_parts` — no URL is
     /// composed and no value is encoded, because nothing is parsed back out. The caller owns the
     /// lookup, so a deployment's `.env` layer is reachable: the CLI passes its own environment's
-    /// `get`. `master_only_from_env` is the copy's door on the same assembly its own callers use:
-    /// it hands its lookup to the private `master_only_from_lookup`, which reads the one
-    /// `master_options` this file defines.
+    /// `get`. One parse, `master_options`, serves three doors with one policy each:
+    /// `from_lookup` dials the master and, when enabled, the replica; `master_only_from_env`/
+    /// `master_only_from_lookup` is the copy's door, which reads no replica setting and dials
+    /// nothing; and `probe_master_from_env` makes one direct attempt inside its budget, so a
+    /// refused port is answered rather than masked by a pool timeout. `connect_lazy` is the
+    /// fourth entry and not one of these: it takes a complete URL, dials nothing, and serves the
+    /// dyn-compatibility test and the migration's target.
     pub async fn from_lookup<F>(lookup: &F) -> Result<Self, StorageError>
     where
         F: Fn(&str) -> Option<String> + Sync,
