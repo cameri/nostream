@@ -6,6 +6,10 @@
 //! seeding pattern (`crates/nostream-storage/tests/parity_lmdb.rs:84-92`) and the console's real
 //! `resources/` tree as the schema source. The client is `rmcp`'s over `tokio::io::duplex`, which
 //! is the only way to call a tool without a transport (`Peer::new` is `pub(crate)` in the SDK).
+//!
+//! The credential is a token file the fixture writes at mode 0600 (R27), handed to the server as
+//! a [`Credential`]: a case narrows or revokes it by rewriting or deleting that file, because the
+//! file's lifetime is the credential's (R29).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, dead_code)]
 
@@ -14,14 +18,13 @@ use std::sync::Arc;
 
 use futures_util::StreamExt;
 use nostream_admin::state::AdminStateConfig;
-use nostream_admin::utils::session;
 use nostream_admin::{AdminState, GrafanaSettings};
 use nostream_config::SettingsPaths;
 use nostream_core::clock::TestClock;
 use nostream_core::nip05::Nip05Fetch;
 use nostream_core::random::SystemRandom;
 use nostream_core::{Event, EventId, Filter, Kind, Pubkey, Signature};
-use nostream_mcp::{AdminMcp, MCP_SERVER_NAME};
+use nostream_mcp::{AdminMcp, Credential, MCP_SERVER_NAME, SCOPE_WRITE};
 use nostream_services::{HttpClient, ReqwestClient, ServiceStores};
 use nostream_storage::error::StorageError;
 use nostream_storage::lmdb::LmdbBackend;
@@ -50,7 +53,7 @@ pub fn resources_root() -> PathBuf {
 /// The fixture password hash `hashAdminPassword` writes for `hunter2`.
 pub const PASSWORD_HASH: &str = "scrypt:BwcHBwcHBwcHBwcHBwcHBw==:r5daXU05UJ9EUDu45YoHMWUoQCmkVbwINYNntY1/dwrJPOt3fTi/1IWw1wp9+YXRj1Vm6IpFi+gSU0JdqZvWIw==";
 
-/// The literal `SECRET` the fixture signs sessions with.
+/// The literal `SECRET` the fixture composes `AdminState` with.
 pub const SECRET: &[u8] = b"a-test-secret";
 
 /// The clock the fixture starts at.
@@ -64,15 +67,23 @@ pub fn base_settings() -> serde_yaml::Value {
     .unwrap()
 }
 
-/// The token a case presents.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Token {
-    /// A valid session token minted from the fixture's `SECRET`.
-    Valid,
-    /// No token at all.
-    Absent,
-    /// A token that expired one second before the fixture's clock.
-    Expired,
+/// The scopes the fixture's token document names.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Grant {
+    /// `{"scopes": ["write"]}`: the three read tools and `settings_set`.
+    #[default]
+    Write,
+    /// `{"scopes": []}`: the read tools only — the door's default (R28).
+    Read,
+}
+
+impl Grant {
+    fn names(self) -> &'static [&'static str] {
+        match self {
+            Self::Write => &[SCOPE_WRITE],
+            Self::Read => &[],
+        }
+    }
 }
 
 /// Which store bundle the composed state reads.
@@ -90,10 +101,10 @@ pub enum Stores {
 pub struct Fixture {
     /// The user settings document written to `<config>/settings.yaml`.
     pub settings: serde_yaml::Value,
-    /// `SECRET` as a value; `None` is the missing-secret case.
+    /// `SECRET` as a value, for the `AdminState` the tools read through.
     pub secret: Option<Vec<u8>>,
-    /// The token the server is built with.
-    pub token: Token,
+    /// The scopes the token document the server reads carries (R28).
+    pub grant: Grant,
     /// The starting clock reading.
     pub now_ms: u64,
     /// The store bundle the state is composed over.
@@ -105,7 +116,7 @@ impl Default for Fixture {
         Self {
             settings: base_settings(),
             secret: Some(SECRET.to_vec()),
-            token: Token::Valid,
+            grant: Grant::Write,
             now_ms: NOW_MS,
             stores: Stores::Seeded,
         }
@@ -131,7 +142,9 @@ pub struct TestMcp {
     pub clock: Arc<TestClock>,
     pub config_dir: PathBuf,
     pub backend: Arc<LmdbBackend>,
-    token: Option<String>,
+    /// The file the credential is read from on every call (R29).
+    pub token_path: PathBuf,
+    credential: Credential,
     _temp: tempfile::TempDir,
 }
 
@@ -158,13 +171,10 @@ impl TestMcp {
         std::fs::create_dir_all(&config_dir).unwrap();
         write_settings(&config_dir, &fixture.settings);
 
-        // `is_valid_token` refuses `expires_at <= now`, so a token minted for the second before
-        // the clock is a token that has just expired.
-        let token = match (fixture.token, fixture.secret.as_deref()) {
-            (Token::Absent, _) | (_, None) => None,
-            (Token::Valid, Some(secret)) => Some(mint(secret, now_seconds(fixture.now_ms) + 3_600)),
-            (Token::Expired, Some(secret)) => Some(mint(secret, now_seconds(fixture.now_ms) - 1)),
-        };
+        // The document the door reads on every call (R27, R29): a case narrows it by rewriting
+        // this file, which is the revocation the file form exists for.
+        let token_path = write_token(&config_dir, fixture.grant.names());
+        let credential = Credential::from_file(&token_path).unwrap();
 
         // The backend is always opened, so a case can seed it; when the fixture asks for the
         // daemon's bundle the state reads `unavailable::stores()` instead, and the seeded rows
@@ -222,21 +232,34 @@ impl TestMcp {
             clock,
             config_dir,
             backend,
-            token,
+            token_path,
+            credential,
             _temp: temp,
         }
     }
 
     /// A client over an in-process duplex, served by a server on the fixture's state.
     pub async fn client(&self) -> Mcp {
-        self.client_with_version(env!("CARGO_PKG_VERSION")).await
+        self.client_with_credential(self.credential.clone()).await
     }
 
     /// The same, with the `serverInfo` version the composition would supply (R6).
     pub async fn client_with_version(&self, version: &str) -> Mcp {
+        self.client_with_version_and(version, self.credential.clone())
+            .await
+    }
+
+    /// The same, with the credential a case supplies in place of the fixture's — for the
+    /// descriptor-delivered document, which the mode reads once instead of per call (R29).
+    pub async fn client_with_credential(&self, credential: Credential) -> Mcp {
+        self.client_with_version_and(env!("CARGO_PKG_VERSION"), credential)
+            .await
+    }
+
+    async fn client_with_version_and(&self, version: &str, credential: Credential) -> Mcp {
         let server = AdminMcp::new(
             Arc::clone(&self.state),
-            self.token.clone(),
+            credential,
             Implementation::new(MCP_SERVER_NAME, version),
         );
         let (server_io, client_io) = tokio::io::duplex(64 * 1024);
@@ -266,6 +289,22 @@ impl TestMcp {
     /// Writes the user settings document, for a case whose fixture is a file edit.
     pub fn write_settings(&self, document: &serde_yaml::Value) {
         write_settings(&self.config_dir, document);
+    }
+
+    /// Rewrites the token file the running server reads on every call (R29): what the next call
+    /// is decided by is what is here now, and nothing has to be restarted.
+    pub fn write_scopes(&self, scopes: &[&str]) {
+        write_private(&self.token_path, &token_document(scopes));
+    }
+
+    /// Deletes the token file: the credential's lifetime ends with it (R29).
+    pub fn revoke(&self) {
+        std::fs::remove_file(&self.token_path).unwrap();
+    }
+
+    /// A descriptor holding the same document, for the mode's other delivery form (R27).
+    pub fn descriptor(&self) -> std::fs::File {
+        std::fs::File::open(&self.token_path).unwrap()
     }
 
     /// The user settings document as it stands on disk.
@@ -400,12 +439,25 @@ pub fn id_of(record: &EventRecord) -> String {
     record.event.id.to_string()
 }
 
-fn mint(secret: &[u8], expires_at: i64) -> String {
-    session::create_token(&session::session_key(secret), expires_at)
+/// The token document's text: `{"scopes": [...]}`, and `[]` for a read-only token (R27).
+pub fn token_document(scopes: &[&str]) -> String {
+    serde_json::to_string(&serde_json::json!({ "scopes": scopes })).unwrap()
 }
 
-fn now_seconds(now_ms: u64) -> i64 {
-    i64::try_from(now_ms / 1_000).unwrap()
+/// Writes the document the door is started with, at the mode it requires (R27).
+pub fn write_token(config_dir: &Path, scopes: &[&str]) -> PathBuf {
+    let path = config_dir.join("admin-token.json");
+    write_private(&path, &token_document(scopes));
+    path
+}
+
+/// Writes `contents` to `path` with mode `0600`: the only mode the token file may carry, so a
+/// fixture that wrote anything else would be refused before any case ran (R27).
+pub fn write_private(path: &Path, contents: &str) {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::write(path, contents).unwrap();
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
 }
 
 fn write_settings(config_dir: &Path, document: &serde_yaml::Value) {

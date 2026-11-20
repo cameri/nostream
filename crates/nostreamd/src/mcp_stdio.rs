@@ -16,33 +16,65 @@
 //! the same change, or this mode keeps answering the store-backed tools with the store's own
 //! `NotImplemented` message (R19).
 //!
-//! The credential is read once here and passed to the server as a value: the server never reads
-//! the environment (R7).
+//! The credential is this mode's own and comes from its two flags, never the environment: the
+//! variable that used to carry a console session token is retired, and a mode started with it
+//! refuses to run rather than quietly ignoring it (R26, D19). The server takes the credential as
+//! a value and re-reads a file-delivered document on every call, so a rewrite or a deletion is
+//! the revocation.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use nostream_config::SettingsPaths;
 use nostream_core::nip05::Nip05Fetch;
+use nostream_mcp::Credential;
 use nostream_services::HttpClient;
 use rmcp::ServiceExt;
 use rmcp::model::Implementation;
 
 use crate::DaemonError;
 
-/// The session token a stdio caller presents, minted by `POST /admin/login` and verified with
-/// the console's own function (R7).
-pub const ADMIN_TOKEN_ENV: &str = "NOSTREAM_ADMIN_TOKEN";
+/// The variable that carried a console session token to this mode, until it was retired (R26).
+pub const RETIRED_TOKEN_ENV: &str = "NOSTREAM_ADMIN_TOKEN";
 
-/// The token the environment carries, when it carries a non-empty one.
-pub fn token_from_env() -> Option<String> {
-    std::env::var(ADMIN_TOKEN_ENV)
-        .ok()
-        .filter(|token| !token.is_empty())
+/// The credential the mode's flags name (R27): exactly one of the two, and never the environment.
+///
+/// Every refusal here happens before the pipe is served, so a half-migrated deployment fails to
+/// start with the fix named instead of answering `Unauthorized` to every call.
+pub fn resolve_credential(file: Option<&Path>, fd: Option<i32>) -> Result<Credential, DaemonError> {
+    if std::env::var_os(RETIRED_TOKEN_ENV).is_some() {
+        return Err(DaemonError::Setup(format!(
+            "{RETIRED_TOKEN_ENV} is retired: a console session token does not authenticate \
+             --mcp-stdio. Start the mode with --admin-token-file <path> (mode 0600) or \
+             --admin-token-fd <n>."
+        )));
+    }
+    match (file, fd) {
+        (Some(path), None) => Credential::from_file(path).map_err(start_up),
+        (None, Some(fd)) => Credential::from_descriptor(fd).map_err(start_up),
+        (None, None) => Err(DaemonError::Setup(
+            "--mcp-stdio needs a credential: pass --admin-token-file <path> or \
+             --admin-token-fd <n>"
+                .to_owned(),
+        )),
+        (Some(_), Some(_)) => Err(DaemonError::Setup(
+            "--mcp-stdio takes one credential, not two: pass --admin-token-file <path> or \
+             --admin-token-fd <n>"
+                .to_owned(),
+        )),
+    }
+}
+
+fn start_up(error: nostream_mcp::McpError) -> DaemonError {
+    DaemonError::Setup(error.to_string())
 }
 
 /// Serves the MCP server on stdin/stdout until the peer closes stdin, then returns.
-pub async fn serve(cwd: PathBuf, config_dir: PathBuf) -> Result<(), DaemonError> {
+pub async fn serve(
+    cwd: PathBuf,
+    config_dir: PathBuf,
+    credential: Credential,
+) -> Result<(), DaemonError> {
     let stores = Arc::new(nostream_services::unavailable::stores());
     let client = Arc::new(
         nostream_services::ReqwestClient::new()
@@ -56,7 +88,7 @@ pub async fn serve(cwd: PathBuf, config_dir: PathBuf) -> Result<(), DaemonError>
 
     let server = nostream_mcp::AdminMcp::new(
         state,
-        token_from_env(),
+        credential,
         Implementation::new(nostream_mcp::MCP_SERVER_NAME, env!("CARGO_PKG_VERSION")),
     );
 

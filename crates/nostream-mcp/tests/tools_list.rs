@@ -7,7 +7,7 @@
 //! | `the_comparator_rejects_a_changed_list` | the comparator can fail: a removed tool, a changed description and a changed schema each fail through the same `compare` |
 //! | `the_required_parameters_are_typed` | the shapes the values fix: an `Option<T>` is a two-element type array, `get_event` carries `id`, `settings_set` names both accepted forms, no schema is empty |
 //! | `the_server_version_is_what_the_composition_supplies` | `serverInfo.version` is the composition's, not this crate's |
-//! | `initialize_publishes_the_prerequisites` | `initialize`'s `instructions` name the three prerequisites and the credential |
+//! | `initialize_publishes_the_prerequisites` | `initialize`'s `instructions` name the credential, its scopes and the surface's one remaining prerequisite |
 //!
 //! The snapshot is **name-sorted**, because rmcp sorts the list and array equality is
 //! order-sensitive (R21). It is compared, never regenerated: nothing here writes a file.
@@ -207,10 +207,11 @@ async fn initialize_publishes_the_prerequisites() {
         .and_then(|info| info.instructions.clone())
         .expect("initialize carries instructions");
     for needle in [
+        "--admin-token-file",
+        "--admin-token-fd",
         "admin.enabled",
-        "SECRET",
-        "NOSTREAM_ADMIN_TOKEN",
-        "POST /admin/login",
+        "write",
+        "mcp.denied",
     ] {
         assert!(
             instructions.contains(needle),

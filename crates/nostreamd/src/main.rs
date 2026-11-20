@@ -41,11 +41,41 @@ struct Cli {
 
     /// Serve the admin MCP server on stdin/stdout and exit when stdin closes. Binds no socket.
     ///
-    /// Every call is authenticated with an admin session token (minted by `POST /admin/login`)
-    /// in NOSTREAM_ADMIN_TOKEN, and needs `admin.enabled: true` in the settings and `SECRET`
-    /// set; without them a call answers Not Found, Internal Server Error or Unauthorized.
+    /// Every call is decided by a scoped token document, delivered either by a file
+    /// (`--admin-token-file <path>`, which must be mode 0600 and is re-read on every call, so
+    /// deleting or rewriting it revokes or narrows the credential) or on an inherited descriptor
+    /// (`--admin-token-fd <n>`, read once at start and valid for the life of the process).
+    /// Exactly one of the two is required.
+    ///
+    /// The document is `{"scopes": ["write"]}`; a document with no scopes grants the read tools
+    /// (`settings_get`, `list_events`, `get_event`), and the "write" scope adds `settings_set`.
+    /// An unknown scope refuses to start, naming it. The mode also needs `admin.enabled: true` in
+    /// the settings.
+    ///
+    /// NOSTREAM_ADMIN_TOKEN is retired: a console session token does not authenticate this mode,
+    /// and setting the variable makes the mode refuse to start.
     #[arg(long)]
     mcp_stdio: bool,
+
+    /// The token document the MCP mode reads, on every call. Mode 0600 or the mode refuses to
+    /// start; deleting or rewriting the file is the revocation.
+    #[arg(
+        long,
+        value_name = "PATH",
+        requires = "mcp_stdio",
+        conflicts_with = "admin_token_fd"
+    )]
+    admin_token_file: Option<PathBuf>,
+
+    /// The same token document on an inherited descriptor (conventionally 3), read once at
+    /// start: the credential then lives as long as the process.
+    #[arg(
+        long,
+        value_name = "N",
+        requires = "mcp_stdio",
+        conflicts_with = "admin_token_file"
+    )]
+    admin_token_fd: Option<i32>,
 }
 
 fn main() -> ExitCode {
@@ -137,9 +167,15 @@ fn run(cli: Cli) -> Result<ExitCode, DaemonError> {
         .map_err(|error| DaemonError::Setup(format!("tokio runtime: {error}")))?;
 
     if cli.mcp_stdio {
+        // R26, R27: the credential is resolved before the pipe is served, so a retired variable
+        // or a document this door cannot accept fails the start rather than every call.
+        let credential = nostreamd::mcp_stdio::resolve_credential(
+            cli.admin_token_file.as_deref(),
+            cli.admin_token_fd,
+        )?;
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         return runtime.block_on(async move {
-            nostreamd::mcp_stdio::serve(cwd, config_dir).await?;
+            nostreamd::mcp_stdio::serve(cwd, config_dir, credential).await?;
             Ok(ExitCode::SUCCESS)
         });
     }

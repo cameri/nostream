@@ -1,14 +1,16 @@
-//! AC22 — one audit line per executed call, and none for a refused one.
+//! AC22 — one audit line per executed call, and none for a call no tool reached.
 //!
 //! | case | what it proves |
 //! |---|---|
 //! | `each_call_appends_one_line` | four calls append five lines in call order — the four `mcp.*` lines, then `settings_set`'s own `settings.updated` |
-//! | `a_refused_call_appends_nothing` | a call with bad arguments and a call with no token each leave the file untouched |
+//! | `a_refused_call_appends_nothing` | a call with bad arguments and a call with no credential each leave the file untouched |
 //! | `every_registered_tool_is_in_the_audit_table` | the audit table is total: no tool the router registers can execute unaudited |
 //! | `the_audit_check_is_no_stricter_than_the_router` | the table's rule is the router's deserialiser, not the schema: a stricter check would fail open |
 //!
 //! R9 appends the `mcp.*` line at dispatch, before the handler's work, so the order in the file
-//! is the order of the calls and a domain line always follows its own dispatch line.
+//! is the order of the calls and a domain line always follows its own dispatch line. The one
+//! refusal that does write is a credential's scope denial — `mcp.denied`, R28 — and it has its
+//! own case beside the credential, in `tests/auth.rs`.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -16,7 +18,7 @@ mod common;
 
 use std::collections::BTreeSet;
 
-use common::{Fixture, TestMcp, Token, event, id_of, object, text};
+use common::{TestMcp, event, id_of, object, text};
 use nostream_mcp::{
     TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET, audit_action,
 };
@@ -100,12 +102,10 @@ async fn a_refused_call_appends_nothing() {
         "an argument the schema refuses is refused before dispatch"
     );
 
-    // A second server, built with no token, over its own config dir.
-    let untokened = TestMcp::start_with(Fixture {
-        token: Token::Absent,
-        ..Fixture::default()
-    })
-    .await;
+    // A second server whose token file is deleted before the call: the credential is gone, so
+    // there is nothing to attribute a line to (R28).
+    let untokened = TestMcp::start().await;
+    untokened.revoke();
     let unauthenticated = untokened.client().await;
     let refused = unauthenticated.call(TOOL_SETTINGS_GET, json!({})).await;
     assert_eq!(refused.is_error, Some(true));

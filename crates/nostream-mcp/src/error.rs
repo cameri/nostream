@@ -31,6 +31,11 @@ pub enum McpError {
     #[error("{0}")]
     Criterion(String),
 
+    /// The credential document this door was started with could not be read, or names something
+    /// it does not accept (R27). A start-up failure, not a tool's.
+    #[error("{0}")]
+    Credential(String),
+
     /// A payload the tool built could not be serialised.
     #[error("the payload could not be serialised: {0}")]
     Serialise(#[from] serde_json::Error),

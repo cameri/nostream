@@ -2,8 +2,9 @@
 //!
 //! Every tool is a thin handler over a seam that already exists — `AdminState` for the settings,
 //! `EventRepository` for the events — and nothing here knows what an HTTP status is (R3). The
-//! gate and the audit line live in [`ServerHandler::call_tool`], at dispatch: a call the gate
-//! refuses reaches no tool and writes nothing (R8), and a call that reaches a tool has its
+//! gate and the audit line live in [`ServerHandler::call_tool`], at dispatch: a call the
+//! credential refuses reaches no tool and writes nothing (R8), a call its scopes deny writes the
+//! one `mcp.denied` line that records the denial (R28), and a call that reaches a tool has its
 //! `mcp.<tool>` line written before the tool's own work, so the file's order is the dispatch
 //! order (R9).
 
@@ -13,7 +14,6 @@ use std::sync::Arc;
 use nostream_admin::AdminState;
 use nostream_admin::controllers::admin_json_body_middleware::settings_patch;
 use nostream_admin::controllers::patch_settings::{self, SettingsWrite};
-use nostream_admin::utils::session;
 use nostream_core::{Filter, Kind};
 use nostream_storage::repositories::{EventRecord, collect_page, collect_records};
 use rmcp::handler::server::router::tool::ToolRouter;
@@ -29,6 +29,7 @@ use rmcp::{RoleServer, ServerHandler, tool, tool_handler, tool_router};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
+use crate::credential::{Credential, SCOPE_WRITE, Scopes};
 use crate::error::McpError;
 
 /// The server name `initialize` reports: the server, not the SDK, which would name `rmcp` (R6).
@@ -36,17 +37,19 @@ pub const MCP_SERVER_NAME: &str = "nostream";
 
 /// What `initialize`'s `instructions` carries: the route to a working call.
 ///
-/// The three refusals the gate answers name a symptom, not its cause, and nothing else on the
-/// surface says what a caller needs — a client that reads `Not Found` for a tool it was just
-/// told exists has nowhere to look. This is that place, and it is additive: the refusal texts
-/// stay exactly as the console's layers word them.
+/// The refusals the gate answers name a symptom, not its cause, and nothing else on the surface
+/// says what a caller needs — a client that reads `Not Found` for a tool it was just told exists
+/// has nowhere to look. This is that place, and it is additive: the refusal texts stay exactly as
+/// the console's layers word them.
 pub const MCP_INSTRUCTIONS: &str = "\
-The nostream admin MCP server. It uses the admin console's own credential: a session token \
-minted by `POST /admin/login` and passed in `NOSTREAM_ADMIN_TOKEN`. Three things must hold, or \
-every call is refused with the reason: `admin.enabled` is true in the settings (else `Not \
-Found`), `SECRET` is set (else `Internal Server Error`), and `NOSTREAM_ADMIN_TOKEN` carries an \
-unexpired token (else `Unauthorized`). Each executed call appends one `mcp.<tool>` line to \
-`<config>/admin-audit.jsonl`.";
+The nostream admin MCP server. Every call is decided by the scoped token document the mode was \
+started with — `--admin-token-file <path>` or `--admin-token-fd <n>`, exactly one, its shape \
+{\"scopes\": [\"write\"]}: the document's presence authorises `settings_get`, `list_events` and \
+`get_event`, and the \"write\" scope authorises `settings_set` (else the call is `Forbidden`). \
+`admin.enabled` must be true in the settings, or every call answers `Not Found`; a document \
+that cannot be read answers `Unauthorized`. Each executed call appends one `mcp.<tool>` line to \
+`<config>/admin-audit.jsonl`, and a call the document's scopes deny appends one `mcp.denied` \
+line.";
 
 /// The tool names slice 1 registers (R5). Each is also its audit action's suffix (R9).
 pub const TOOL_SETTINGS_GET: &str = "settings_get";
@@ -70,18 +73,34 @@ pub const MAX_FILTER_TERMS: usize = 64;
 /// read materialises, which is the number a backend opens with.
 pub const MAX_ROWS_PER_PAGE: u64 = nostream_storage::DEFAULT_PAGE_ROWS;
 
-/// The refusal for a token that is absent, malformed or expired — the HTTP gate's `401`.
+/// The refusal for a credential whose document is absent, unreadable or no longer a document this
+/// door accepts — the HTTP gate's `401`.
 pub const UNAUTHORIZED: &str = "Unauthorized";
 
-/// The refusal for a surface whose `SECRET` is absent — the HTTP gate's `500`.
-pub const INTERNAL_SERVER_ERROR: &str = "Internal Server Error";
+/// The refusal for a call the credential's scopes do not cover — the HTTP gate's `403`. It is the
+/// one refusal that describes a call the door authenticated (R28), so it is the one that is
+/// written down.
+pub const FORBIDDEN: &str = "Forbidden";
 
 /// The refusal for a surface `admin.enabled` does not turn on — the console's `404`.
 pub const NOT_FOUND: &str = "Not Found";
 
+/// The audit action a call its credential's scopes denied records (R28).
+pub const AUDIT_DENIED: &str = "mcp.denied";
+
 /// The audit action one dispatched call records: `mcp.<tool>` (R9).
 pub fn audit_action(tool: &str) -> String {
     format!("mcp.{tool}")
+}
+
+/// The scope a tool needs beyond the read grant every token carries (R28).
+///
+/// The three read tools name nothing because reading is the document's default; the one tool that
+/// changes the relay is the one a document has to opt into. A tool added to the router without an
+/// entry here is a read tool, which is the safe direction: the failure it would produce is a
+/// `Forbidden` a case can see, not an unnoticed write.
+pub fn required_scope(tool: &str) -> Option<&'static str> {
+    (tool == TOOL_SETTINGS_SET).then_some(SCOPE_WRITE)
 }
 
 /// Whether the router can deserialise a call's arguments: the same type its handler takes.
@@ -240,13 +259,14 @@ impl JsonSchema for SettingsSetArgs {
     }
 }
 
-/// The server: the shared admin state, the resolved token and the composition's identity.
+/// The server: the shared admin state, the credential and the composition's identity.
 #[derive(Debug, Clone)]
 pub struct AdminMcp {
     state: Arc<AdminState>,
-    /// `NOSTREAM_ADMIN_TOKEN` as a value, read once by the composition root (R7). Never the
-    /// environment: a gate that read it per call could not be tested without racing.
-    token: Option<String>,
+    /// The door's own credential, built by the composition root from its two flags (R27). Never
+    /// the environment and never the console's session token: a gate that read either could not
+    /// be revoked per door, and could not be tested without racing.
+    credential: Credential,
     implementation: Implementation,
     tool_router: ToolRouter<Self>,
 }
@@ -257,12 +277,12 @@ impl AdminMcp {
     /// the daemon's version and not this crate's (R6).
     pub fn new(
         state: Arc<AdminState>,
-        token: Option<String>,
+        credential: Credential,
         implementation: Implementation,
     ) -> Self {
         Self {
             state,
-            token,
+            credential,
             implementation,
             tool_router: Self::tool_router(),
         }
@@ -379,22 +399,29 @@ impl AdminMcp {
             .find(|record| record.event.id.to_string() == id))
     }
 
-    /// The gate's refusal, if the call cannot run (R7): the console's enabled predicate first,
-    /// then its `SECRET`, then its session token — the three checks its own layers make, in the
-    /// order its router makes them.
-    fn refusal(&self) -> Option<&'static str> {
+    /// The grant the call runs under, or the refusal that stops it (R27–R29): the console's
+    /// enabled predicate first, then the document — which the file form reads right here, so a
+    /// rewrite or a deletion is in force by the time this answers.
+    ///
+    /// The document's own failure is the operator's to read, not the caller's: `Unauthorized` is
+    /// what a pipe sees, and the reason goes to the log where the file's path is meaningful.
+    fn grant(&self) -> Result<Scopes, &'static str> {
         if !self.surface_enabled() {
-            return Some(NOT_FOUND);
+            return Err(NOT_FOUND);
         }
-        let Some(secret) = self.state.secret() else {
-            return Some(INTERNAL_SERVER_ERROR);
-        };
-        let key = session::session_key(secret);
-        match &self.token {
-            Some(token) if session::is_valid_token(&key, token, self.state.clock().now_secs()) => {
-                None
-            }
-            _ => Some(UNAUTHORIZED),
+        self.credential.grant().map_err(|error| {
+            tracing::warn!(%error, "the MCP credential was refused");
+            UNAUTHORIZED
+        })
+    }
+
+    /// R28's line: an authenticated call the document's scopes deny. It carries the tool and the
+    /// scope it needed, never an argument value, and it is written before the refusal is
+    /// returned, so a denied write is visible in `admin-audit.jsonl` rather than absent from it.
+    fn record_denial(&self, tool: &str, scope: &str) {
+        let detail = json!({ "tool": tool, "scope": scope });
+        if let Err(error) = self.state.append_audit(AUDIT_DENIED, None, Some(detail)) {
+            tracing::warn!(%error, tool, "the MCP denial was not recorded");
         }
     }
 
@@ -482,15 +509,30 @@ impl ServerHandler for AdminMcp {
     /// The gate and the audit sink, in front of the router's dispatch.
     ///
     /// `tools/list` is not gated (R8): a client discovers the surface before it presents a
-    /// credential, and the refusal is at the call.
+    /// credential, and the refusal is at the call. The order is the console's — the enabled
+    /// predicate, then the credential — with the scopes after them, because a scope is only
+    /// meaningful once the document that names it has been read (R28).
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, rmcp::ErrorData> {
-        if let Some(refusal) = self.refusal() {
-            tracing::warn!(tool = %request.name, refusal, "the MCP call was refused");
-            return Ok(CallToolResult::error(vec![ContentBlock::text(refusal)]).into());
+        let scopes = match self.grant() {
+            Ok(scopes) => scopes,
+            Err(refusal) => {
+                tracing::warn!(tool = %request.name, refusal, "the MCP call was refused");
+                return Ok(tool_refusal(refusal).into());
+            }
+        };
+        if let Some(scope) = required_scope(&request.name)
+            && !scopes.includes(scope)
+        {
+            self.record_denial(&request.name, scope);
+            return Ok(tool_refusal(&format!(
+                "{FORBIDDEN}: {} needs the \"{scope}\" scope",
+                request.name
+            ))
+            .into());
         }
         // `Some(false)` — the router answers the deserialisation failure — and `None` — no such
         // tool, and the router answers `-32602` — both reach no tool, so neither writes a line
@@ -523,6 +565,12 @@ fn dispatch_detail(tool: &str, arguments: Option<&Map<String, Value>>) -> Value 
 /// read it: a JSON-RPC error would reach them as an opaque internal failure.
 fn tool_error(error: &McpError) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(error.to_string())])
+}
+
+/// A gate refusal as an `isError: true` result: the credential is the caller's to fix, and a
+/// JSON-RPC error would read as the server's fault (R28).
+fn tool_refusal(text: &str) -> CallToolResult {
+    CallToolResult::error(vec![ContentBlock::text(text)])
 }
 
 /// A refusal body as an `isError: true` result — the controller's own JSON, rendered (R13).
