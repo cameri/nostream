@@ -93,6 +93,18 @@ impl Prepared {
         }
     }
 
+    /// The same fixture with payments turned on: the relay path refuses to start without `SECRET`
+    /// (`src/app/app.ts:86-94`), and the stdio door, which serves no payments, must not inherit
+    /// that refusal (D19: `SECRET` is not a prerequisite for this door).
+    fn with_payments() -> Self {
+        let prepared = Self::new();
+        let settings = prepared.config_dir.join("settings.yaml");
+        let mut document = std::fs::read_to_string(&settings).unwrap();
+        document.push_str("payments:\n  enabled: true\n");
+        std::fs::write(&settings, document).unwrap();
+        prepared
+    }
+
     /// The mode's arguments for a dialogue: the config dir, the log level, the mode flag and the
     /// token file.
     fn arguments(&self, extra: &[String]) -> Vec<String> {
@@ -295,6 +307,36 @@ async fn refusal(arguments: &[String], environment: &[(&str, &str)]) -> (Option<
         output.status.code(),
         String::from_utf8_lossy(&output.stderr).into_owned(),
     )
+}
+
+/// The binary with **no** `SECRET`, for the payments refusal: the relay path must answer it and
+/// the stdio door must not. Bounded, because a build that lost the refusal would serve a relay
+/// here instead of exiting.
+async fn without_a_secret(arguments: &[String]) -> (Option<i32>, String) {
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_nostreamd"));
+    command
+        .args(arguments)
+        .current_dir(workspace_root())
+        .env_remove("SECRET")
+        .env("WORKER_COUNT", "1")
+        .env_remove("NOSTREAM_ADMIN_TOKEN")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().expect("the binary runs");
+    let mut pipe = child.stderr.take().expect("stderr is piped");
+    let status = match tokio::time::timeout(Duration::from_secs(20), child.wait()).await {
+        Ok(status) => status.expect("the child is reaped"),
+        Err(_) => {
+            let _ = child.start_kill();
+            panic!("the process neither refused nor exited within twenty seconds");
+        }
+    };
+    let mut stderr = String::new();
+    pipe.read_to_string(&mut stderr)
+        .await
+        .expect("stderr drains");
+    (status.code(), stderr)
 }
 
 #[tokio::test]
@@ -531,4 +573,56 @@ async fn an_inherited_descriptor_authenticates() {
     );
     assert_eq!(read["result"]["isError"], false, "{read}");
     assert_eq!(outcome.status.code(), Some(0), "{}", outcome.stderr);
+}
+
+/// The payments refusal is the relay path's, not the door's: a payment-enabled instance with no
+/// `SECRET` still opens the stdio door when its token document is good (D19).
+#[tokio::test]
+async fn payments_without_a_secret_do_not_stop_the_door() {
+    let prepared = Prepared::with_payments();
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_nostreamd"));
+    command
+        .args(prepared.arguments(&[]))
+        .current_dir(workspace_root())
+        .env_remove("SECRET")
+        .env("WORKER_COUNT", "1")
+        .env_remove("NOSTREAM_ADMIN_TOKEN")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut daemon = Daemon::spawn(command);
+    let result = daemon.initialize().await;
+    let outcome = daemon.finish().await;
+
+    assert_eq!(
+        result["result"]["serverInfo"]["name"], "nostream",
+        "{result}"
+    );
+    assert!(
+        outcome
+            .stderr
+            .lines()
+            .any(|line| line.contains("mcp server on stdio")),
+        "the mode reached its banner: {}",
+        outcome.stderr
+    );
+    assert_eq!(outcome.status.code(), Some(0), "{}", outcome.stderr);
+}
+
+/// The counterpart: moving the refusal must not be deleting it. The relay path with the same
+/// settings and no `SECRET` still refuses, with the capture's own message and exit code `1`.
+#[tokio::test]
+async fn the_relay_path_still_needs_a_secret_for_payments() {
+    let prepared = Prepared::with_payments();
+    let arguments = vec![
+        "--config-dir".to_owned(),
+        prepared.config_dir.display().to_string(),
+    ];
+    let (code, stderr) = without_a_secret(&arguments).await;
+
+    assert_eq!(code, Some(1), "{stderr}");
+    assert!(
+        stderr.contains("Please configure the secret using the SECRET environment variable."),
+        "{stderr}"
+    );
 }

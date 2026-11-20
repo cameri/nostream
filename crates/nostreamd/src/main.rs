@@ -113,11 +113,9 @@ fn run(cli: Cli) -> Result<ExitCode, DaemonError> {
 
     let settings = outcome.settings;
 
-    // R9: payments cannot be enabled without a usable SECRET. This is the capture's one
-    // startup refusal (`src/app/app.ts:86-94`) and it exits 1, not `InvalidSettings`' 2.
-    if payments_enabled(&settings) && secret_missing() {
-        return Err(DaemonError::MissingSecret);
-    }
+    // R9's payments refusal belongs to the relay path only, and is checked below, after the
+    // `--mcp-stdio` branch returns: the stdio door serves no payments, and D19 retired `SECRET`
+    // as a prerequisite for it, so a payment-enabled instance without one can still open it.
 
     let writer = if cli.mcp_stdio {
         telemetry::LogWriter::Stderr
@@ -178,6 +176,13 @@ fn run(cli: Cli) -> Result<ExitCode, DaemonError> {
             nostreamd::mcp_stdio::serve(cwd, config_dir, credential).await?;
             Ok(ExitCode::SUCCESS)
         });
+    }
+
+    // R9: payments cannot be enabled without a usable `SECRET`. This is the capture's one
+    // startup refusal (`src/app/app.ts:86-94`) and it exits 1, not `InvalidSettings`' 2. It is
+    // checked here, after the stdio mode has returned, because that door serves no payments.
+    if payments_enabled(&settings) && secret_missing() {
+        return Err(DaemonError::MissingSecret);
     }
 
     runtime.block_on(async move { serve(listen, settings, config_dir, port).await })
