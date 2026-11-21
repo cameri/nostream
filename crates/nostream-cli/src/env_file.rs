@@ -481,6 +481,25 @@ mod tests {
         assert_eq!(raw.len(), 1);
     }
 
+    /// A CRLF document's carriage return is not part of the value, in either view: the capture
+    /// splits on `/\r?\n/`, so `A=1 \r\n` is `1 ` there and must be `1 ` here. Inverted by deleting
+    /// `parse_lines`'s `strip_suffix('\r')`, which makes the raw view answer `1 \r`.
+    #[test]
+    fn a_crlf_carriage_return_is_not_part_of_the_value() {
+        assert_eq!(
+            parse_raw("A=1 \r\nSECRET=ab\r\n")
+                .get("A")
+                .map(String::as_str),
+            Some("1 ")
+        );
+        assert_eq!(
+            parse_values("A=1 \r\nSECRET=ab\r\n")
+                .get("SECRET")
+                .map(String::as_str),
+            Some("ab")
+        );
+    }
+
     /// `node --env-file` is the oracle the module header names, and it strips a surrounding quote
     /// pair — `'`, `"` or a backtick — and an inline comment: measured on this host (node
     /// v24.22.1) over these six lines, `node --env-file=probe.env -e …` answers
