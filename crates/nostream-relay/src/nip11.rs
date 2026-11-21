@@ -137,17 +137,17 @@ pub fn restricted_writes(settings: &Settings) -> bool {
             .iter()
             .any(|schedule| schedule.enabled)
     });
-    let nip43 = settings
-        .nip43
-        .as_ref()
-        .is_some_and(|nip43| nip43.enabled);
+    let nip43 = settings.nip43.as_ref().is_some_and(|nip43| nip43.enabled);
     let auth_required = settings
         .nip42
         .as_ref()
         .and_then(|nip42| nip42.auth_required)
         .unwrap_or(false);
 
-    let event = settings.limits.as_ref().and_then(|limits| limits.event.as_ref());
+    let event = settings
+        .limits
+        .as_ref()
+        .and_then(|limits| limits.event.as_ref());
     let event_id_bits = event
         .and_then(|event| event.event_id.as_ref())
         .and_then(|event_id| event_id.min_leading_zero_bits)
@@ -238,10 +238,7 @@ fn self_pubkey(settings: &Settings, signing_pubkey: Option<Pubkey>) -> Option<Pu
 /// `SUPPORTED_NIPS` in its own order, minus what does not run: 43 without NIP-43 enabled, 50
 /// without NIP-50 enabled, and 77 always (its handler is a stub).
 fn supported_nips(settings: &Settings) -> Vec<u16> {
-    let nip43 = settings
-        .nip43
-        .as_ref()
-        .is_some_and(|nip43| nip43.enabled);
+    let nip43 = settings.nip43.as_ref().is_some_and(|nip43| nip43.enabled);
     let nip50 = settings
         .nip50
         .as_ref()
@@ -256,7 +253,10 @@ fn supported_nips(settings: &Settings) -> Vec<u16> {
 }
 
 fn limitation(settings: &Settings) -> Limitation {
-    let event = settings.limits.as_ref().and_then(|limits| limits.event.as_ref());
+    let event = settings
+        .limits
+        .as_ref()
+        .and_then(|limits| limits.event.as_ref());
     let subscription = settings
         .limits
         .as_ref()

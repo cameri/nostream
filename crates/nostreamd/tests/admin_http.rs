@@ -8,11 +8,11 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+use std::collections::BTreeSet;
 use std::io::Write;
 use std::net::{SocketAddr, TcpListener};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
-use std::collections::BTreeSet;
 
 use serde_json::Value;
 
@@ -239,10 +239,9 @@ async fn a_login_verification_does_not_stall_the_listener() {
 /// daemon published.
 fn published_document(raw: &str) -> Option<Value> {
     let document: Value = serde_json::from_str(raw).ok()?;
-    let fresh = document["workers"]
-        .as_array()?
-        .iter()
-        .any(|row| row["type"] == "maintenance" && row["stale"] == false && row["heartbeat"].is_object());
+    let fresh = document["workers"].as_array()?.iter().any(|row| {
+        row["type"] == "maintenance" && row["stale"] == false && row["heartbeat"].is_object()
+    });
 
     fresh.then_some(document)
 }

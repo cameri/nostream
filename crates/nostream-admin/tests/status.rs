@@ -50,7 +50,13 @@ async fn a_written_document_reads_back() {
 
     let names: Vec<String> = std::fs::read_dir(&server.config_dir)
         .expect("the config dir")
-        .map(|entry| entry.expect("an entry").file_name().to_string_lossy().into_owned())
+        .map(|entry| {
+            entry
+                .expect("an entry")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
         .collect();
     assert!(
         !names.iter().any(|name| name.ends_with(".tmp")),
@@ -110,7 +116,8 @@ async fn an_unreadable_document_is_a_reason() {
     )
     .expect("a written file");
 
-    let error = status::read(server.state.paths(), NOW_MS).expect_err("the document does not parse");
+    let error =
+        status::read(server.state.paths(), NOW_MS).expect_err("the document does not parse");
 
     assert!(
         error.reason.contains("relay-status.json"),

@@ -1057,7 +1057,9 @@ fn the_total_counts_every_addresses_sockets() {
     let cap = std::sync::Arc::new(ConnectionCap::new(2));
     let first = cap.acquire("10.0.0.1").expect("the first slot");
     let second = cap.acquire("10.0.0.1").expect("the second slot");
-    let third = cap.acquire("10.0.0.2").expect("another address has its own slots");
+    let third = cap
+        .acquire("10.0.0.2")
+        .expect("another address has its own slots");
 
     assert_eq!(cap.live_total(), 3, "sockets, not addresses");
     assert_eq!(cap.tracked_addresses(), 2);
@@ -1066,7 +1068,9 @@ fn the_total_counts_every_addresses_sockets() {
 
     assert_eq!(cap.live_total(), 2, "a released slot leaves the total");
 
-    let again = cap.acquire("10.0.0.2").expect("the released slot admits again");
+    let again = cap
+        .acquire("10.0.0.2")
+        .expect("the released slot admits again");
     let second_of_two = cap
         .acquire("10.0.0.2")
         .expect("the cap allows two for one address");
