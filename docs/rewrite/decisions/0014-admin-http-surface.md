@@ -279,8 +279,9 @@ backend, whose query is a real await, that the shape is for.
 ### D18 — The audit vocabulary gains one `mcp.*` action per tool
 
 The MCP server writes its calls to the same `<config>/admin-audit.jsonl` (D9), one line per
-executed call, and it extends the recorded action vocabulary by **four names** rather than
-reusing one:
+executed call, and it extends the recorded action vocabulary by **one name per registered tool**
+rather than reusing one. Four names landed with the first slice; `relay_status` adds the fifth, and
+each later slice adds its own:
 
 | action | written by |
 |---|---|
@@ -288,6 +289,7 @@ reusing one:
 | `mcp.settings_set` | a dispatched `settings_set` |
 | `mcp.list_events` | a dispatched `list_events` |
 | `mcp.get_event` | a dispatched `get_event` |
+| `mcp.relay_status` | a dispatched `relay_status` (ADR 0016) |
 
 **These extend the capture's nine names; they do not replace them.** The capture's vocabulary is
 a closed nine-name union (`src/@types/admin-audit.ts:1-10`), and the rewrite's writer takes
