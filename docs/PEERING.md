@@ -18,9 +18,11 @@ The relay already has a signing key:
   [CONFIGURATION.md](../CONFIGURATION.md#environment-variables). The private key
   is never written to `settings.yaml` and never sent to another relay.
 
-`info.self` is optional. When set, it is the pubkey advertised as `self` in the
-NIP-11 document and must match the key the relay actually signs with. When unset
-or unparseable, NIP-11 advertises the derived signing pubkey instead. Run:
+`info.self` is optional and gates kind 28935 invite requests: when set it must
+match the key the relay actually signs with, and when it does not those requests
+are disabled. It is not what NIP-11 publishes — the document's `self` is always
+the relay's derived signing pubkey, read from the daemon's status document, and
+absent while that document is missing or stale. Run:
 
 ```bash
 nostream info
