@@ -50,8 +50,9 @@ struct Cli {
     /// start — and at most 4 KiB.
     ///
     /// The document is `{"scopes": ["write"]}`; a document with no scopes grants the read tools
-    /// (`settings_get`, `list_events`, `get_event`, `relay_status`), and the "write" scope adds
-    /// `settings_set`, `delete_event` and `reports_action`.
+    /// (`settings_get`, `list_events`, `get_event`, `relay_status`, `user_get`, `invoices_list`,
+    /// `invoices_get` and `reports_list`), and the "write" scope adds `settings_set`,
+    /// `delete_event`, `reports_action` and `user_admin`.
     /// An unknown scope refuses to start, naming it. The mode also needs `admin.enabled: true` in
     /// the settings.
     ///
