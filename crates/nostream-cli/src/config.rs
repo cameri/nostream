@@ -270,9 +270,11 @@ pub fn save(paths: &SettingsPaths, document: &Value) -> Result<(), CliError> {
 }
 
 /// `config env list`: the `.env` table, sorted by key, secrets masked unless `--show-secrets`.
-pub fn env_list(cwd: &Path, show_secrets: bool) -> Result<CommandOutput, CliError> {
-    let environment = env_file::Environment::load(cwd);
-    let values = environment.file_values();
+pub fn env_list(
+    env: &env_file::Environment,
+    show_secrets: bool,
+) -> Result<CommandOutput, CliError> {
+    let values = env.file_values();
 
     if values.is_empty() {
         return Ok(CommandOutput::print(vec![
@@ -296,7 +298,11 @@ pub fn env_list(cwd: &Path, show_secrets: bool) -> Result<CommandOutput, CliErro
 }
 
 /// `config env get <key>`: one masked value, or the capture's two refusals.
-pub fn env_get(cwd: &Path, key: &str, show_secrets: bool) -> Result<CommandOutput, CliError> {
+pub fn env_get(
+    env: &env_file::Environment,
+    key: &str,
+    show_secrets: bool,
+) -> Result<CommandOutput, CliError> {
     let key = key.trim();
 
     if !env_file::is_supported_key(key) {
@@ -305,8 +311,7 @@ pub fn env_get(cwd: &Path, key: &str, show_secrets: bool) -> Result<CommandOutpu
         )));
     }
 
-    let environment = env_file::Environment::load(cwd);
-    let Some(value) = environment.file(key) else {
+    let Some(value) = env.file(key) else {
         return Err(CliError::reported_line(format!("Env key not set: {key}")));
     };
 
@@ -344,9 +349,8 @@ pub fn env_set(cwd: &Path, key: &str, value: &str) -> Result<CommandOutput, CliE
 }
 
 /// `config env validate`: the label-form finding lines, or the confirmation.
-pub fn env_validate(cwd: &Path) -> Result<CommandOutput, CliError> {
-    let environment = env_file::Environment::load(cwd);
-    let issues = env_file::validate_values(environment.file_values());
+pub fn env_validate(env: &env_file::Environment) -> Result<CommandOutput, CliError> {
+    let issues = env_file::validate_values(env.file_values());
 
     if issues.is_empty() {
         return Ok(CommandOutput::print(vec![
@@ -410,5 +414,24 @@ mod tests {
         assert_eq!(ValueType::parse("inferred"), Some(ValueType::Inferred));
         assert_eq!(ValueType::parse("json"), Some(ValueType::Json));
         assert_eq!(ValueType::parse("yaml"), None);
+    }
+
+    /// The three `config env` readers answer the `Environment` they are handed, never a fresh read
+    /// of `<cwd>/.env`: the table below names no file, so a reader that loaded its own copy would
+    /// answer `No .env entries found` instead of these lines.
+    #[test]
+    fn the_env_readers_answer_the_environment_they_are_handed() {
+        let env = env_file::Environment::from_values(std::collections::BTreeMap::from([(
+            "SECRET".to_owned(),
+            "abcdef".to_owned(),
+        )]));
+
+        assert_eq!(env_list(&env, true).unwrap().lines, vec!["SECRET=abcdef"]);
+        assert_eq!(env_list(&env, false).unwrap().lines, vec!["SECRET=ab***ef"]);
+        assert_eq!(env_get(&env, "SECRET", true).unwrap().lines, vec!["abcdef"]);
+        assert_eq!(
+            env_validate(&env).unwrap().lines,
+            vec!["Environment settings are valid"]
+        );
     }
 }

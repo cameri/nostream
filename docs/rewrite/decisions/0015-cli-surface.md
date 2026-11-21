@@ -175,16 +175,14 @@ must come from the process or an explicit setting and never from a copied file's
 exception D14 records, for the reason D14 gives.
 
 **Cost:** every command parses the file twice, through the context's one `Environment`, which holds
-both views (`crates/nostream-cli/src/app.rs:47`); the three `config env` readers parse it **four**
-times, because each loads a second `Environment` for its own view on top of the context's
-(`config.rs:274,308,348`); and `config env set` parses it twice as well — the context loads it for
-every command — plus the raw text read it writes from (`config.rs:337`). Measured with `strace -f
--e trace=openat` on `config env set`: one `Environment::load` (2 parses, 1 read open) and one more
-read open for its own text. Both parses of one file are deliberate; a value that must
-survive into the environment has to be quoted as node requires. Collapsing them instead made
-`set` write a line its own `get` could not read back; the alternative, making `set` write a
-node-survivable form, has no spelling for a value holding both quote characters, since node has
-no escape.
+both views (`crates/nostream-cli/src/app.rs:47`); the three `config env` readers are handed that
+same instance, and `config env set` reads the same file's text again because it writes from it
+(`config.rs:337`). Measured with `strace -f -e trace=openat`: `config env list` opens the file
+**once** and `config env set` once plus that text read. Both parses of one file are deliberate; a
+value that must survive into the environment has to be quoted as node requires. Collapsing them
+instead made `set` write a line its own `get` could not read back; the alternative, making `set`
+write a node-survivable form, has no spelling for a value holding both quote characters, since node
+cannot escape a quote character.
 
 ### D9 — `config validate` keeps exit 2
 

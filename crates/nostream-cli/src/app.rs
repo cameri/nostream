@@ -267,15 +267,15 @@ fn dispatch(command: Command, context: &Context) -> Result<CommandOutput, CliErr
             ),
             ConfigCommand::Env { command } => match command {
                 ConfigEnvCommand::List { show_secrets } => {
-                    commands::config::env_list(&context.cwd, show_secrets)
+                    commands::config::env_list(&context.env, show_secrets)
                 }
                 ConfigEnvCommand::Get { key, show_secrets } => {
-                    commands::config::env_get(&context.cwd, &key, show_secrets)
+                    commands::config::env_get(&context.env, &key, show_secrets)
                 }
                 ConfigEnvCommand::Set { key, value } => {
                     commands::config::env_set(&context.cwd, &key, &value)
                 }
-                ConfigEnvCommand::Validate => commands::config::env_validate(&context.cwd),
+                ConfigEnvCommand::Validate => commands::config::env_validate(&context.env),
             },
         },
         Command::Export {

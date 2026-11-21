@@ -129,13 +129,17 @@ async fn restart(context: &Context) -> Result<CommandOutput, CliError> {
 }
 
 /// Runs `config env list`.
-pub fn env_list(cwd: &Path, show_secrets: bool) -> Result<CommandOutput, CliError> {
-    crate::config::env_list(cwd, show_secrets)
+pub fn env_list(env: &Environment, show_secrets: bool) -> Result<CommandOutput, CliError> {
+    crate::config::env_list(env, show_secrets)
 }
 
 /// Runs `config env get <key>`.
-pub fn env_get(cwd: &Path, key: &str, show_secrets: bool) -> Result<CommandOutput, CliError> {
-    crate::config::env_get(cwd, key, show_secrets)
+pub fn env_get(
+    env: &Environment,
+    key: &str,
+    show_secrets: bool,
+) -> Result<CommandOutput, CliError> {
+    crate::config::env_get(env, key, show_secrets)
 }
 
 /// Runs `config env set <key> <value>`.
@@ -144,6 +148,6 @@ pub fn env_set(cwd: &Path, key: &str, value: &str) -> Result<CommandOutput, CliE
 }
 
 /// Runs `config env validate`.
-pub fn env_validate(cwd: &Path) -> Result<CommandOutput, CliError> {
-    crate::config::env_validate(cwd)
+pub fn env_validate(env: &Environment) -> Result<CommandOutput, CliError> {
+    crate::config::env_validate(env)
 }
