@@ -344,7 +344,9 @@ has one row in `crates/nostream-mcp`'s `TOOLS` table: its name, the check that s
 router can deserialise a call's arguments (R9), and the scope the call needs (R28). The dispatch
 path looks a name up there instead of defaulting, and `every_registered_tool_has_a_table_row`
 reads the router's own list, so no call can execute unaudited and none can execute ungated. The
-scope column names the read tools explicitly and keeps `settings_set` as the only `write`; a name
+scope column names each tool's requirement — `read` for the read tools, `write` for
+`settings_set` and for `delete_event` and `reports_action` (ADR 0017 D5), so the column is the
+gate's whole answer rather than a default with one exception; a name
 the table does not carry is **refused there**, with the router's own `-32602 tool not found`,
 before the scope decision and before any line is written — so a tool that arrived without its row
 is unreachable rather than unaudited, and the name an audit line records is always one of the
