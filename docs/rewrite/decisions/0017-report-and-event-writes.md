@@ -40,7 +40,8 @@ actionable report hides it**. LMDB answers it with one `get` on the events table
 `SELECT ... WHERE event_id = $1`, and the eight other implementors carry it — the relay's and the
 services' in-memory and unavailable doubles, the admin test's `SlowEventRepository`, the door's
 `VanishingRepository` and `ZeroCountDeleter`, and the storage test's `Noop` — every one of them
-truthfully: a double that answered `None` for a row would make the hidden-event case vacuous.
+truthfully: a double that answered `None` for a row would redden the case that relies on it, and
+the hidden-event case runs over the real backend rather than a double.
 It exists because the gate has always been a read's (`lmdb/events.rs:1968-1978`'s `reported`, one
 predicate of a filter's row walk, and `postgres/sql.rs`'s equivalent): resolving the row
 through `get_event`'s gated read made `reports_action hide` followed by `delete_event` answer
