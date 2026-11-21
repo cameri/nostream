@@ -72,8 +72,17 @@ pub fn collect(state: &AdminState, active_connections: u64) -> Result<StatusDocu
 
 /// Replaces the file atomically: a sibling `.tmp` write then a rename, so a reader never sees
 /// a half-written document and no `.tmp` survives a successful write.
+///
+/// The parent directory is created first: the settings loader deliberately does not create it
+/// (only the mutating callers do), so a daemon started against an absent config directory would
+/// otherwise warn on every write and serve no document at all. The rule is the audit log's.
 pub fn write(path: &Path, document: &StatusDocument) -> std::io::Result<()> {
     let body = serde_json::to_vec(document).map_err(std::io::Error::other)?;
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
     let staging = staging_path(path);
 
     std::fs::write(&staging, body)?;
