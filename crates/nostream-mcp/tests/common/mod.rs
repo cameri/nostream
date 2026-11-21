@@ -109,6 +109,8 @@ pub struct Fixture {
     pub now_ms: u64,
     /// The store bundle the state is composed over.
     pub stores: Stores,
+    /// The report repository a case supplies in place of the backend's own.
+    pub reports: Option<ReportRepositoryFactory>,
 }
 
 impl Default for Fixture {
@@ -119,6 +121,7 @@ impl Default for Fixture {
             grant: Grant::Write,
             now_ms: NOW_MS,
             stores: Stores::Seeded,
+            reports: None,
         }
     }
 }
@@ -135,6 +138,14 @@ impl Fixture {
 /// Builds the event repository a case wants over the harness's own backend.
 pub type EventRepositoryFactory =
     Arc<dyn Fn(Arc<LmdbBackend>) -> Arc<dyn EventRepository> + Send + Sync>;
+
+/// Builds the report repository a case wants over the harness's own backend — for a case whose
+/// subject is the handler's own ordering, which a store that answers ascending cannot show.
+pub type ReportRepositoryFactory = Arc<
+    dyn Fn(Arc<LmdbBackend>) -> Arc<dyn nostream_storage::repositories::ReportRepository>
+        + Send
+        + Sync,
+>;
 
 /// One composed server over a temporary config dir, and what it was composed with.
 pub struct TestMcp {
@@ -209,8 +220,13 @@ impl TestMcp {
                     as Arc<dyn nostream_storage::repositories::NotificationOutboxRepository>,
                 notification_delivery_log: Arc::clone(&backend)
                     as Arc<dyn nostream_storage::repositories::NotificationDeliveryLogRepository>,
-                reports: Arc::clone(&backend)
-                    as Arc<dyn nostream_storage::repositories::ReportRepository>,
+                reports: fixture.reports.as_ref().map_or_else(
+                    || {
+                        Arc::clone(&backend)
+                            as Arc<dyn nostream_storage::repositories::ReportRepository>
+                    },
+                    |wrap| wrap(Arc::clone(&backend)),
+                ),
             }),
             Stores::Unavailable => Arc::new(nostream_services::unavailable::stores()),
         };

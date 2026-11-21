@@ -18,6 +18,8 @@
 //! | `an_unknown_report_is_an_empty_answer` | an id with no rows answers an empty list and zero |
 //! | `a_report_id_that_is_not_an_exact_id_is_refused` | a short id is refused by the handler, after its dispatch line |
 //! | `an_unknown_action_never_reaches_the_handler` | the closed set is the arguments type, so nothing is written |
+//! | `an_allow_leaves_a_target_another_report_still_hides` | the action is one row's flag: another actionable report keeps the target hidden |
+//! | `a_mixed_report_counts_only_the_rows_that_moved` | `changed` counts the rows that moved, and the payload lists every row of the event |
 //!
 //! Two fixtures carry the NIP-56 gate on (`nip56.enabled` and `nip56.hideActionableReports`),
 //! which is the only way the setter's index work is observable: the other cases seed no report
@@ -27,13 +29,18 @@
 
 mod common;
 
+use std::sync::Arc;
+
 use common::{Fixture, Grant, TestMcp, event, id_of, payload, text};
 use nostream_core::{EventId, Filter, Pubkey};
 use nostream_mcp::{
     AUDIT_DENIED, FORBIDDEN, OUTCOME_ALREADY_DELETED, OUTCOME_DELETED, OUTCOME_NOT_DELETEABLE,
     OUTCOME_NOT_FOUND, TOOL_DELETE_EVENT, TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_REPORTS_ACTION,
 };
-use nostream_storage::repositories::{EventRepository, NewReport, ReportRepository, ReportType};
+use nostream_storage::repositories::{
+    ActionableTarget, EventRepository, NewReport, Report, ReportRepository, ReportType,
+    StorageFuture,
+};
 use serde_json::{Value, json};
 
 /// The `ids` a `list_events` answer carried, in payload order.
@@ -219,7 +226,7 @@ async fn a_read_only_document_is_refused_both_writes() {
     let record = event(26, 1, 1_699_999_965);
     let id = id_of(&record);
     fixture.seed(std::slice::from_ref(&record)).await;
-    let report_id = "ef".repeat(32);
+    let report_id = EventId::from_byte_array([46; 32]).to_string();
     seed_report(&fixture, [46; 32], &record).await;
     let client = fixture.client().await;
 
@@ -255,10 +262,15 @@ async fn a_read_only_document_is_refused_both_writes() {
     // Nothing of either write ran: the row is still live and the report row still actionable.
     let read = client.call(TOOL_GET_EVENT, json!({ "id": id })).await;
     assert!(payload(&read)["event"]["deleted_at"].is_null());
-    assert_eq!(
-        fixture.backend.find_actionable(10).await.unwrap().len(),
-        1,
-        "the refused report action moved nothing"
+    let reports = fixture
+        .backend
+        .find_by_event_id(&EventId::from_byte_array([46; 32]))
+        .await
+        .unwrap();
+    assert_eq!(reports.len(), 1, "the report row the refused call named");
+    assert!(
+        reports[0].actionable,
+        "the refused report action moved nothing: {reports:?}"
     );
 }
 
@@ -386,9 +398,55 @@ async fn a_second_allow_changes_nothing() {
     assert_eq!(answer["reports"].as_array().unwrap().len(), 1, "{answer}");
 }
 
+/// A report store that answers one event's rows **newest id first**, which is not the order the
+/// handler must publish. LMDB walks `(event_id, report_id)` ascending by construction, so a case
+/// reading the real store cannot tell a sorted payload from an unsorted one; every other method is
+/// the backend's own.
+struct NewestFirst(Arc<dyn ReportRepository>);
+
+impl ReportRepository for NewestFirst {
+    fn create<'a>(&'a self, report: &'a NewReport) -> StorageFuture<'a, Report> {
+        self.0.create(report)
+    }
+
+    fn create_many<'a>(&'a self, reports: &'a [NewReport]) -> StorageFuture<'a, Vec<Report>> {
+        self.0.create_many(reports)
+    }
+
+    fn find_by_event_id<'a>(&'a self, event_id: &'a EventId) -> StorageFuture<'a, Vec<Report>> {
+        Box::pin(async move {
+            let mut rows = self.0.find_by_event_id(event_id).await?;
+            rows.reverse();
+            Ok(rows)
+        })
+    }
+
+    fn find_actionable<'a>(&'a self, limit: u64) -> StorageFuture<'a, Vec<Report>> {
+        self.0.find_actionable(limit)
+    }
+
+    fn find_actionable_targets<'a>(&'a self) -> StorageFuture<'a, Vec<ActionableTarget>> {
+        self.0.find_actionable_targets()
+    }
+
+    fn set_actionable<'a>(
+        &'a self,
+        event_id: &'a EventId,
+        actionable: bool,
+    ) -> StorageFuture<'a, u64> {
+        self.0.set_actionable(event_id, actionable)
+    }
+}
+
 #[tokio::test]
 async fn every_row_of_one_report_event_moves() {
-    let fixture = TestMcp::start().await;
+    let fixture = TestMcp::start_with(Fixture {
+        reports: Some(Arc::new(|backend| {
+            Arc::new(NewestFirst(backend)) as Arc<dyn ReportRepository>
+        })),
+        ..Fixture::default()
+    })
+    .await;
     let one = event(30, 1, 1_699_999_969);
     let two = event(31, 1, 1_699_999_970);
     fixture.seed(&[one.clone(), two.clone()]).await;
@@ -495,4 +553,97 @@ async fn an_unknown_action_never_reaches_the_handler() {
         "the arguments type refuses it before dispatch: {:?}",
         fixture.audit_entries()
     );
+}
+
+#[tokio::test]
+async fn an_allow_leaves_a_target_another_report_still_hides() {
+    let fixture = TestMcp::start_with(
+        Fixture::default()
+            .with("nip56.enabled", json!(true))
+            .with("nip56.hideActionableReports", json!(true)),
+    )
+    .await;
+    let record = event(32, 1, 1_699_999_971);
+    let id = id_of(&record);
+    fixture.seed(std::slice::from_ref(&record)).await;
+    let first = EventId::from_byte_array([62; 32]).to_string();
+    let second = EventId::from_byte_array([63; 32]).to_string();
+    seed_report(&fixture, [62; 32], &record).await;
+    seed_report(&fixture, [63; 32], &record).await;
+    let client = fixture.client().await;
+
+    let allowed = client
+        .call(
+            TOOL_REPORTS_ACTION,
+            json!({ "id": first, "action": "allow" }),
+        )
+        .await;
+    assert_eq!(allowed.is_error, Some(false), "{}", text(&allowed));
+    assert_eq!(payload(&allowed)["changed"], 1, "one report's rows");
+    assert!(
+        !listing(&client, &[1]).await.contains(&id),
+        "the other actionable report still names the target, so it stays hidden"
+    );
+
+    let both = client
+        .call(
+            TOOL_REPORTS_ACTION,
+            json!({ "id": second, "action": "allow" }),
+        )
+        .await;
+    assert_eq!(payload(&both)["changed"], 1);
+    assert!(
+        listing(&client, &[1]).await.contains(&id),
+        "no actionable report names it now"
+    );
+}
+
+#[tokio::test]
+async fn a_mixed_report_counts_only_the_rows_that_moved() {
+    let fixture = TestMcp::start().await;
+    let record = event(33, 1, 1_699_999_972);
+    fixture.seed(std::slice::from_ref(&record)).await;
+    let report_event = EventId::from_byte_array([64; 32]);
+    ReportRepository::create_many(
+        &*fixture.backend,
+        &[
+            NewReport {
+                event_id: report_event,
+                reporter_pubkey: Pubkey::from_byte_array([92; 32]),
+                reported_pubkey: Some(record.event.pubkey),
+                reported_event_id: None,
+                report_type: ReportType::Spam,
+                weight: 1.0,
+                actionable: false,
+            },
+            NewReport {
+                event_id: report_event,
+                reporter_pubkey: Pubkey::from_byte_array([92; 32]),
+                reported_pubkey: None,
+                reported_event_id: Some(record.event.id),
+                report_type: ReportType::Spam,
+                weight: 1.0,
+                actionable: true,
+            },
+        ],
+    )
+    .await
+    .expect("the report rows store");
+    let client = fixture.client().await;
+
+    let acted = client
+        .call(
+            TOOL_REPORTS_ACTION,
+            json!({ "id": report_event.to_string(), "action": "allow" }),
+        )
+        .await;
+    assert_eq!(acted.is_error, Some(false), "{}", text(&acted));
+    let answer = payload(&acted);
+    assert_eq!(
+        answer["changed"], 1,
+        "only the row whose value moved is counted: {answer}"
+    );
+    let reports = answer["reports"].as_array().unwrap();
+    assert_eq!(reports.len(), 2, "both rows are listed: {answer}");
+    assert!(reports.iter().all(|row| row["actionable"] == false));
 }
