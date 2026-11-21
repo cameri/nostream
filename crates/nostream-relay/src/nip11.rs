@@ -5,6 +5,8 @@
 //! at `docs/rewrite/nip-parity.md:717-767`, with the field-set verdicts recorded in ADR 0016
 //! D4. Nothing serves it: `nostream-cli info` builds its own payload and the HTTP surface is
 //! still shut (D1), so this module is the builder a surface will adopt, not a route.
+//! `info` keeps its own assembly because its output is pinned byte for byte and carries no
+//! document, so sharing this builder would buy it nothing and put the pin at risk.
 //!
 //! The rule behind the drops is the audit's: advertise what the relay enforces.
 //! `max_filters` and `max_filter_values` stay because `subscribe.rs` and `count.rs` check

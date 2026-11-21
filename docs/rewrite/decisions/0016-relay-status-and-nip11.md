@@ -137,11 +137,10 @@ The seven drops, with their reasons:
 | `limitation.max_event_tags` | no Rust constant and no admission check anywhere; the audit's own rule is to enforce it or not advertise it |
 | `fees.subscription` | no invoice route and no subscription enforcement; it lands with them |
 
-`nostream-cli info` does **not** adopt the builder in this slice: its nine lines and its `--json`
-object are pinned byte for byte by their own cases, and it carries no NIP-11 document, so
-adopting the builder would change its output contract — an unpriced change. The builder lands in
-`nostream-relay`, which the CLI already depends on, so the adoption is a later job's one-line
-change with no new dependency edge.
+`nostream-cli info` does **not** adopt the builder: its output is pinned byte for byte and
+carries no NIP-11 document, so sharing the builder would buy nothing and risk the pin. The
+builder lands in `nostream-relay`, which the CLI already depends on, so a future adoption that
+also re-pins its output is a one-line change with no new dependency edge.
 
 **Cost:** a client that read `max_event_tags` from the capture's document no longer sees it. The
 alternative is a document that promises a limit the relay does not keep.
