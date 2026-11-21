@@ -15,10 +15,12 @@ the stream each failure writes to, and the exit code per class.
 
 The fourteen decisions below are the ones a reader would otherwise have to reconstruct from the
 diff. Each is recorded with its cost, because every one of them buys something by giving up
-something else. D10–D12 were added by the job's first review round and D13–D14 by its second and third: the
-`--older-than` bound, the spawn seam and the out-of-range kind were decided in the code and had
-no decision to point at; the clean-up delete's batch shape and the bootstrap's legacy-settings
-guard are the same case.
+something else. D10–D12 were added by the job's first review round and D13–D14 by its second and
+third: the `--older-than` bound, the spawn seam and the out-of-range kind were decided in the code
+and had no decision to point at; the clean-up delete's batch shape and the bootstrap's
+legacy-settings guard are the same case. D8 carries a **second half** — the `.env` layer's two
+views, added by the review rounds — under its own `####` heading: it stays an arm of D8 because a
+new id would drag V45, Amendment 4 and the spec's digest, all built on fourteen.
 
 ## Decisions
 
@@ -159,6 +161,12 @@ command fails with `Error: the lmdb backend needs --data-dir <path>`.
 **Cost:** there is no environment variable for the store root and none is invented; the
 settings' `eventStore` carries only `backend`. When a deployment names the root somewhere, this
 flag should read that same source.
+
+#### D8's second half — the `.env` layer has two views
+
+This decision sits under D8 rather than beside it because a new id would drag V45, Amendment 4 and
+the spec's digest, all of which are built on fourteen; the store root and the `.env` layer were one
+round's work, and both are about where the CLI's non-settings inputs come from.
 
 The **`.env` layer** that names the rest has two views, and they are the capture's own: node
 parses the environment it launches with (`node --env-file-if-exists=.env`, so a quote pair and an
