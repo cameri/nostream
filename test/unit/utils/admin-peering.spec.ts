@@ -35,6 +35,56 @@ describe('admin peering rows', () => {
     expect(rows[0].terms).to.be.undefined
   })
 
+  it('marks a configured but disabled peer suspended', () => {
+    const rows = mergePeeringRows(
+      {
+        peering: {
+          enabled: true,
+          peers: [{ pubkey: 'a'.repeat(64), relayUrl: 'wss://peer.example.com', enabled: false }],
+        },
+      } as Settings,
+      [state()],
+    )
+
+    expect(rows[0].relationship).to.equal('suspended')
+  })
+
+  it('marks an unpaid billing state and exposes its terms', () => {
+    const rows = mergePeeringRows(
+      {
+        peering: {
+          enabled: true,
+          peers: [{ pubkey: 'a'.repeat(64), relayUrl: 'wss://peer.example.com' }],
+        },
+      } as Settings,
+      [state()],
+      undefined,
+      [],
+      [
+        {
+          peerPubkey: 'a'.repeat(64),
+          direction: 'sell',
+          status: 'unpaid',
+          currentInvoiceId: 'inv-1',
+          renewalInvoiceId: null,
+          periodStart: null,
+          periodEnd: null,
+          termAmountMsats: 21000n,
+          termPeriodSeconds: 2592000,
+          lastSettledInvoiceId: null,
+          lastSettledAt: null,
+          lastCheckedAt: null,
+          lastError: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        } as any,
+      ],
+    )
+
+    expect(rows[0].relationship).to.equal('unpaid')
+    expect(rows[0].terms).to.deep.equal({ amountMsats: '21000', periodSeconds: 2592000 })
+  })
+
   it('marks an enabled peer stale when it has no state or the state is old', () => {
     const rows = mergePeeringRows(
       {
@@ -56,7 +106,7 @@ describe('admin peering rows', () => {
   it('shows stored state for a peer that was removed from settings', () => {
     const rows = mergePeeringRows({} as Settings, [state({ pubkey: 'c'.repeat(64) })])
 
-    expect(rows[0]).to.include({ configured: false, enabled: false })
+    expect(rows[0]).to.include({ configured: false, enabled: false, relationship: 'removed' })
   })
 
   it('does not attach state from an old relay URL to the configured peer', () => {
