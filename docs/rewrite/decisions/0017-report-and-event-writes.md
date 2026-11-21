@@ -32,27 +32,45 @@ the MCP mode composes its own state in a process of its own.
 
 ## Decisions
 
-### D1 — `delete_event` is the store's own soft delete, and its payload says what that means
+### D1 — `delete_event` is the store's own soft delete behind one ungated read, and its payload says what that means
 
-The tool reads the row by exact id (`get_event`'s resolution, so a prefix shorter than 64
-characters names no event), calls `delete_by_pubkey_and_ids` with **the row's own** pubkey and id,
-reads the row back, and answers `{outcome, event}` with one of four literals: `deleted`,
-`already_deleted`, `not_deleteable` (kind 62), `not_found`. A zero on a live row answers
-`not_deleteable` because those are the only two skips the seam has. The tool adds no
-`EventRepository` method, so no implementor of that trait moves, and the handler never pre-judges
-a row before the call.
+The tool resolves the row through **one new `EventRepository` method**, `find_stored(&EventId)` —
+an exact-id read that returns the row whether or not it is deleted and **whether or not an
+actionable report hides it**. LMDB answers it with one `get` on the events table, Postgres with one
+`SELECT ... WHERE event_id = $1`; five other implementors carry it, two of them the test commons.
+It exists because the gate has always been a read's (`lmdb/events.rs:412`): resolving the row
+through `get_event`'s gated read made `reports_action hide` followed by `delete_event` answer
+`not_found` and delete nothing, which made the two tools this slice ships incoherent with each
+other. The method is `pub` on a trait every consumer holds, so "only the delete path may call it"
+is not left as a comment: `.find_stored(` is an acceptance leg that reads exactly two lines across
+`crates/` — the declaration and the handler — and fails on a third caller.
+
+The argument is the event's hex id, and a prefix shorter than 64 characters is refused with the
+same `Criterion` error `reports_action` gives rather than widened to whatever the store's range
+would match — the `EventId` the read takes is an exact id, so answering `not_found` for characters
+the tool never looked up would be the one lie this tool must not tell.
+
+The call is `delete_by_pubkey_and_ids` with **the row's own** pubkey and id, then one read-back,
+and the answer is `{outcome, event}` with one of four literals: `deleted`, `already_deleted`,
+`not_deleteable` (kind 62), `not_found`. The outcome is decided by the row **as it stands after**
+the call, not by the read before it: a pre-read is stale under two deletes in flight, and the
+second call would answer `not_deleteable` for a row that was merely already deleted. `count > 0`
+stays authoritative; the post-read only explains a zero, and kind 62 is the store's only remaining
+skip once the pubkey is the row's own.
 
 The event leaves REQ and COUNT and keeps its row: `get_event` and `list_events` still return it
-with `deleted_at` set. That is stated in the tool's description — "the event leaves REQ and COUNT
-and keeps its row, so `get_event` and `list_events` still return it with `deleted_at` set" — rather
-than left for an operator to discover, and the read-back makes the timestamp the store's own
-wall-clock value instead of a guess.
+with `deleted_at` set — **unless an actionable report hides it**, in which case it stays hidden
+until the report is allowed, and deleting it does not change that. Both halves are stated in the
+tool's description rather than left for an operator to discover, and the read-back makes the
+timestamp the store's own wall-clock value instead of a guess.
 
 **Cost:** a soft delete is not an erasure: the row and its content stay in the store, and an
 operator who needs the bytes gone still needs the retention path or `clean-db`. The disclosure is
 prose, so a client that reads only the schema learns nothing about it; the cheap alternative — a
-fifth outcome — was rejected because the store's answer is already one of four. Three store
-round-trips per call (read, delete, read-back), all on the answering process's own store.
+fifth outcome — was rejected because the store's answer is already one of four. Three store round
+trips per call (read, delete, read-back), all on the answering process's own store. The ungated
+read is a second way to reach a row, which is why it is one method with one caller and a criterion
+guarding the call count rather than a flag on the read path.
 
 ### D2 — `reports_action` acts on the report's own event id and flips one row's flag per row
 

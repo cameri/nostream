@@ -2406,6 +2406,75 @@ fn by_id(record: &EventRecord) -> Filter {
 }
 
 #[tokio::test]
+async fn find_stored_answers_a_hidden_and_a_deleted_row() {
+    use nostream_storage::repositories::ReportRepository;
+
+    let (_directory, backend) = open_store().await;
+    let record = event(56, 1, 1_700_000_300);
+    EventRepository::create(&backend, &record)
+        .await
+        .expect("the event stores");
+
+    assert!(
+        EventRepository::find_stored(&backend, &record.event.id)
+            .await
+            .unwrap()
+            .is_some(),
+        "a live row answers"
+    );
+    assert!(
+        EventRepository::find_stored(&backend, &EventId::from_byte_array([57; 32]))
+            .await
+            .unwrap()
+            .is_none(),
+        "an id nothing carries answers none"
+    );
+
+    ReportRepository::create(
+        &backend,
+        &NewReport {
+            event_id: EventId::from_byte_array([58; 32]),
+            reporter_pubkey: Pubkey::from_byte_array([59; 32]),
+            reported_pubkey: Some(record.event.pubkey),
+            reported_event_id: Some(record.event.id),
+            report_type: ReportType::Spam,
+            weight: 1.0,
+            actionable: true,
+        },
+    )
+    .await
+    .expect("the report stores");
+    assert!(
+        rows_of(&backend, &by_id(&record)).await.is_empty(),
+        "the gate withholds the row the next assertion reaches"
+    );
+    let hidden = EventRepository::find_stored(&backend, &record.event.id)
+        .await
+        .unwrap()
+        .expect("the ungated read answers a hidden row");
+    assert_eq!(hidden.event.id, record.event.id);
+
+    assert_eq!(
+        EventRepository::delete_by_pubkey_and_ids(
+            &backend,
+            &record.event.pubkey,
+            &[record.event.id]
+        )
+        .await
+        .unwrap(),
+        1
+    );
+    let deleted = EventRepository::find_stored(&backend, &record.event.id)
+        .await
+        .unwrap()
+        .expect("the ungated read answers a deleted row");
+    assert!(
+        deleted.deleted_at.is_some(),
+        "and it carries the store's own timestamp"
+    );
+}
+
+#[tokio::test]
 async fn set_actionable_false_clears_every_index_and_the_gate() {
     use nostream_storage::repositories::ReportRepository;
 

@@ -5,8 +5,8 @@ feat(mcp): add the delete_event and reports_action tools
 
 `delete_event` marks one stored event deleted through the store's own soft delete: the event
 leaves REQ and COUNT, keeps its row, and the payload says so — `get_event` and `list_events` still
-return it with `deleted_at` set, and the four outcomes are `deleted`, `already_deleted`,
-`not_deleteable` (kind 62 is never deleted) and `not_found`. `reports_action` acts on a report's
+return it with `deleted_at` set unless an actionable report hides it, and the four outcomes are
+`deleted`, `already_deleted`, `not_deleteable` (kind 62 is never deleted) and `not_found`. `reports_action` acts on a report's
 own kind-1984 event id, flipping `Report.actionable` for `hide` and `allow` on every row that
 event wrote.
 
