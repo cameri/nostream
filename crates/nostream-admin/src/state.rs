@@ -19,7 +19,7 @@ use nostream_core::nip05::Nip05Fetch;
 use nostream_core::random::{RandomSource, SystemRandom};
 use nostream_relay::limits::{RateLimitConfig, RateLimiter, strategy_from_settings};
 use nostream_services::{HttpClient, ServiceStores};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::error::AdminError;
@@ -48,7 +48,10 @@ pub const MAX_CONCURRENT_LOGIN_VERIFICATIONS: usize = 4;
 pub const SETTINGS_CHANGED: &str = "settings.changed";
 
 /// One worker heartbeat (`AdminOpsWorkerHeartbeat`, `src/@types/admin-ops.ts:1-8`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+///
+/// `Deserialize` is the status document's reader: it validates a published heartbeat rather
+/// than trusting it, and no serialized field changes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkerHeartbeat {
     pub r#type: String,
