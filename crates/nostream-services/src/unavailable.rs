@@ -2,10 +2,11 @@
 //! yet hands it.
 //!
 //! The relay has its own `Stores` (`nostream_relay::handlers::Stores`) for the six
-//! repositories its handlers call; this bundle carries the seven the services call,
-//! including the three the relay's bundle does not (invoices, outbox, delivery log). Every
-//! call reports `StorageError::NotImplemented`, which is the workspace's convention for an
-//! unwired backend (`CLAUDE.md:148-151`).
+//! repositories its handlers call; this bundle carries the eight the door and the services
+//! reach, including the three the relay's bundle does not (invoices, outbox, delivery log) and
+//! `reports`, which only the MCP door's tools read. Every call reports
+//! `StorageError::NotImplemented`, which is the workspace's convention for an unwired backend
+//! (`CLAUDE.md:148-151`).
 
 use std::sync::Arc;
 
@@ -15,11 +16,11 @@ use nostream_storage::repositories::{
     DeliveryLogEntry, DeliveryLogFilters, DvmJob, DvmJobRepository, DvmJobUpdate, EventRecord,
     EventRepository, Invoice, InvoiceRepository, InvoiceStatus, NewDeliveryLogEntry,
     Nip05Verification, Nip05VerificationRepository, NotificationDeliveryLogRepository,
-    NotificationOutboxRepository, OutboxMessage, OutboxPayload, QueryStream,
+    NotificationOutboxRepository, OutboxMessage, OutboxPayload, QueryStream, ReportRepository,
     StorageFuture as StoreFuture, User, UserPatch, UserRepository,
 };
 
-/// The seven repositories the services read and write.
+/// The eight repositories the services read and write.
 #[derive(Clone)]
 pub struct ServiceStores {
     pub events: Arc<dyn EventRepository>,
@@ -29,6 +30,9 @@ pub struct ServiceStores {
     pub dvm_jobs: Arc<dyn DvmJobRepository>,
     pub notification_outbox: Arc<dyn NotificationOutboxRepository>,
     pub notification_delivery_log: Arc<dyn NotificationDeliveryLogRepository>,
+    /// Read by the MCP door's `reports_action`; no services worker calls it, and
+    /// `nostream_relay`'s own `UnavailableReportRepository` is the double.
+    pub reports: Arc<dyn ReportRepository>,
 }
 
 fn unavailable() -> StorageError {
@@ -37,7 +41,7 @@ fn unavailable() -> StorageError {
     }
 }
 
-/// The seven stores, every call reporting `NotImplemented`.
+/// The eight stores, every call reporting `NotImplemented`.
 pub fn stores() -> ServiceStores {
     ServiceStores {
         events: Arc::new(UnavailableEventRepository),
@@ -47,6 +51,7 @@ pub fn stores() -> ServiceStores {
         dvm_jobs: Arc::new(UnavailableDvmJobRepository),
         notification_outbox: Arc::new(UnavailableOutboxRepository),
         notification_delivery_log: Arc::new(UnavailableDeliveryLogRepository),
+        reports: Arc::new(nostream_relay::unavailable::UnavailableReportRepository),
     }
 }
 
@@ -89,6 +94,10 @@ impl EventRepository for UnavailableEventRepository {
         &'a self,
         _filter: &'a nostream_core::Filter,
     ) -> StoreFuture<'a, QueryStream<'a, nostream_storage::repositories::ReconciliationItem>> {
+        Box::pin(async { Err(unavailable()) })
+    }
+
+    fn find_stored<'a>(&'a self, _id: &'a EventId) -> StoreFuture<'a, Option<EventRecord>> {
         Box::pin(async { Err(unavailable()) })
     }
 

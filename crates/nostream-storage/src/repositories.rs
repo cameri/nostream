@@ -650,7 +650,21 @@ pub trait EventRepository: Send + Sync {
         filter: &'a nostream_core::Filter,
     ) -> StorageFuture<'a, QueryStream<'a, ReconciliationItem>>;
 
+    /// Loads one row by exact id **without the NIP-56 gate**, deleted or not, hidden or not.
+    ///
+    /// The gate has always been a *read's*: `find_by_filters` drops a row an actionable report
+    /// names (`lmdb/events.rs`'s `reported`), which is what a REQ must not see. A delete is not a
+    /// read of that kind — it must be able to delete what a moderator just hid — so this one
+    /// exact-id lookup skips the gate, and **only the delete path may call it**. Every reader
+    /// that answers a client keeps the gated path.
+    fn find_stored<'a>(&'a self, id: &'a EventId) -> StorageFuture<'a, Option<EventRecord>>;
+
     /// Soft-deletes the given ids of one pubkey, returning the count.
+    ///
+    /// Two conditions are the store's own, implemented by both backends and not by a caller:
+    /// kind 62 is never touched (`lmdb/events.rs:391-393`, `postgres/events.rs:393-394`), and a
+    /// row already carrying `deleted_at` is not deleted again. A row either skip answers is not
+    /// counted.
     fn delete_by_pubkey_and_ids<'a>(
         &'a self,
         pubkey: &'a Pubkey,
@@ -929,6 +943,19 @@ pub trait ReportRepository: Send + Sync {
 
     /// Loads every distinct actionable report target.
     fn find_actionable_targets<'a>(&'a self) -> StorageFuture<'a, Vec<ActionableTarget>>;
+
+    /// Sets `actionable` on every report row whose source event is `event_id`, returning the
+    /// rows whose value changed. One transaction: a reader sees the old value or the new one.
+    ///
+    /// The LMDB arm moves the three `reports_actionable_*` entries with the flag, because
+    /// `find_actionable`, `find_actionable_targets` and the NIP-56 gate read those indexes
+    /// without re-checking the row. A row whose value already equals the argument is not
+    /// written and is not counted.
+    fn set_actionable<'a>(
+        &'a self,
+        event_id: &'a EventId,
+        actionable: bool,
+    ) -> StorageFuture<'a, u64>;
 }
 
 /// Notification delivery-log storage (`src/@types/repositories.ts`

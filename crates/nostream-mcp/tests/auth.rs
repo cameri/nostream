@@ -3,13 +3,13 @@
 //!
 //! | case | what it proves |
 //! |---|---|
-//! | `a_revoked_token_refuses_every_tool` | a deleted document answers `Unauthorized` to all five tools, writes nothing, and still lists them |
+//! | `a_revoked_token_refuses_every_tool` | a deleted document answers `Unauthorized` to all seven tools, writes nothing, and still lists them |
 //! | `a_read_only_token_is_refused_the_write` | a document with no scope reads and is refused `settings_set`, and the denial is a line in `admin-audit.jsonl` |
 //! | `a_disabled_surface_is_refused` | `admin.enabled: false` answers `Not Found`, as the console does |
 //! | `an_unknown_scope_refuses_the_load` | a document naming a scope the door does not know is refused when it is loaded, naming the scope and the accepted set |
 //! | `a_file_rewrite_changes_the_decision` | rewriting the file on a running server narrows the write, and rewriting it back restores it: the file's lifetime is the credential's |
 //! | `an_inherited_descriptor_authenticates` | the descriptor form answers `tools/list` and a read, and keeps the grant it was handed when the file it came from changes |
-//! | `only_the_writing_tool_needs_a_scope` | the table names every registered tool and declares a scope for each: the four read tools read, `settings_set` needs `write`, and a name the table does not carry needs `write` |
+//! | `only_the_writing_tool_needs_a_scope` | the table names every registered tool and declares a scope for each: the four read tools read, the three writes need `write`, and a name the table does not carry needs `write` |
 //! | `an_unregistered_tool_is_refused_before_the_scopes` | a name the surface does not register is refused with the router's own `-32602` before the scope decision, so a read-only document writes no denial line for it |
 //! | `a_group_readable_descriptor_refuses_to_start` | a `0644` document on a descriptor is refused as the same file by path is |
 //! | `a_device_descriptor_refuses_to_start` | a device on the descriptor is refused before a byte is read, so `/dev/zero` cannot hang the start |
@@ -31,14 +31,14 @@ use std::os::unix::fs::PermissionsExt;
 use common::{Fixture, Grant, TestMcp, text, write_token};
 use nostream_mcp::{
     AUDIT_DENIED, Credential, FORBIDDEN, MAX_TOKEN_DOCUMENT_BYTES, NOT_FOUND, Requires,
-    TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_RELAY_STATUS, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET,
-    TOOLS, UNAUTHORIZED, audit_action, required_scope,
+    TOOL_DELETE_EVENT, TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_RELAY_STATUS, TOOL_REPORTS_ACTION,
+    TOOL_SETTINGS_GET, TOOL_SETTINGS_SET, TOOLS, UNAUTHORIZED, audit_action, required_scope,
 };
 use serde_json::json;
 
-/// The five tools, each with arguments its schema accepts, so the refusal cannot be a
+/// The seven tools, each with arguments its schema accepts, so the refusal cannot be a
 /// deserialisation failure in disguise.
-fn calls() -> [(&'static str, serde_json::Value); 5] {
+fn calls() -> [(&'static str, serde_json::Value); 7] {
     [
         (TOOL_SETTINGS_GET, json!({})),
         (
@@ -47,6 +47,11 @@ fn calls() -> [(&'static str, serde_json::Value); 5] {
         ),
         (TOOL_LIST_EVENTS, json!({})),
         (TOOL_GET_EVENT, json!({ "id": "0123456789abcdef" })),
+        (TOOL_DELETE_EVENT, json!({ "id": "0123456789abcdef" })),
+        (
+            TOOL_REPORTS_ACTION,
+            json!({ "id": "ab".repeat(32), "action": "hide" }),
+        ),
         (TOOL_RELAY_STATUS, json!({})),
     ]
 }
@@ -58,7 +63,7 @@ async fn a_revoked_token_refuses_every_tool() {
     fixture.revoke();
     let client = fixture.client().await;
 
-    assert_eq!(client.tools().await.len(), 5, "tools/list is not gated");
+    assert_eq!(client.tools().await.len(), 7, "tools/list is not gated");
     for (tool, arguments) in calls() {
         let result = client.call(tool, arguments).await;
         assert_eq!(result.is_error, Some(true), "{tool}: {}", text(&result));
@@ -227,7 +232,7 @@ async fn an_inherited_descriptor_authenticates() {
         .iter()
         .map(|tool| tool.name.to_string())
         .collect();
-    assert_eq!(names.len(), 5, "{names:?}");
+    assert_eq!(names.len(), 7, "{names:?}");
 
     let read = client.call(TOOL_SETTINGS_GET, json!({})).await;
     assert_eq!(read.is_error, Some(false), "{}", text(&read));
@@ -285,15 +290,15 @@ async fn only_the_writing_tool_needs_a_scope() {
     );
     assert_eq!(
         writing,
-        vec![TOOL_SETTINGS_SET],
-        "the one tool that changes the relay is the one a document opts into"
+        vec![TOOL_DELETE_EVENT, TOOL_REPORTS_ACTION, TOOL_SETTINGS_SET],
+        "the tools that change the relay are the ones a document opts into"
     );
 
     // A name the table does not carry needs the write: that is this helper's answer for it, and
     // the reason a missing row fails closed rather than open. `call_tool` refuses such a name
     // before it asks — see `an_unregistered_tool_is_refused_before_the_scopes` — so a rowless tool
     // never reaches dispatch at all.
-    assert_eq!(required_scope("delete_event"), Requires::Write);
+    assert_eq!(required_scope("user_admin"), Requires::Write);
 }
 
 /// A name the surface does not register is refused before the scope decision, so a document that
@@ -310,7 +315,7 @@ async fn an_unregistered_tool_is_refused_before_the_scopes() {
     let client = fixture.client().await;
 
     let error = client
-        .try_call("delete_event", json!({}))
+        .try_call("user_admin", json!({}))
         .await
         .expect_err("a name the table does not carry is not a tool");
     let rmcp::ServiceError::McpError(error) = error else {

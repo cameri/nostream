@@ -737,6 +737,19 @@ impl EventRepository for InMemoryEventRepository {
         )
     }
 
+    /// The recorded rows, by exact id, ungated: this double applies no NIP-56 rule at all.
+    fn find_stored<'a>(&'a self, id: &'a EventId) -> StorageFuture<'a, Option<EventRecord>> {
+        Box::pin(async move {
+            Ok(self
+                .records
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .iter()
+                .find(|stored| stored.event.id == *id)
+                .cloned())
+        })
+    }
+
     /// `UPDATE … SET deleted_at = now()` for the given ids of one author, skipping kind 62.
     fn delete_by_pubkey_and_ids<'a>(
         &'a self,
@@ -1625,6 +1638,17 @@ impl ReportRepository for InMemoryReportRepository {
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .clone())
         })
+    }
+
+    /// A double that does not model the setter: no relay case reaches it, and a double that did
+    /// would have to model the three actionable indexes too — a second implementation of the
+    /// thing under test. The type's doc calls it a settable-snapshot double, which stays true.
+    fn set_actionable<'a>(
+        &'a self,
+        _event_id: &'a EventId,
+        _actionable: bool,
+    ) -> StorageFuture<'a, u64> {
+        Box::pin(async move { Ok(0) })
     }
 }
 

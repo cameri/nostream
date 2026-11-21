@@ -598,6 +598,14 @@ impl EventRepository for LmdbBackend {
         })
     }
 
+    fn find_stored<'a>(&'a self, id: &'a EventId) -> StorageFuture<'a, Option<EventRecord>> {
+        Box::pin(async move {
+            let id = *id;
+            self.read(move |txn, databases| events::find_stored(txn, databases, &id))
+                .await
+        })
+    }
+
     fn delete_by_pubkey_and_ids<'a>(
         &'a self,
         pubkey: &'a Pubkey,
@@ -1116,6 +1124,20 @@ impl ReportRepository for LmdbBackend {
 
     fn find_actionable_targets<'a>(&'a self) -> StorageFuture<'a, Vec<ActionableTarget>> {
         Box::pin(async move { self.read(metadata::report_find_actionable_targets).await })
+    }
+
+    fn set_actionable<'a>(
+        &'a self,
+        event_id: &'a EventId,
+        actionable: bool,
+    ) -> StorageFuture<'a, u64> {
+        Box::pin(async move {
+            let event_id = *event_id;
+            self.write(move |txn, databases| {
+                metadata::report_set_actionable(txn, databases, &event_id, actionable)
+            })
+            .await
+        })
     }
 }
 

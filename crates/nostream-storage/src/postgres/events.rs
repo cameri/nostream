@@ -354,6 +354,27 @@ where
     })
 }
 
+/// `EventRepository::find_stored`: one exact-id select — no filter, and no NIP-56 gate.
+pub(crate) async fn find_stored<'e, E>(
+    executor: E,
+    id: &EventId,
+) -> Result<Option<crate::repositories::EventRecord>, StorageError>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let mut args = Args::default();
+    let id_slot = args.push(Arg::Bytes(id.as_bytes().to_vec()));
+    let sql = format!(
+        "SELECT {} FROM events WHERE events.event_id = {id_slot}",
+        sql::EVENT_COLUMNS
+    );
+    let row = EventQuery { sql, args }
+        .into_query()
+        .fetch_optional(executor)
+        .await?;
+    row.map(|row| super::rows::event_record(&row)).transpose()
+}
+
 /// `delete_by_pubkey_and_ids`: a soft delete, never touching kind 62 or a deleted row.
 pub(crate) async fn delete_by_pubkey_and_ids<'e, E>(
     executor: E,

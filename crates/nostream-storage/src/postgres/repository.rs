@@ -61,6 +61,10 @@ impl EventRepository for PostgresBackend {
         })
     }
 
+    fn find_stored<'a>(&'a self, id: &'a EventId) -> StorageFuture<'a, Option<EventRecord>> {
+        Box::pin(async move { events::find_stored(&self.master, id).await })
+    }
+
     fn delete_by_pubkey_and_ids<'a>(
         &'a self,
         pubkey: &'a Pubkey,
@@ -366,6 +370,16 @@ impl ReportRepository for PostgresBackend {
 
     fn find_actionable_targets<'a>(&'a self) -> StorageFuture<'a, Vec<ActionableTarget>> {
         Box::pin(async move { metadata::report_find_actionable_targets(&self.master).await })
+    }
+
+    fn set_actionable<'a>(
+        &'a self,
+        event_id: &'a EventId,
+        actionable: bool,
+    ) -> StorageFuture<'a, u64> {
+        Box::pin(async move {
+            metadata::report_set_actionable(&self.master, event_id, actionable).await
+        })
     }
 }
 

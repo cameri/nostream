@@ -106,6 +106,10 @@ impl EventRepository for UnavailableEventRepository {
         Box::pin(async { Err(unavailable()) })
     }
 
+    fn find_stored<'a>(&'a self, _id: &'a EventId) -> StorageFuture<'a, Option<EventRecord>> {
+        Box::pin(async { Err(unavailable()) })
+    }
+
     fn delete_by_pubkey_and_ids<'a>(
         &'a self,
         _pubkey: &'a Pubkey,
@@ -338,6 +342,14 @@ impl ReportRepository for UnavailableReportRepository {
     }
 
     fn find_actionable_targets<'a>(&'a self) -> StorageFuture<'a, Vec<ActionableTarget>> {
+        Box::pin(async { Err(unavailable()) })
+    }
+
+    fn set_actionable<'a>(
+        &'a self,
+        _event_id: &'a EventId,
+        _actionable: bool,
+    ) -> StorageFuture<'a, u64> {
         Box::pin(async { Err(unavailable()) })
     }
 }

@@ -182,6 +182,8 @@ impl TestServer {
                 Arc::clone(&backend)
                     as Arc<dyn nostream_storage::repositories::NotificationDeliveryLogRepository>
             }),
+            reports: Arc::clone(&backend)
+                as Arc<dyn nostream_storage::repositories::ReportRepository>,
         });
 
         let client = Arc::new(ReqwestClient::new().unwrap());
@@ -528,6 +530,13 @@ impl EventRepository for SlowEventRepository {
         'a,
         QueryStream<'a, nostream_storage::repositories::ReconciliationItem>,
     > {
+        Box::pin(async { Err(not_implemented()) })
+    }
+
+    fn find_stored<'a>(
+        &'a self,
+        _id: &'a nostream_core::EventId,
+    ) -> nostream_storage::repositories::StorageFuture<'a, Option<EventRecord>> {
         Box::pin(async { Err(not_implemented()) })
     }
 

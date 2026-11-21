@@ -286,6 +286,7 @@ fn runner(
             as Arc<dyn nostream_storage::repositories::NotificationOutboxRepository>,
         notification_delivery_log: Arc::clone(&delivery_log)
             as Arc<dyn nostream_storage::repositories::NotificationDeliveryLogRepository>,
+        reports: nostream_relay::testing::InMemoryReportRepository::new(),
     };
     let settings = Arc::new(settings);
     let clock = testing::clock(NOW_MS);

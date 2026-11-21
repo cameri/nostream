@@ -311,3 +311,205 @@ async fn the_same_replay_over_tls_matches_the_capture_and_the_plaintext_run() {
     // Read by scripts/storage-parity.sh with --nocapture as proof the assertions ran.
     println!("TLS_PARITY_COMPLETE");
 }
+
+/// The Postgres arm of the report setter, on a scratch database of its own: one `UPDATE` flips
+/// every row of the report event, and the partial indexes the NIP-56 gate reads maintain
+/// themselves, so the reported event returns to `find_by_filters` at once.
+///
+/// The LMDB arm's four cases (`tests/parity_lmdb.rs`) are the ones `cargo test --workspace` runs;
+/// this one needs the CI database, like the two replays above.
+#[tokio::test]
+#[ignore = "needs PARITY_ADMIN_URL; scripts/storage-parity.sh sets it"]
+async fn set_actionable_flips_the_column_and_the_gate() {
+    use nostream_core::{EventId, Filter, Pubkey};
+    use nostream_storage::repositories::{NewReport, ReportRepository, ReportType};
+
+    let admin_url = admin_url();
+    let database = "nostream_parity_set_actionable";
+    let admin = PgPool::connect(&admin_url)
+        .await
+        .expect("the administrative database is reachable");
+    admin
+        .execute(sqlx::AssertSqlSafe(format!(
+            "DROP DATABASE IF EXISTS {database} WITH (FORCE)"
+        )))
+        .await
+        .expect("the scratch database drops");
+    admin
+        .execute(sqlx::AssertSqlSafe(format!("CREATE DATABASE {database}")))
+        .await
+        .expect("the scratch database is created");
+    drop(admin);
+
+    let fixture = fixture();
+    let backend = PostgresBackend::connect(&with_database(&admin_url, database))
+        .await
+        .expect("the scratch database is reachable")
+        .with_settings(Arc::new(settings_from_fixture(&fixture)));
+    backend.migrate().await.expect("the schema migrates");
+
+    let record = common::event_record(&fixture["corpus"][0]);
+    EventRepository::create(&backend, &record)
+        .await
+        .expect("the event stores");
+    let report = ReportRepository::create(
+        &backend,
+        &NewReport {
+            event_id: EventId::from_byte_array([70; 32]),
+            reporter_pubkey: Pubkey::from_byte_array([71; 32]),
+            reported_pubkey: Some(record.event.pubkey),
+            reported_event_id: Some(record.event.id),
+            report_type: ReportType::Spam,
+            weight: 1.0,
+            actionable: true,
+        },
+    )
+    .await
+    .expect("the report stores");
+
+    let filter = Filter {
+        ids: Some(vec![record.event.id.to_string()]),
+        ..Filter::default()
+    };
+    assert!(
+        page_of_pg(&backend, std::slice::from_ref(&filter))
+            .await
+            .is_empty(),
+        "the gate withholds the reported event"
+    );
+
+    assert_eq!(
+        backend
+            .set_actionable(&report.event_id, false)
+            .await
+            .unwrap(),
+        1
+    );
+    assert!(backend.find_actionable(10).await.unwrap().is_empty());
+    assert!(backend.find_actionable_targets().await.unwrap().is_empty());
+    assert_eq!(
+        page_of_pg(&backend, std::slice::from_ref(&filter))
+            .await
+            .len(),
+        1,
+        "the event returns once no actionable report names it"
+    );
+}
+
+/// `find_stored` answers a row the NIP-56 gate withholds, and answers it after the soft delete
+/// with the store's own timestamp — the read `delete_event` resolves its row through.
+///
+/// The arm is one `SELECT ... WHERE event_id = $1`; this case is what proves it exists and CI runs
+/// it, the same rule the setter's case follows.
+#[tokio::test]
+#[ignore = "needs PARITY_ADMIN_URL; scripts/storage-parity.sh sets it"]
+async fn find_stored_answers_a_hidden_and_a_deleted_row() {
+    use nostream_core::{EventId, Filter, Pubkey};
+    use nostream_storage::repositories::{NewReport, ReportRepository, ReportType};
+
+    let admin_url = admin_url();
+    let database = "nostream_parity_find_stored";
+    let admin = PgPool::connect(&admin_url)
+        .await
+        .expect("the administrative database is reachable");
+    admin
+        .execute(sqlx::AssertSqlSafe(format!(
+            "DROP DATABASE IF EXISTS {database} WITH (FORCE)"
+        )))
+        .await
+        .expect("the scratch database drops");
+    admin
+        .execute(sqlx::AssertSqlSafe(format!("CREATE DATABASE {database}")))
+        .await
+        .expect("the scratch database is created");
+    drop(admin);
+
+    let fixture = fixture();
+    let backend = PostgresBackend::connect(&with_database(&admin_url, database))
+        .await
+        .expect("the scratch database is reachable")
+        .with_settings(Arc::new(settings_from_fixture(&fixture)));
+    backend.migrate().await.expect("the schema migrates");
+
+    let record = common::event_record(&fixture["corpus"][0]);
+    EventRepository::create(&backend, &record)
+        .await
+        .expect("the event stores");
+    let filter = Filter {
+        ids: Some(vec![record.event.id.to_string()]),
+        ..Filter::default()
+    };
+    assert!(
+        EventRepository::find_stored(&backend, &record.event.id)
+            .await
+            .unwrap()
+            .is_some(),
+        "a live row answers"
+    );
+    assert!(
+        EventRepository::find_stored(&backend, &EventId::from_byte_array([72; 32]))
+            .await
+            .unwrap()
+            .is_none(),
+        "an id nothing carries answers none"
+    );
+
+    ReportRepository::create(
+        &backend,
+        &NewReport {
+            event_id: EventId::from_byte_array([73; 32]),
+            reporter_pubkey: Pubkey::from_byte_array([74; 32]),
+            reported_pubkey: Some(record.event.pubkey),
+            reported_event_id: Some(record.event.id),
+            report_type: ReportType::Spam,
+            weight: 1.0,
+            actionable: true,
+        },
+    )
+    .await
+    .expect("the report stores");
+    assert!(
+        page_of_pg(&backend, std::slice::from_ref(&filter))
+            .await
+            .is_empty(),
+        "the gate withholds the row the next assertion reaches"
+    );
+    assert!(
+        EventRepository::find_stored(&backend, &record.event.id)
+            .await
+            .unwrap()
+            .is_some(),
+        "the ungated read answers a hidden row"
+    );
+
+    assert_eq!(
+        EventRepository::delete_by_pubkey_and_ids(
+            &backend,
+            &record.event.pubkey,
+            &[record.event.id]
+        )
+        .await
+        .unwrap(),
+        1
+    );
+    let deleted = EventRepository::find_stored(&backend, &record.event.id)
+        .await
+        .unwrap()
+        .expect("the ungated read answers a deleted row");
+    assert!(
+        deleted.deleted_at.is_some(),
+        "and it carries the store's own timestamp"
+    );
+}
+
+/// One Postgres filter read, drained into its rows.
+async fn page_of_pg(
+    backend: &PostgresBackend,
+    filters: &[nostream_core::Filter],
+) -> Vec<nostream_storage::repositories::EventRecord> {
+    nostream_storage::repositories::collect_records(
+        backend.find_by_filters(filters).await.expect("the page"),
+    )
+    .await
+    .expect("the stream")
+}

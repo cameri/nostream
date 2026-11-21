@@ -75,7 +75,8 @@ The following environment variables can be set:
 ## The admin MCP mode (`--mcp-stdio`)
 
 `nostreamd --mcp-stdio` serves the admin MCP server (`settings_get`, `settings_set`,
-`list_events`, `get_event`) on stdin/stdout and exits when stdin closes. It binds no socket,
+`list_events`, `get_event`, `delete_event`, `reports_action`) on stdin/stdout and exits when stdin
+closes. It binds no socket,
 opens no store of its own, and writes its log lines to **stderr** so nothing but JSON-RPC crosses
 stdout.
 
@@ -96,7 +97,7 @@ The document is JSON, and `scopes` is optional:
 | Document | What it may call |
 |---|---|
 | `{}` or `{ "scopes": [] }` | The read tools: `settings_get`, `list_events`, `get_event`. |
-| `{ "scopes": ["write"] }` | The read tools and `settings_set`. |
+| `{ "scopes": ["write"] }` | The read tools, and the three that change something: `settings_set`, `delete_event` (soft-deletes **any author's** stored event by id — there is no per-author restriction, the holder of the token is the operator) and `reports_action` (sets the relay-wide NIP-56 filter for the target an actionable report names). |
 
 `write` is the only accepted scope, and an unknown name — a typo, or a document from another tool
 — refuses to start rather than being narrowed silently. A call the document's scopes deny is

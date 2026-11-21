@@ -1,6 +1,24 @@
 {
   "tools": [
     {
+      "description": "Mark one stored event deleted: the same soft delete a NIP-09 request from the author makes. The event leaves REQ and COUNT and keeps its row, so `get_event` and `list_events` still return it with `deleted_at` set — unless an actionable report hides it, in which case it stays hidden until the report is allowed. The argument is the event's hex id; a prefix shorter than 64 characters is refused rather than widened to whatever the store's range would match. Answers `outcome` — `deleted`, `already_deleted`, `not_deleteable` (kind 62 is never deleted), or `not_found` — and the row as it stands after the call",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "The event's hex id, in either case; a prefix shorter than 64 characters is refused and deletes nothing",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "name": "delete_event"
+    },
+    {
       "description": "Read one stored event by its exact 64-character hex id, in either case; null when no such id is stored",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -94,6 +112,33 @@
         "type": "object"
       },
       "name": "relay_status"
+    },
+    {
+      "description": "Act on one report event: `hide` marks its targets hidden (`actionable: true`, so REQ and COUNT withhold them while `nip56.hideActionableReports` is on) and `allow` clears them (`actionable: false`). The argument is the report's own kind-1984 event id — exactly 64 hex characters, not the reported event's id — and every report row that event wrote is flipped. Answers `reports` (the rows as they stand, by `id`) and `changed` (how many this call flipped). Every new REQ reflects the change at once; already-connected subscriptions see it at the relay's next refresh, up to 30 s",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "`hide` marks the report's targets hidden; `allow` clears them",
+            "enum": [
+              "hide",
+              "allow"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "description": "The report's own kind-1984 event id, exactly 64 hex characters in either case; not the reported event's id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "action"
+        ],
+        "type": "object"
+      },
+      "name": "reports_action"
     },
     {
       "description": "Read the merged settings document, narrowed to the defaults' keys and redacted. The document arrives under `settings`",

@@ -362,6 +362,18 @@ fn soft_delete(
     Ok(())
 }
 
+/// `EventRepository::find_stored`: one `get` on the events table — no filter pass, no gate.
+pub(crate) fn find_stored(
+    txn: &RoTxn<'_>,
+    databases: &Databases,
+    id: &EventId,
+) -> Result<Option<EventRecord>, StorageError> {
+    let Some(value) = databases.events.get(txn, id.as_bytes())? else {
+        return Ok(None);
+    };
+    rows::decode_event(value).map(Some)
+}
+
 /// `delete_by_pubkey_and_ids`: a soft delete that never touches kind 62 or a deleted row.
 pub(crate) fn delete_by_pubkey_and_ids(
     txn: &mut RwTxn<'_>,
