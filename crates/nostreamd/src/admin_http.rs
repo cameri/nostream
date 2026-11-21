@@ -109,6 +109,50 @@ pub async fn publish_heartbeats(state: Arc<AdminState>, shutdown: ShutdownState)
     }
 }
 
+/// Rewrites the relay status document at start and every
+/// [`nostream_admin::utils::status::STATUS_INTERVAL`] until the drain (R6).
+///
+/// The document is the relay process's own facts — uptime, the live connection total and the
+/// worker rows — published for the MCP door, which runs in another process. A failed assembly
+/// or write is one warning carrying the path and the error; the loop continues, and a full
+/// disk does not end the daemon.
+pub async fn publish_status(
+    state: Arc<AdminState>,
+    connections: Arc<nostream_relay::connection_cap::ConnectionCap>,
+    shutdown: ShutdownState,
+) {
+    let path = nostream_admin::utils::status::path(state.paths());
+    let mut interval = tokio::time::interval(nostream_admin::utils::status::STATUS_INTERVAL);
+
+    loop {
+        let active = u64::try_from(connections.live_total()).unwrap_or(u64::MAX);
+
+        match nostream_admin::utils::status::collect(&state, active) {
+            Ok(document) => {
+                if let Err(error) = nostream_admin::utils::status::write(&path, &document) {
+                    tracing::warn!(
+                        path = %path.display(),
+                        %error,
+                        "the relay status document was not written"
+                    );
+                }
+            }
+            Err(error) => {
+                tracing::warn!(
+                    path = %path.display(),
+                    %error,
+                    "the relay status document was not assembled"
+                );
+            }
+        }
+
+        tokio::select! {
+            _ = interval.tick() => {}
+            _ = shutdown.wait_for_drain() => break,
+        }
+    }
+}
+
 /// `SECRET` as a value: the crate reads no environment for it (R3, Assumption 9).
 pub fn secret_from_env() -> Option<Vec<u8>> {
     match std::env::var("SECRET") {

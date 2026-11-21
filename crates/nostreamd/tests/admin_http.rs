@@ -4,6 +4,7 @@
 //! | case | what it proves |
 //! |---|---|
 //! | `the_daemon_serves_the_admin_page_and_the_wire_on_one_port` | `GET /admin/` is HTML, `GET /admin/session` without a cookie is 401, and a WebSocket client's first frame is the NIP-42 challenge |
+//! | `the_daemon_publishes_its_status_document` | `<config>/relay-status.json` appears, is rewritten, and carries a fresh `maintenance` row |
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -11,6 +12,9 @@ use std::io::Write;
 use std::net::{SocketAddr, TcpListener};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
+use std::collections::BTreeSet;
+
+use serde_json::Value;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -229,4 +233,83 @@ async fn a_login_verification_does_not_stall_the_listener() {
         status, 200,
         "the login completes after the listener answered"
     );
+}
+
+/// The status document's four keys, and whether its `maintenance` row carries a heartbeat the
+/// daemon published.
+fn published_document(raw: &str) -> Option<Value> {
+    let document: Value = serde_json::from_str(raw).ok()?;
+    let fresh = document["workers"]
+        .as_array()?
+        .iter()
+        .any(|row| row["type"] == "maintenance" && row["stale"] == false && row["heartbeat"].is_object());
+
+    fresh.then_some(document)
+}
+
+/// R6 and R7 — the only criterion that proves a writer runs: the daemon's own process writes
+/// `<config>/relay-status.json` at start, rewrites it on its cadence, and its `maintenance` row
+/// is fresh because the heartbeat publisher in the same process published one.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_daemon_publishes_its_status_document() {
+    let (daemon, temp) = start_daemon();
+    wait_for_daemon(daemon.port).await;
+    let path = temp.path().join("config").join("relay-status.json");
+
+    // Three cadences: the writer's first tick cannot race the heartbeat publisher's, so the
+    // reading is a document whose row is already fresh.
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let mut document = None;
+    while Instant::now() < deadline {
+        if let Ok(raw) = std::fs::read_to_string(&path)
+            && let Some(parsed) = published_document(&raw)
+        {
+            document = Some(parsed);
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let document = document.expect("the daemon publishes a status document within 15 s");
+
+    let keys: BTreeSet<&str> = document
+        .as_object()
+        .expect("an object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        keys,
+        BTreeSet::from([
+            "generatedAt",
+            "uptimeSeconds",
+            "activeConnections",
+            "workers"
+        ]),
+        "the document's four keys: {document}"
+    );
+    assert_eq!(
+        document["activeConnections"],
+        serde_json::json!(0),
+        "nothing is connected to this daemon: {document}"
+    );
+    assert!(
+        document["uptimeSeconds"].is_number(),
+        "uptime is a number: {document}"
+    );
+
+    // Two writes, not one: the modification time moves within the poll.
+    let first = std::fs::metadata(&path)
+        .and_then(|metadata| metadata.modified())
+        .expect("the file's modification time");
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let mut rewritten = false;
+    while Instant::now() < deadline {
+        let later = std::fs::metadata(&path).and_then(|metadata| metadata.modified());
+        if later.is_ok_and(|later| later > first) {
+            rewritten = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(rewritten, "the writer rewrites the document on its cadence");
 }
