@@ -174,11 +174,13 @@ whitespace, as its regex does: `A=1  ` is `1  `, and the mask shows it.
 must come from the process or an explicit setting and never from a copied file's layer — the
 exception D14 records, for the reason D14 gives.
 
-**Cost:** every command parses the file twice, not once — `Context::at` loads an `Environment`
-(`crates/nostream-cli/src/app.rs:47`) and the command's own lookup loads the pair it reads — and
-the three `config env` readers parse it **four** times, since each builds a second `Environment` for
-the raw view (`config.rs:274,308,348`) on top of the context's. `config env set` parses none: it
-reads the text and writes a line. Both parses of one file are deliberate; a value that must
+**Cost:** every command parses the file twice, through the context's one `Environment`, which holds
+both views (`crates/nostream-cli/src/app.rs:47`); the three `config env` readers parse it **four**
+times, because each loads a second `Environment` for its own view on top of the context's
+(`config.rs:274,308,348`); and `config env set` parses it twice as well — the context loads it for
+every command — plus the raw text read it writes from (`config.rs:337`). Measured with `strace -f
+-e trace=openat` on `config env set`: one `Environment::load` (2 parses, 1 read open) and one more
+read open for its own text. Both parses of one file are deliberate; a value that must
 survive into the environment has to be quoted as node requires. Collapsing them instead made
 `set` write a line its own `get` could not read back; the alternative, making `set` write a
 node-survivable form, has no spelling for a value holding both quote characters, since node has
