@@ -816,6 +816,69 @@ fn ac14_config_env_lists_masks_gets_sets_and_validates() {
     assert_eq!(stdout(&output), "Environment settings are valid\n");
 }
 
+/// `config env` describes the **file**, and the `.env` layer is what node would launch with: the
+/// capture has exactly that split (`src/cli/utils/env-config.ts:16,75-112`), and round 6's single
+/// parse broke the first half — `set DB_PASSWORD 'p#ss'` wrote a line its own `get` answered `p`.
+#[test]
+fn the_env_file_commands_describe_the_file_and_the_layer_keeps_node_rules() {
+    let work = Work::new();
+    let env_file = work.path().join(".env");
+
+    // A `#` and a quote are syntax only for the environment layer, so the file view round-trips
+    // what `set` wrote.
+    let output = run_env(
+        work.path(),
+        &["config", "env", "set", "DB_PASSWORD", "p#ss"],
+        &[],
+    );
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    let output = run_env(
+        work.path(),
+        &["config", "env", "get", "DB_PASSWORD", "--show-secrets"],
+        &[],
+    );
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    assert_eq!(stdout(&output).trim(), "p#ss");
+
+    let output = run_env(
+        work.path(),
+        &["config", "env", "set", "SECRET", "\"abc\""],
+        &[],
+    );
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    let output = run_env(
+        work.path(),
+        &["config", "env", "get", "SECRET", "--show-secrets"],
+        &[],
+    );
+    assert_eq!(stdout(&output).trim(), "\"abc\"");
+
+    // And the same rule makes the read commands the capture's: an inline comment rides in the
+    // value it belongs to, so `list` prints it and `validate` refuses what the comment makes
+    // unparseable — both of which the capture does (`config env list` → `DB_PORT=5432 # primary`).
+    fs::write(
+        &env_file,
+        "DB_PORT=5432 # primary\nWORKER_COUNT=2 # Defaults to CPU count.\n",
+    )
+    .expect("the env file");
+
+    let output = run_env(work.path(), &["config", "env", "list"], &[]);
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    let listed = stdout(&output);
+    assert!(
+        listed.contains("DB_PORT=5432 # primary"),
+        "the file view keeps the comment: {listed}"
+    );
+
+    let output = run_env(work.path(), &["config", "env", "validate"], &[]);
+    assert_eq!(code(&output), 1, "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("- WORKER COUNT (WORKER_COUNT): WORKER_COUNT must be an integer"),
+        "{}",
+        stderr(&output)
+    );
+}
+
 // ---------------------------------------------------------------------------------------------
 // AC16–AC21: start, stop, clean and update, over the shims.
 // ---------------------------------------------------------------------------------------------

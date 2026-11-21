@@ -25,8 +25,18 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 /// The environment one command sees: the process's variables, then the `.env` file's.
+///
+/// One file, **two views**, exactly as the capture has them: node parses the environment it
+/// launches with (quotes and inline comments are syntax there), while the capture's own
+/// `parseEnvFile` keeps the value raw for `config env list`, `get`, `validate` and `set`
+/// (`src/cli/utils/env-config.ts:16,75-112`). `layer` is the first and answers [`Self::get`];
+/// `file` is the second and answers [`Self::file`]/[`Self::file_values`]. Collapsing them made
+/// `config env set DB_PASSWORD 'p#ss'` write a line its own `get` read back as `p`.
 #[derive(Debug, Clone, Default)]
 pub struct Environment {
+    /// The `.env` layer as node reads it: the values a launched process would see.
+    layer: BTreeMap<String, String>,
+    /// The file's own values, raw — what the `config env` commands report, validate and write.
     file: BTreeMap<String, String>,
 }
 
@@ -36,7 +46,8 @@ impl Environment {
         let path = cwd.join(".env");
         match std::fs::read_to_string(&path) {
             Ok(content) => Self {
-                file: parse_values(&content),
+                layer: parse_values(&content),
+                file: parse_raw(&content),
             },
             Err(_) => Self::default(),
         }
@@ -47,25 +58,32 @@ impl Environment {
         Self::default()
     }
 
-    /// An environment whose file layer is the given table.
+    /// An environment whose file layer is the given table, in both views — a table that came from
+    /// one parse has nothing for the other to differ on.
     pub fn from_values(file: BTreeMap<String, String>) -> Self {
-        Self { file }
+        Self {
+            layer: file.clone(),
+            file,
+        }
     }
 
-    /// One value: the process's, else the file's.
+    /// One value: the process's, else the **node-parsed** file layer's. This is the view a launched
+    /// process would see, and it is what `store::open`, `import`, `migrate` and the rest of the
+    /// commands read.
     pub fn get(&self, key: &str) -> Option<String> {
         std::env::var(key)
             .ok()
             .filter(|value| !value.is_empty())
-            .or_else(|| self.file.get(key).cloned())
+            .or_else(|| self.layer.get(key).cloned())
     }
 
-    /// One value from the file layer alone, ignoring the process environment.
+    /// One **raw** file value, which is what `config env get` prints.
     pub fn file(&self, key: &str) -> Option<&str> {
         self.file.get(key).map(String::as_str)
     }
 
-    /// The file layer, for `config env list` and `validate`.
+    /// The **raw** file table, for `config env list` and `config env validate`: the capture's
+    /// commands describe the file, not the environment a parse of it would produce.
     pub fn file_values(&self) -> &BTreeMap<String, String> {
         &self.file
     }
@@ -247,11 +265,23 @@ pub fn validate_values(values: &BTreeMap<String, String>) -> Vec<(String, String
         .collect()
 }
 
-/// The `KEY=VALUE` pairs a `.env` document holds, in file order collapsed to key order.
-///
-/// A comment line and a line that is not `KEY=…` are skipped, exactly as the capture's
-/// `ENV_LINE_REGEX` parse does; the value keeps everything after the first `=`.
+/// The `KEY=VALUE` pairs a `.env` document holds, in file order collapsed to key order, with each
+/// value read as [`parse_value`] reads it — node's rule, which is the **environment** view.
 pub fn parse_values(content: &str) -> BTreeMap<String, String> {
+    parse_lines(content, parse_value)
+}
+
+/// The same pairs with each value **raw**: everything after the first `=`, trimmed, exactly what
+/// the capture's `parseEnvFile` keeps in `match[2]` (`src/cli/utils/env-config.ts:75-112`). This is
+/// the **file** view — what `config env list`, `get` and `validate` report and what
+/// [`upsert_value`] writes back — so a value written by `config env set` reads back unchanged.
+pub fn parse_raw(content: &str) -> BTreeMap<String, String> {
+    parse_lines(content, |value| value.trim().to_owned())
+}
+
+/// The lines both views agree on: a comment line and a line that is not `KEY=…` are skipped,
+/// exactly as the capture's `ENV_LINE_REGEX` parse does, and the split is on the first `=`.
+fn parse_lines(content: &str, value: impl Fn(&str) -> String) -> BTreeMap<String, String> {
     let mut values = BTreeMap::new();
 
     for line in content.split('\n') {
@@ -259,7 +289,7 @@ pub fn parse_values(content: &str) -> BTreeMap<String, String> {
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
-        let Some((key, value)) = line.split_once('=') else {
+        let Some((key, raw)) = line.split_once('=') else {
             continue;
         };
         let key = key.trim();
@@ -277,7 +307,7 @@ pub fn parse_values(content: &str) -> BTreeMap<String, String> {
         {
             continue;
         }
-        values.insert(key.to_owned(), parse_value(value));
+        values.insert(key.to_owned(), value(raw));
     }
 
     values

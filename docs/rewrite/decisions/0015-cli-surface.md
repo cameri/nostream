@@ -160,6 +160,21 @@ command fails with `Error: the lmdb backend needs --data-dir <path>`.
 settings' `eventStore` carries only `backend`. When a deployment names the root somewhere, this
 flag should read that same source.
 
+The **`.env` layer** that names the rest has two views, and they are the capture's own: node
+parses the environment it launches with (`node --env-file-if-exists=.env`, so a quote pair and an
+inline `#` are syntax), while the capture's `parseEnvFile` keeps each value **raw** for
+`config env list`, `get`, `validate` and `set` (`src/cli/utils/env-config.ts:16,75-112`). The port
+keeps both over one file (`env_file::Environment`): `get` answers node's rule — the view
+`store::open`, `import` and `migrate` read — and the `config env` commands read the raw table, so
+`config env set DB_PASSWORD 'p#ss'` round-trips and `config env validate` refuses
+`WORKER_COUNT=2 # note` exactly where the capture refuses it.
+
+**Cost:** two parses of one file for every command that uses both views, and a value that must
+survive into the environment has to be quoted as node requires. Collapsing them instead made
+`set` write a line its own `get` could not read back; the alternative, making `set` write a
+node-survivable form, has no spelling for a value holding both quote characters, since node has
+no escape.
+
 ### D9 — `config validate` keeps exit 2
 
 The capture returns 1 there. The port keeps 2 and `settings valid: N issues`, because both are
