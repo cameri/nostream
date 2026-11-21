@@ -1903,6 +1903,7 @@ pub fn context(settings: nostream_config::Settings) -> crate::context::ServiceCo
             dvm_jobs: InMemoryDvmJobRepository::new(),
             notification_outbox: InMemoryOutboxRepository::new(),
             notification_delivery_log: InMemoryDeliveryLogRepository::new(),
+            reports: nostream_relay::testing::InMemoryReportRepository::new(),
         }),
         hub,
         http,

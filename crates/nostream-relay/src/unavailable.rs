@@ -340,4 +340,12 @@ impl ReportRepository for UnavailableReportRepository {
     fn find_actionable_targets<'a>(&'a self) -> StorageFuture<'a, Vec<ActionableTarget>> {
         Box::pin(async { Err(unavailable()) })
     }
+
+    fn set_actionable<'a>(
+        &'a self,
+        _event_id: &'a EventId,
+        _actionable: bool,
+    ) -> StorageFuture<'a, u64> {
+        Box::pin(async { Err(unavailable()) })
+    }
 }

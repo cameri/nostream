@@ -360,6 +360,14 @@ async fn the_repository_traits_are_dyn_compatible() {
         fn find_actionable_targets<'a>(&'a self) -> StorageFuture<'a, Vec<ActionableTarget>> {
             unsupported("noop::reports::find_actionable_targets")
         }
+
+        fn set_actionable<'a>(
+            &'a self,
+            _event_id: &'a EventId,
+            _actionable: bool,
+        ) -> StorageFuture<'a, u64> {
+            unsupported("noop::reports::set_actionable")
+        }
     }
 
     impl NotificationDeliveryLogRepository for Noop {

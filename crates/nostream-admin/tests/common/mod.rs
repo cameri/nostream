@@ -182,6 +182,8 @@ impl TestServer {
                 Arc::clone(&backend)
                     as Arc<dyn nostream_storage::repositories::NotificationDeliveryLogRepository>
             }),
+            reports: Arc::clone(&backend)
+                as Arc<dyn nostream_storage::repositories::ReportRepository>,
         });
 
         let client = Arc::new(ReqwestClient::new().unwrap());

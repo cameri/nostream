@@ -605,3 +605,29 @@ where
         })
         .collect()
 }
+
+/// `ReportRepository::set_actionable`: one statement over every row of one report event, and
+/// the partial indexes maintain themselves. The `actionable <> $2` predicate is the "already
+/// holds" rule: such a row is not written and the count does not name it.
+pub(crate) async fn report_set_actionable<'e, E>(
+    executor: E,
+    event_id: &EventId,
+    actionable: bool,
+) -> Result<u64, StorageError>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let mut args = Args::default();
+    let event_slot = args.push(Arg::Bytes(event_id.as_bytes().to_vec()));
+    let actionable_slot = args.push(Arg::Bool(actionable));
+    let sql = format!(
+        "UPDATE reports SET actionable = {actionable_slot} WHERE event_id = {event_slot} \
+         AND actionable <> {actionable_slot}"
+    );
+
+    Ok(EventQuery { sql, args }
+        .into_query()
+        .execute(executor)
+        .await?
+        .rows_affected())
+}

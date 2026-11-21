@@ -740,6 +740,61 @@ pub(crate) fn report_find_actionable_targets(
         .collect())
 }
 
+/// `ReportRepository::set_actionable`: flips the flag on every row one report event wrote and
+/// moves the three actionable indexes with it.
+///
+/// `report_write` puts those indexes only when the flag is true, and nothing removes one, so a
+/// row that stops being actionable would leave its keys behind: `report_find_actionable`,
+/// `report_find_actionable_targets` and the NIP-56 gate walk the indexes without re-checking
+/// the row. The deletion is therefore this function's work, and it is why the setter cannot be
+/// an update of the value alone. The row is rewritten through [`report_write`], so the
+/// re-insert is the same code that wrote the row originally.
+pub(crate) fn report_set_actionable(
+    txn: &mut RwTxn<'_>,
+    databases: &Databases,
+    event_id: &EventId,
+    actionable: bool,
+) -> Result<u64, StorageError> {
+    // The walk's ids are collected before any write: the iterator holds the transaction, and
+    // one report event writes a handful of rows rather than a page.
+    let mut ids = Vec::new();
+    for entry in databases
+        .reports_by_event_id
+        .prefix_iter(txn, event_id.as_bytes())?
+    {
+        let (key, _) = entry?;
+        ids.push(encoding::i32_from_key(&key[32..])?);
+    }
+
+    let mut changed = 0;
+    for id in ids {
+        let Some(report) = report_load(txn, databases, id)? else {
+            continue;
+        };
+        if report.actionable == actionable {
+            continue;
+        }
+        databases
+            .reports_actionable_by_created_at
+            .delete(txn, &report_created_key(&report))?;
+        if let Some(target) = &report.reported_event_id {
+            databases
+                .reports_actionable_event
+                .delete(txn, &report_event_key(&report, target))?;
+        }
+        if let Some(pubkey) = &report.reported_pubkey {
+            databases
+                .reports_actionable_pubkey
+                .delete(txn, &report_pubkey_key(&report, pubkey))?;
+        }
+        let mut updated = report;
+        updated.actionable = actionable;
+        report_write(txn, databases, &updated)?;
+        changed += 1;
+    }
+    Ok(changed)
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]

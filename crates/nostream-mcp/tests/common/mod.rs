@@ -70,7 +70,7 @@ pub fn base_settings() -> serde_yaml::Value {
 /// The scopes the fixture's token document names.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Grant {
-    /// `{"scopes": ["write"]}`: the four read tools and `settings_set`.
+    /// `{"scopes": ["write"]}`: the four read tools and the three writes.
     #[default]
     Write,
     /// `{"scopes": []}`: the read tools only — the door's default (R28).
@@ -176,10 +176,20 @@ impl TestMcp {
         let token_path = write_token(&config_dir, fixture.grant.names());
         let credential = Credential::from_file(&token_path).unwrap();
 
+        // The paths both the store and the state read: the backend is opened with the settings
+        // the state serves, so the NIP-56 gate a case turns on is the gate its store applies.
+        let paths = SettingsPaths::from_config_dir(&repo_root(), &config_dir);
         // The backend is always opened, so a case can seed it; when the fixture asks for the
         // daemon's bundle the state reads `unavailable::stores()` instead, and the seeded rows
         // are simply never reached.
-        let backend = LmdbBackend::open(temp.path().join("store")).await.unwrap();
+        let backend = LmdbBackend::open(temp.path().join("store"))
+            .await
+            .unwrap()
+            .with_settings(Arc::new(
+                nostream_config::load(&paths)
+                    .expect("the fixture's settings load")
+                    .settings,
+            ));
         let backend = Arc::new(backend);
         let stores = match fixture.stores {
             Stores::Seeded => Arc::new(ServiceStores {
@@ -199,6 +209,8 @@ impl TestMcp {
                     as Arc<dyn nostream_storage::repositories::NotificationOutboxRepository>,
                 notification_delivery_log: Arc::clone(&backend)
                     as Arc<dyn nostream_storage::repositories::NotificationDeliveryLogRepository>,
+                reports: Arc::clone(&backend)
+                    as Arc<dyn nostream_storage::repositories::ReportRepository>,
             }),
             Stores::Unavailable => Arc::new(nostream_services::unavailable::stores()),
         };
@@ -210,7 +222,7 @@ impl TestMcp {
         let clock = Arc::new(TestClock::new(fixture.now_ms));
         let state = Arc::new(AdminState::with_random(
             AdminStateConfig {
-                paths: SettingsPaths::from_config_dir(&repo_root(), &config_dir),
+                paths,
                 resources_root: resources_root(),
                 secret: fixture.secret,
                 stores,

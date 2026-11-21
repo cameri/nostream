@@ -2,10 +2,11 @@
 //!
 //! | case | what it proves |
 //! |---|---|
-//! | `each_call_appends_one_line` | five calls append six lines in call order — the five `mcp.*` lines, then `settings_set`'s own `settings.updated` |
+//! | `each_call_appends_one_line` | seven calls append eight lines in call order — the seven `mcp.*` lines, then `settings_set`'s own `settings.updated` |
 //! | `a_refused_call_appends_nothing` | a call with bad arguments and a call with no credential each leave the file untouched |
 //! | `every_registered_tool_has_a_table_row` | the table is total over the router's own list, so no tool can execute unaudited or ungated |
 //! | `the_audit_check_is_no_stricter_than_the_router` | the table's rule is the router's deserialiser, not the schema: a stricter check would fail open |
+//! | `the_write_tools_detail_carries_only_the_tool` | the two write tools' lines carry `{"tool": …}` and nothing else: no id, no action, no address |
 //! R9 appends the `mcp.*` line at dispatch, before the handler's work, so the order in the file
 //! is the order of the calls and a domain line always follows its own dispatch line. The one
 //! refusal that does write is a credential's scope denial — `mcp.denied`, R28 — and it has its
@@ -19,8 +20,8 @@ use std::collections::BTreeSet;
 
 use common::{TestMcp, event, id_of, object, text};
 use nostream_mcp::{
-    TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_RELAY_STATUS, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET,
-    TOOLS, audit_action,
+    TOOL_DELETE_EVENT, TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_RELAY_STATUS, TOOL_REPORTS_ACTION,
+    TOOL_SETTINGS_GET, TOOL_SETTINGS_SET, TOOLS, audit_action,
 };
 use serde_json::json;
 
@@ -35,6 +36,14 @@ async fn each_call_appends_one_line() {
     client.call(TOOL_SETTINGS_GET, json!({})).await;
     client.call(TOOL_LIST_EVENTS, json!({})).await;
     client.call(TOOL_GET_EVENT, json!({ "id": id })).await;
+    client.call(TOOL_DELETE_EVENT, json!({ "id": id })).await;
+    let report_id = "ab".repeat(32);
+    client
+        .call(
+            TOOL_REPORTS_ACTION,
+            json!({ "id": report_id, "action": "allow" }),
+        )
+        .await;
     client.call(TOOL_RELAY_STATUS, json!({})).await;
     let written = client
         .call(
@@ -55,6 +64,8 @@ async fn each_call_appends_one_line() {
             "mcp.settings_get",
             "mcp.list_events",
             "mcp.get_event",
+            "mcp.delete_event",
+            "mcp.reports_action",
             "mcp.relay_status",
             "mcp.settings_set",
             "settings.updated",
@@ -66,6 +77,8 @@ async fn each_call_appends_one_line() {
         TOOL_SETTINGS_GET,
         TOOL_LIST_EVENTS,
         TOOL_GET_EVENT,
+        TOOL_DELETE_EVENT,
+        TOOL_REPORTS_ACTION,
         TOOL_RELAY_STATUS,
         TOOL_SETTINGS_SET,
     ]) {
@@ -80,20 +93,68 @@ async fn each_call_appends_one_line() {
     }
 
     assert_eq!(
-        entries[3]["detail"]["tool"],
+        entries[5]["detail"]["tool"],
         json!(TOOL_RELAY_STATUS),
-        "the fourth line is the status call's own: {entries:?}"
+        "the sixth line is the status call's own: {entries:?}"
     );
     assert_eq!(
-        entries[4]["detail"]["paths"],
+        entries[6]["detail"]["paths"],
         json!(["wot.enabled"]),
         "the settings write names the paths it asked for, never the values"
     );
     assert!(
-        entries[4]["detail"].get("value").is_none(),
+        entries[6]["detail"].get("value").is_none(),
         "no value is recorded: {}",
-        entries[4]
+        entries[6]
     );
+}
+
+/// R24: both write tools' lines carry the tool and nothing else. A `detail` carrying the id or
+/// the action would let a caller's own text shape a record, which the `settings_set` arm
+/// deliberately does not do — it passes the requested paths, which are its request.
+#[tokio::test]
+async fn the_write_tools_detail_carries_only_the_tool() {
+    let fixture = TestMcp::start().await;
+    let record = event(22, 1, 1_699_999_961);
+    let id = id_of(&record);
+    fixture.seed(std::slice::from_ref(&record)).await;
+    let client = fixture.client().await;
+
+    let deleted = client.call(TOOL_DELETE_EVENT, json!({ "id": id })).await;
+    assert_eq!(deleted.is_error, Some(false), "{}", text(&deleted));
+    let report_id = "cd".repeat(32);
+    let acted = client
+        .call(
+            TOOL_REPORTS_ACTION,
+            json!({ "id": report_id, "action": "allow" }),
+        )
+        .await;
+    assert_eq!(acted.is_error, Some(false), "{}", text(&acted));
+
+    let entries = fixture.audit_entries();
+    let actions: Vec<String> = entries
+        .iter()
+        .map(|entry| entry["action"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    assert_eq!(
+        actions,
+        vec![
+            audit_action(TOOL_DELETE_EVENT),
+            audit_action(TOOL_REPORTS_ACTION)
+        ],
+        "{entries:?}"
+    );
+    for (entry, tool) in entries.iter().zip([TOOL_DELETE_EVENT, TOOL_REPORTS_ACTION]) {
+        assert_eq!(
+            entry["detail"],
+            json!({ "tool": tool }),
+            "{tool}'s detail names the tool and nothing else: {entry}"
+        );
+        assert!(
+            entry.get("remoteAddress").is_none(),
+            "a stdio caller has no address: {entry}"
+        );
+    }
 }
 
 #[tokio::test]

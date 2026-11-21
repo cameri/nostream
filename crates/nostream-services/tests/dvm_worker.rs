@@ -97,6 +97,7 @@ fn build_all(
         dvm_jobs: Arc::clone(&jobs) as Arc<dyn nostream_storage::repositories::DvmJobRepository>,
         notification_outbox: testing::InMemoryOutboxRepository::new(),
         notification_delivery_log: testing::InMemoryDeliveryLogRepository::new(),
+        reports: nostream_relay::testing::InMemoryReportRepository::new(),
     });
     let (hub, _receiver) = broadcast::channel(16);
     let mut settings = testing::settings();

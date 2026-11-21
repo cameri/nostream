@@ -60,6 +60,7 @@ fn build(settings: nostream_config::Settings, with_key: bool) -> Fixture {
         notification_outbox: Arc::clone(&outbox)
             as Arc<dyn nostream_storage::repositories::NotificationOutboxRepository>,
         notification_delivery_log: testing::InMemoryDeliveryLogRepository::new(),
+        reports: nostream_relay::testing::InMemoryReportRepository::new(),
     });
     let (hub, _receiver) = broadcast::channel(16);
     let clock = Arc::new(TestClock::new(NOW_MS));

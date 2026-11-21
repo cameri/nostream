@@ -367,6 +367,16 @@ impl ReportRepository for PostgresBackend {
     fn find_actionable_targets<'a>(&'a self) -> StorageFuture<'a, Vec<ActionableTarget>> {
         Box::pin(async move { metadata::report_find_actionable_targets(&self.master).await })
     }
+
+    fn set_actionable<'a>(
+        &'a self,
+        event_id: &'a EventId,
+        actionable: bool,
+    ) -> StorageFuture<'a, u64> {
+        Box::pin(async move {
+            metadata::report_set_actionable(&self.master, event_id, actionable).await
+        })
+    }
 }
 
 impl NotificationDeliveryLogRepository for PostgresBackend {

@@ -1626,6 +1626,17 @@ impl ReportRepository for InMemoryReportRepository {
                 .clone())
         })
     }
+
+    /// A double that does not model the setter: no relay case reaches it, and a double that did
+    /// would have to model the three actionable indexes too — a second implementation of the
+    /// thing under test. The type's doc calls it a settable-snapshot double, which stays true.
+    fn set_actionable<'a>(
+        &'a self,
+        _event_id: &'a EventId,
+        _actionable: bool,
+    ) -> StorageFuture<'a, u64> {
+        Box::pin(async move { Ok(0) })
+    }
 }
 
 /// How many report rows the recorded writes hold.

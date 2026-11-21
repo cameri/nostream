@@ -1,4 +1,4 @@
-//! The MCP server: the five tools, the credential gate and the audit sink.
+//! The MCP server: the seven tools, the credential gate and the audit sink.
 //!
 //! Every tool is a thin handler over a seam that already exists — `AdminState` for the settings,
 //! `EventRepository` for the events — and nothing here knows what an HTTP status is (R3). The
@@ -15,7 +15,7 @@ use nostream_admin::AdminState;
 use nostream_admin::controllers::admin_json_body_middleware::settings_patch;
 use nostream_admin::controllers::patch_settings::{self, SettingsWrite};
 use nostream_admin::utils::status;
-use nostream_core::{Filter, Kind};
+use nostream_core::{EventId, Filter, Kind};
 use nostream_relay::nip11;
 use nostream_storage::repositories::{EventRecord, collect_page, collect_records};
 use rmcp::handler::server::router::tool::ToolRouter;
@@ -47,7 +47,8 @@ pub const MCP_INSTRUCTIONS: &str = "\
 The nostream admin MCP server. Every call is decided by the scoped token document the mode was \
 started with — `--admin-token-file <path>` or `--admin-token-fd <n>`, exactly one, its shape \
 {\"scopes\": [\"write\"]}: the document's presence authorises `settings_get`, `list_events`, \
-`get_event` and `relay_status`, and the \"write\" scope authorises `settings_set` (else the call \
+`get_event` and `relay_status`, and the \"write\" scope authorises `settings_set`, \
+`delete_event` and `reports_action` (else the call \
 is `Forbidden`). \
 `admin.enabled` must be true in the settings, or every call answers `Not Found`; a document \
 that cannot be read answers `Unauthorized`. Each executed call appends one `mcp.<tool>` line to \
@@ -60,6 +61,21 @@ pub const TOOL_SETTINGS_SET: &str = "settings_set";
 pub const TOOL_LIST_EVENTS: &str = "list_events";
 pub const TOOL_GET_EVENT: &str = "get_event";
 pub const TOOL_RELAY_STATUS: &str = "relay_status";
+pub const TOOL_DELETE_EVENT: &str = "delete_event";
+pub const TOOL_REPORTS_ACTION: &str = "reports_action";
+
+/// What a `delete_event` call did, as the payload's `outcome` (R3, R4): this call marked the
+/// row deleted.
+pub const OUTCOME_DELETED: &str = "deleted";
+
+/// The row already carried `deleted_at`, so the store skipped it and this call changed nothing.
+pub const OUTCOME_ALREADY_DELETED: &str = "already_deleted";
+
+/// The store skipped a live row for the only other reason it has: kind 62 is never deleted.
+pub const OUTCOME_NOT_DELETEABLE: &str = "not_deleteable";
+
+/// No row carries the id this call named.
+pub const OUTCOME_NOT_FOUND: &str = "not_found";
 
 /// The most `ids` or `authors` criteria one call may carry.
 ///
@@ -188,6 +204,16 @@ pub const TOOLS: &[Tool] = &[
         parses: accepts_any_arguments,
         needs: Requires::Read,
     },
+    Tool {
+        name: TOOL_DELETE_EVENT,
+        parses: delete_event_parses,
+        needs: Requires::Write,
+    },
+    Tool {
+        name: TOOL_REPORTS_ACTION,
+        parses: reports_action_parses,
+        needs: Requires::Write,
+    },
 ];
 
 /// `tool`'s row; `None` when the table does not name it.
@@ -232,6 +258,14 @@ fn get_event_parses(arguments: Option<&Map<String, Value>>) -> bool {
     serde_json::from_value::<GetEventArgs>(arguments_value(arguments)).is_ok()
 }
 
+fn delete_event_parses(arguments: Option<&Map<String, Value>>) -> bool {
+    serde_json::from_value::<DeleteEventArgs>(arguments_value(arguments)).is_ok()
+}
+
+fn reports_action_parses(arguments: Option<&Map<String, Value>>) -> bool {
+    serde_json::from_value::<ReportsActionArgs>(arguments_value(arguments)).is_ok()
+}
+
 fn arguments_value(arguments: Option<&Map<String, Value>>) -> Value {
     Value::Object(arguments.cloned().unwrap_or_default())
 }
@@ -269,6 +303,52 @@ pub struct ListEventsArgs {
 pub struct GetEventArgs {
     /// The event's 64-character hex id, in either case.
     pub id: String,
+}
+
+/// The `delete_event` arguments: one id and nothing else (R2).
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DeleteEventArgs {
+    /// The event's hex id, in either case; a prefix shorter than 64 characters names no event and deletes nothing
+    pub id: String,
+}
+
+/// The `reports_action` arguments: one report event's id and the decision to give it (R12).
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReportsActionArgs {
+    /// The report's own kind-1984 event id, exactly 64 hex characters in either case; not the reported event's id
+    pub id: String,
+    /// `hide` marks the report's targets hidden; `allow` clears them
+    pub action: ReportAction,
+}
+
+/// The two decisions a report can be given.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReportAction {
+    /// `hide`: the report's targets are hidden (`actionable: true`).
+    Hide,
+    /// `allow`: the report's targets are not hidden (`actionable: false`).
+    Allow,
+}
+
+impl JsonSchema for ReportAction {
+    fn schema_name() -> Cow<'static, str> {
+        "ReportAction".into()
+    }
+
+    /// The closed set as the schema's `enum`, which is what a validating client reads and what
+    /// the field's own description calls it. The derive would state a described unit enum as a
+    /// `oneOf` of `const` variants instead, because each variant's doc comment has nowhere to go
+    /// in a plain `enum` list; the set is the same either way.
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({ "type": "string", "enum": ["hide", "allow"] })
+    }
+
+    fn inline_schema() -> bool {
+        true
+    }
 }
 
 /// The `settings_set` arguments: the same JSON object the console's HTTP body carries (R12).
@@ -441,6 +521,100 @@ impl AdminMcp {
             Ok(None) => tool_ok(json!({ "event": null })),
             Err(error) => tool_error(&error),
         }
+    }
+
+    /// The store's own soft delete, on one row: the exact-id read names the pubkey the seam
+    /// needs, one call flips the row, and the read-back carries the `deleted_at` the store
+    /// stamped (R1, R3).
+    #[tool(
+        description = "Mark one stored event deleted: the same soft delete a NIP-09 request from the \
+author makes. The event leaves REQ and COUNT and keeps its row, so `get_event` and `list_events` \
+still return it with `deleted_at` set. The argument is the event's hex id; a prefix shorter than \
+64 characters names no event, so nothing is deleted. Answers `outcome` — `deleted`, \
+`already_deleted`, `not_deleteable` (kind 62 is never deleted), or `not_found` — and the row as \
+it stands after the call"
+    )]
+    async fn delete_event(
+        &self,
+        Parameters(arguments): Parameters<DeleteEventArgs>,
+    ) -> CallToolResult {
+        match self.deleted(&arguments.id).await {
+            Ok(payload) => tool_ok(payload),
+            Err(error) => tool_error(&error),
+        }
+    }
+
+    /// One report event's triage decision: its own id, resolved through the report store, and
+    /// every row it wrote flipped to `actionable` or off it (R7, R13).
+    #[tool(
+        description = "Act on one report event: `hide` marks its targets hidden (`actionable: true`, \
+so REQ and COUNT withhold them while `nip56.hideActionableReports` is on) and `allow` clears them \
+(`actionable: false`). The argument is the report's own kind-1984 event id — exactly 64 hex \
+characters, not the reported event's id — and every report row that event wrote is flipped. \
+Answers `reports` (the rows as they stand, by `id`) and `changed` (how many this call flipped). \
+Every new REQ reflects the change at once; already-connected subscriptions see it at the relay's \
+next refresh, up to 30 s"
+    )]
+    async fn reports_action(
+        &self,
+        Parameters(arguments): Parameters<ReportsActionArgs>,
+    ) -> CallToolResult {
+        match self.act_on_report(&arguments).await {
+            Ok(payload) => tool_ok(payload),
+            Err(error) => tool_error(&error),
+        }
+    }
+
+    /// The delete payload: one outcome from the store's own count and the row read before the
+    /// call, and the row as it stands after it (R3, R4).
+    ///
+    /// The first read is not a pre-judgement — the store's predicates stay authoritative — it
+    /// is how the call learns the pubkey the seam requires and how a zero count is explained.
+    async fn deleted(&self, id: &str) -> Result<Value, McpError> {
+        let Some(row) = self.event(id).await? else {
+            return Ok(json!({ "outcome": OUTCOME_NOT_FOUND, "event": null }));
+        };
+        let count = self
+            .state
+            .stores()
+            .events
+            .delete_by_pubkey_and_ids(&row.event.pubkey, &[row.event.id])
+            .await?;
+        let after = self.event(id).await?;
+        let outcome = if count > 0 {
+            OUTCOME_DELETED
+        } else if row.deleted_at.is_some() {
+            OUTCOME_ALREADY_DELETED
+        } else {
+            OUTCOME_NOT_DELETEABLE
+        };
+        Ok(json!({ "outcome": outcome, "event": after }))
+    }
+
+    /// The report payload: the rows one report event wrote, sorted by `id` because neither
+    /// backend orders that read, and how many this call flipped (R13).
+    ///
+    /// An id with no rows is a result rather than an error — the answer `get_event` gives an
+    /// unknown id — so a caller that mistyped one sees an empty list and not `Not Found`.
+    async fn act_on_report(&self, arguments: &ReportsActionArgs) -> Result<Value, McpError> {
+        let id = hex_prefix("id", &arguments.id)?;
+        if id.len() != 64 {
+            return Err(McpError::Criterion(format!(
+                "id: {id:?} is not a 64-character hex id"
+            )));
+        }
+        let event_id =
+            EventId::try_from(id.as_str()).map_err(|error| McpError::Criterion(error.to_string()))?;
+        let reports = &self.state.stores().reports;
+        if reports.find_by_event_id(&event_id).await?.is_empty() {
+            return Ok(json!({ "reports": [], "changed": 0 }));
+        }
+        let changed = reports
+            .set_actionable(&event_id, !matches!(arguments.action, ReportAction::Allow))
+            .await?;
+        let mut rows = reports.find_by_event_id(&event_id).await?;
+        rows.sort_by_key(|report| report.id);
+        Ok(json!({ "reports": rows, "changed": changed }))
     }
 
     fn settings_document(&self) -> Result<Value, McpError> {

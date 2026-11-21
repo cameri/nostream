@@ -1117,6 +1117,20 @@ impl ReportRepository for LmdbBackend {
     fn find_actionable_targets<'a>(&'a self) -> StorageFuture<'a, Vec<ActionableTarget>> {
         Box::pin(async move { self.read(metadata::report_find_actionable_targets).await })
     }
+
+    fn set_actionable<'a>(
+        &'a self,
+        event_id: &'a EventId,
+        actionable: bool,
+    ) -> StorageFuture<'a, u64> {
+        Box::pin(async move {
+            let event_id = *event_id;
+            self.write(move |txn, databases| {
+                metadata::report_set_actionable(txn, databases, &event_id, actionable)
+            })
+            .await
+        })
+    }
 }
 
 impl NotificationDeliveryLogRepository for LmdbBackend {

@@ -293,6 +293,7 @@ async fn the_relay_restarted_notification_is_one_enqueue_and_obeys_its_toggle() 
         notification_outbox: Arc::clone(&outbox) as Arc<dyn NotificationOutboxRepository>,
         notification_delivery_log: Arc::clone(&delivery_log)
             as Arc<dyn NotificationDeliveryLogRepository>,
+        reports: nostream_relay::testing::InMemoryReportRepository::new(),
     };
 
     // R8: the process's one row, through the same function `serve` calls.
@@ -398,6 +399,7 @@ fn runner(
         dvm_jobs: testing::InMemoryDvmJobRepository::new(),
         notification_outbox: testing::InMemoryOutboxRepository::new(),
         notification_delivery_log: testing::InMemoryDeliveryLogRepository::new(),
+        reports: nostream_relay::testing::InMemoryReportRepository::new(),
     };
     let settings = Arc::new(settings);
     let clock = testing::clock(1_700_000_000_000);
