@@ -2392,3 +2392,158 @@ async fn an_index_from_an_older_tokenizer_is_rebuilt_on_open() {
         vec![records[1].event.id]
     );
 }
+
+// ---------------------------------------------------------------------------------------
+// The report setter: the row's flag and the three indexes `report_write` fills.
+// ---------------------------------------------------------------------------------------
+
+/// A filter selecting one stored event by id.
+fn by_id(record: &EventRecord) -> Filter {
+    Filter {
+        ids: Some(vec![record.event.id.to_string()]),
+        ..Filter::default()
+    }
+}
+
+#[tokio::test]
+async fn set_actionable_false_clears_every_index_and_the_gate() {
+    use nostream_storage::repositories::ReportRepository;
+
+    let (_directory, backend) = open_store().await;
+    let record = event(51, 1, 1_700_000_000);
+    EventRepository::create(&backend, &record)
+        .await
+        .expect("the event stores");
+    let report = ReportRepository::create(
+        &backend,
+        &NewReport {
+            event_id: EventId::from_byte_array([52; 32]),
+            reporter_pubkey: Pubkey::from_byte_array([53; 32]),
+            reported_pubkey: Some(record.event.pubkey),
+            reported_event_id: Some(record.event.id),
+            report_type: ReportType::Spam,
+            weight: 1.0,
+            actionable: true,
+        },
+    )
+    .await
+    .expect("the report stores");
+
+    assert!(
+        rows_of(&backend, &by_id(&record)).await.is_empty(),
+        "the gate withholds the reported event"
+    );
+    assert_eq!(
+        backend
+            .set_actionable(&report.event_id, false)
+            .await
+            .unwrap(),
+        1
+    );
+    assert!(backend.find_actionable(10).await.unwrap().is_empty());
+    assert!(backend.find_actionable_targets().await.unwrap().is_empty());
+    assert_eq!(
+        rows_of(&backend, &by_id(&record)).await.len(),
+        1,
+        "the event returns once no actionable report names it"
+    );
+}
+
+#[tokio::test]
+async fn set_actionable_true_puts_every_row_of_one_report_back() {
+    use nostream_storage::repositories::ReportRepository;
+
+    let (_directory, backend) = open_store().await;
+    let named_by_pubkey = event(54, 1, 1_700_000_100);
+    let named_by_id = event(55, 1, 1_700_000_200);
+    EventRepository::create_many(&backend, &[named_by_pubkey.clone(), named_by_id.clone()])
+        .await
+        .expect("the events store");
+    let report_event = EventId::from_byte_array([56; 32]);
+    ReportRepository::create_many(
+        &backend,
+        &[
+            NewReport {
+                event_id: report_event,
+                reporter_pubkey: Pubkey::from_byte_array([57; 32]),
+                reported_pubkey: Some(named_by_pubkey.event.pubkey),
+                reported_event_id: None,
+                report_type: ReportType::Spam,
+                weight: 1.0,
+                actionable: false,
+            },
+            NewReport {
+                event_id: report_event,
+                reporter_pubkey: Pubkey::from_byte_array([57; 32]),
+                reported_pubkey: None,
+                reported_event_id: Some(named_by_id.event.id),
+                report_type: ReportType::Spam,
+                weight: 1.0,
+                actionable: false,
+            },
+        ],
+    )
+    .await
+    .expect("the report rows store");
+
+    assert_eq!(
+        backend.set_actionable(&report_event, true).await.unwrap(),
+        2
+    );
+    let rows = backend.find_by_event_id(&report_event).await.unwrap();
+    assert_eq!(rows.len(), 2);
+    assert!(rows.iter().all(|row| row.actionable));
+    let mut targets = backend.find_actionable_targets().await.unwrap();
+    targets.sort_by_key(|left| left.reported_pubkey);
+    assert_eq!(
+        targets.len(),
+        2,
+        "each target is named once, by the deduplicating walk"
+    );
+    assert!(rows_of(&backend, &by_id(&named_by_pubkey)).await.is_empty());
+    assert!(rows_of(&backend, &by_id(&named_by_id)).await.is_empty());
+}
+
+#[tokio::test]
+async fn set_actionable_answers_zero_for_a_value_that_already_holds() {
+    use nostream_storage::repositories::ReportRepository;
+
+    let (_directory, backend) = open_store().await;
+    let report_event = EventId::from_byte_array([58; 32]);
+    let report = ReportRepository::create(
+        &backend,
+        &NewReport {
+            event_id: report_event,
+            reporter_pubkey: Pubkey::from_byte_array([59; 32]),
+            reported_pubkey: Some(Pubkey::from_byte_array([60; 32])),
+            reported_event_id: None,
+            report_type: ReportType::Spam,
+            weight: 1.0,
+            actionable: true,
+        },
+    )
+    .await
+    .expect("the report stores");
+
+    assert_eq!(
+        backend.set_actionable(&report_event, true).await.unwrap(),
+        0
+    );
+    let rows = backend.find_by_event_id(&report_event).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0], report, "the row is unchanged, its id included");
+}
+
+#[tokio::test]
+async fn set_actionable_answers_zero_for_an_unknown_event() {
+    use nostream_storage::repositories::ReportRepository;
+
+    let (_directory, backend) = open_store().await;
+    assert_eq!(
+        backend
+            .set_actionable(&EventId::from_byte_array([61; 32]), true)
+            .await
+            .unwrap(),
+        0
+    );
+}

@@ -942,8 +942,11 @@ pub trait ReportRepository: Send + Sync {
     /// `find_actionable`, `find_actionable_targets` and the NIP-56 gate read those indexes
     /// without re-checking the row. A row whose value already equals the argument is not
     /// written and is not counted.
-    fn set_actionable<'a>(&'a self, event_id: &'a EventId, actionable: bool)
-    -> StorageFuture<'a, u64>;
+    fn set_actionable<'a>(
+        &'a self,
+        event_id: &'a EventId,
+        actionable: bool,
+    ) -> StorageFuture<'a, u64>;
 }
 
 /// Notification delivery-log storage (`src/@types/repositories.ts`

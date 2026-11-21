@@ -63,7 +63,7 @@ async fn a_revoked_token_refuses_every_tool() {
     fixture.revoke();
     let client = fixture.client().await;
 
-    assert_eq!(client.tools().await.len(), 5, "tools/list is not gated");
+    assert_eq!(client.tools().await.len(), 7, "tools/list is not gated");
     for (tool, arguments) in calls() {
         let result = client.call(tool, arguments).await;
         assert_eq!(result.is_error, Some(true), "{tool}: {}", text(&result));
@@ -232,7 +232,7 @@ async fn an_inherited_descriptor_authenticates() {
         .iter()
         .map(|tool| tool.name.to_string())
         .collect();
-    assert_eq!(names.len(), 5, "{names:?}");
+    assert_eq!(names.len(), 7, "{names:?}");
 
     let read = client.call(TOOL_SETTINGS_GET, json!({})).await;
     assert_eq!(read.is_error, Some(false), "{}", text(&read));
@@ -290,15 +290,15 @@ async fn only_the_writing_tool_needs_a_scope() {
     );
     assert_eq!(
         writing,
-        vec![TOOL_SETTINGS_SET],
-        "the one tool that changes the relay is the one a document opts into"
+        vec![TOOL_DELETE_EVENT, TOOL_REPORTS_ACTION, TOOL_SETTINGS_SET],
+        "the tools that change the relay are the ones a document opts into"
     );
 
     // A name the table does not carry needs the write: that is this helper's answer for it, and
     // the reason a missing row fails closed rather than open. `call_tool` refuses such a name
     // before it asks — see `an_unregistered_tool_is_refused_before_the_scopes` — so a rowless tool
     // never reaches dispatch at all.
-    assert_eq!(required_scope("delete_event"), Requires::Write);
+    assert_eq!(required_scope("user_admin"), Requires::Write);
 }
 
 /// A name the surface does not register is refused before the scope decision, so a document that
@@ -315,7 +315,7 @@ async fn an_unregistered_tool_is_refused_before_the_scopes() {
     let client = fixture.client().await;
 
     let error = client
-        .try_call("delete_event", json!({}))
+        .try_call("user_admin", json!({}))
         .await
         .expect_err("a name the table does not carry is not a tool");
     let rmcp::ServiceError::McpError(error) = error else {

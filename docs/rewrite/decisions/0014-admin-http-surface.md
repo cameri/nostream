@@ -280,8 +280,8 @@ backend, whose query is a real await, that the shape is for.
 
 The MCP server writes its calls to the same `<config>/admin-audit.jsonl` (D9), one line per
 executed call, and it extends the recorded action vocabulary by **one name per registered tool**
-rather than reusing one. Four names landed with the first slice; `relay_status` adds the fifth, and
-each later slice adds its own:
+rather than reusing one. Seven names have landed: four with the first slice, `relay_status` with
+the second, and `delete_event` and `reports_action` with the third; each later slice adds its own:
 
 | action | written by |
 |---|---|
@@ -290,6 +290,8 @@ each later slice adds its own:
 | `mcp.list_events` | a dispatched `list_events` |
 | `mcp.get_event` | a dispatched `get_event` |
 | `mcp.relay_status` | a dispatched `relay_status` (ADR 0016) |
+| `mcp.delete_event` | a dispatched `delete_event` (ADR 0017) |
+| `mcp.reports_action` | a dispatched `reports_action` (ADR 0017) |
 
 **These extend the capture's nine names; they do not replace them.** The capture's vocabulary is
 a closed nine-name union (`src/@types/admin-audit.ts:1-10`), and the rewrite's writer takes
@@ -306,8 +308,9 @@ into a field the page does not show. The cost is one more line in this record; t
 costs the column its meaning.
 
 **What each line carries.** `detail` holds `{"tool": "<name>"}`, plus `{"paths": [...]}` for
-`settings_set` (the paths requested, never a value), and `remoteAddress` is omitted because a
-stdio caller has no address (`state.rs:509-525`). The line is appended at dispatch, before the
+`settings_set` (the paths requested, never a value); `delete_event` and `reports_action` carry
+`{"tool": …}` and nothing else, so neither an id nor an action enters the file, and
+`remoteAddress` is omitted because a stdio caller has no address (`state.rs:509-525`). The line is appended at dispatch, before the
 tool's work, so the file's order is the dispatch order: `mcp.settings_set` precedes the
 `settings.updated` line the shared write path then appends, and a call the credential refuses
 appends nothing at all — matching `admin_auth_middleware.rs:52-63`, which logs a warning and

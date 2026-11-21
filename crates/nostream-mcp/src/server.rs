@@ -64,8 +64,8 @@ pub const TOOL_RELAY_STATUS: &str = "relay_status";
 pub const TOOL_DELETE_EVENT: &str = "delete_event";
 pub const TOOL_REPORTS_ACTION: &str = "reports_action";
 
-/// What a `delete_event` call did, as the payload's `outcome` (R3, R4): this call marked the
-/// row deleted.
+/// What a delete call did, as the payload's `outcome` (R3, R4): this call marked the row
+/// deleted.
 pub const OUTCOME_DELETED: &str = "deleted";
 
 /// The row already carried `deleted_at`, so the store skipped it and this call changed nothing.
@@ -305,7 +305,7 @@ pub struct GetEventArgs {
     pub id: String,
 }
 
-/// The `delete_event` arguments: one id and nothing else (R2).
+/// The delete tool's arguments: one id and nothing else (R2).
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DeleteEventArgs {
@@ -313,7 +313,7 @@ pub struct DeleteEventArgs {
     pub id: String,
 }
 
-/// The `reports_action` arguments: one report event's id and the decision to give it (R12).
+/// The report action's arguments: one report event's id and the decision to give it (R12).
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ReportsActionArgs {
@@ -603,8 +603,8 @@ next refresh, up to 30 s"
                 "id: {id:?} is not a 64-character hex id"
             )));
         }
-        let event_id =
-            EventId::try_from(id.as_str()).map_err(|error| McpError::Criterion(error.to_string()))?;
+        let event_id = EventId::try_from(id.as_str())
+            .map_err(|error| McpError::Criterion(error.to_string()))?;
         let reports = &self.state.stores().reports;
         if reports.find_by_event_id(&event_id).await?.is_empty() {
             return Ok(json!({ "reports": [], "changed": 0 }));
