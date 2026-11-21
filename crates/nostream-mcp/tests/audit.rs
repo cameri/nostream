@@ -2,7 +2,7 @@
 //!
 //! | case | what it proves |
 //! |---|---|
-//! | `each_call_appends_one_line` | four calls append five lines in call order — the four `mcp.*` lines, then `settings_set`'s own `settings.updated` |
+//! | `each_call_appends_one_line` | five calls append six lines in call order — the five `mcp.*` lines, then `settings_set`'s own `settings.updated` |
 //! | `a_refused_call_appends_nothing` | a call with bad arguments and a call with no credential each leave the file untouched |
 //! | `every_registered_tool_has_a_table_row` | the table is total over the router's own list, so no tool can execute unaudited or ungated |
 //! | `the_audit_check_is_no_stricter_than_the_router` | the table's rule is the router's deserialiser, not the schema: a stricter check would fail open |
@@ -19,7 +19,8 @@ use std::collections::BTreeSet;
 
 use common::{TestMcp, event, id_of, object, text};
 use nostream_mcp::{
-    TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET, TOOLS, audit_action,
+    TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_RELAY_STATUS, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET,
+    TOOLS, audit_action,
 };
 use serde_json::json;
 
@@ -34,6 +35,7 @@ async fn each_call_appends_one_line() {
     client.call(TOOL_SETTINGS_GET, json!({})).await;
     client.call(TOOL_LIST_EVENTS, json!({})).await;
     client.call(TOOL_GET_EVENT, json!({ "id": id })).await;
+    client.call(TOOL_RELAY_STATUS, json!({})).await;
     let written = client
         .call(
             TOOL_SETTINGS_SET,
@@ -53,6 +55,7 @@ async fn each_call_appends_one_line() {
             "mcp.settings_get",
             "mcp.list_events",
             "mcp.get_event",
+            "mcp.relay_status",
             "mcp.settings_set",
             "settings.updated",
         ],
@@ -63,6 +66,7 @@ async fn each_call_appends_one_line() {
         TOOL_SETTINGS_GET,
         TOOL_LIST_EVENTS,
         TOOL_GET_EVENT,
+        TOOL_RELAY_STATUS,
         TOOL_SETTINGS_SET,
     ]) {
         assert_eq!(entry["action"], audit_action(tool));
@@ -76,14 +80,19 @@ async fn each_call_appends_one_line() {
     }
 
     assert_eq!(
-        entries[3]["detail"]["paths"],
+        entries[3]["detail"]["tool"],
+        json!(TOOL_RELAY_STATUS),
+        "the fourth line is the status call's own: {entries:?}"
+    );
+    assert_eq!(
+        entries[4]["detail"]["paths"],
         json!(["wot.enabled"]),
         "the settings write names the paths it asked for, never the values"
     );
     assert!(
-        entries[3]["detail"].get("value").is_none(),
+        entries[4]["detail"].get("value").is_none(),
         "no value is recorded: {}",
-        entries[3]
+        entries[4]
     );
 }
 
