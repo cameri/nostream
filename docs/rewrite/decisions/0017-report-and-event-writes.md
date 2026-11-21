@@ -37,7 +37,10 @@ the MCP mode composes its own state in a process of its own.
 The tool resolves the row through **one new `EventRepository` method**, `find_stored(&EventId)` —
 an exact-id read that returns the row whether or not it is deleted and **whether or not an
 actionable report hides it**. LMDB answers it with one `get` on the events table, Postgres with one
-`SELECT ... WHERE event_id = $1`; five other implementors carry it, two of them the test commons.
+`SELECT ... WHERE event_id = $1`, and the eight other implementors carry it — the relay's and the
+services' in-memory and unavailable doubles, the admin test's `SlowEventRepository`, the door's
+`VanishingRepository` and `ZeroCountDeleter`, and the storage test's `Noop` — every one of them
+truthfully: a double that answered `None` for a row would make the hidden-event case vacuous.
 It exists because the gate has always been a read's (`lmdb/events.rs:1968-1978`'s `reported`, one
 predicate of a filter's row walk, and `postgres/sql.rs`'s equivalent): resolving the row
 through `get_event`'s gated read made `reports_action hide` followed by `delete_event` answer
