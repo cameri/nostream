@@ -18,6 +18,7 @@
 //! | `the_mode_needs_one_credential_flag` | neither flag is an error naming both, and both is an error naming both |
 //! | `an_inherited_descriptor_authenticates` | a document delivered on descriptor 3 answers `tools/list` and a read, with nothing on the command line or in the environment |
 //! | `a_caller_chosen_name_cannot_size_or_forge_the_log` | the one arm reached before any credential cuts and escapes the caller's name, so the log cannot be sized or forged by it |
+//! | `relay_status_reads_the_published_document` | a separate process answers `null` for a fact it cannot know, then the numbers a written document carries |
 //!
 //! The dialogue is hand-written JSON-RPC over the child's pipes: this target proves a property
 //! of the process, so it spawns the binary the way an MCP client does.
@@ -416,7 +417,7 @@ async fn the_mode_binds_no_socket() {
 
     assert_eq!(
         listed["result"]["tools"].as_array().map(Vec::len),
-        Some(4),
+        Some(5),
         "{listed}"
     );
     assert!(outcome.status.success(), "{}", outcome.stderr);
@@ -644,7 +645,7 @@ async fn an_inherited_descriptor_authenticates() {
 
     assert_eq!(
         listed["result"]["tools"].as_array().map(Vec::len),
-        Some(4),
+        Some(5),
         "{listed}"
     );
     assert_eq!(read["result"]["isError"], false, "{read}");
@@ -748,4 +749,69 @@ async fn a_caller_chosen_name_cannot_size_or_forge_the_log() {
         "every log line is a line, not a payload: {:?}",
         outcome.stderr.lines().max_by_key(|line| line.len())
     );
+}
+
+/// The clock reading the status document's `generatedAt` carries, formatted by the crate that
+/// writes it: the mode composes a system clock, so the document must be fresh against wall time.
+fn now_iso8601() -> String {
+    nostream_admin::state::iso8601(nostream_admin::utils::workers::system_now_ms())
+}
+
+/// AC8 — the numbers cross by the file, not by the process. The child is a separate process
+/// with no relay in it, so a connection count it reports can only have been written down by
+/// someone else — and a fact nobody wrote down is `null`, never `0`.
+#[tokio::test]
+async fn relay_status_reads_the_published_document() {
+    let prepared = Prepared::new();
+    let mut daemon = Daemon::start(&prepared, &[]);
+    daemon.initialize().await;
+
+    let before = daemon.call("relay_status", json!({})).await;
+    assert_eq!(before["result"]["isError"], false, "{before}");
+    let relay = &before["result"]["structuredContent"]["relay"];
+    assert!(
+        relay["activeConnections"].is_null(),
+        "no document: null, never 0: {before}"
+    );
+    let reason = relay["reason"].as_str().unwrap_or_default();
+    assert!(reason.contains("relay-status.json"), "{reason}");
+    assert_eq!(
+        before["result"]["structuredContent"]["version"],
+        env!("CARGO_PKG_VERSION"),
+        "{before}"
+    );
+    assert_eq!(
+        before["result"]["structuredContent"]["nip11"]["name"],
+        json!("Example"),
+        "{before}"
+    );
+
+    let document = json!({
+        "generatedAt": now_iso8601(),
+        "uptimeSeconds": 99,
+        "activeConnections": 5,
+        "workers": [{
+            "type": "maintenance",
+            "enabled": true,
+            "label": "Maintenance",
+            "monitored": true,
+            "stale": false,
+        }],
+    });
+    std::fs::write(
+        prepared.config_dir.join("relay-status.json"),
+        document.to_string(),
+    )
+    .expect("the document is written");
+
+    let after = daemon.call("relay_status", json!({})).await;
+    let outcome = daemon.finish().await;
+
+    assert_eq!(after["result"]["isError"], false, "{after}");
+    let relay = &after["result"]["structuredContent"]["relay"];
+    assert_eq!(relay["activeConnections"], json!(5), "{after}");
+    assert_eq!(relay["uptimeSeconds"], json!(99), "{after}");
+    assert!(relay["reason"].is_null(), "{after}");
+    assert_eq!(relay["workers"][0]["type"], json!("maintenance"), "{after}");
+    assert!(outcome.status.success(), "{}", outcome.stderr);
 }

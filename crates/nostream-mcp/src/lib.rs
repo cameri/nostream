@@ -1,5 +1,5 @@
-//! `nostream-mcp` owns the admin MCP server: the tool router, the four slice-1 tools, the
-//! credential and its scopes, and the audit sink.
+//! `nostream-mcp` owns the admin MCP server: the tool router, the five tools, the credential
+//! and its scopes, and the audit sink.
 //!
 //! It owns no transport and no socket. `nostreamd --mcp-stdio` serves this server on
 //! stdin/stdout through `rmcp`'s `transport-io`, in a process of its own: the mode composes its
@@ -24,8 +24,8 @@
 //!   `nostream-admin` (used here, not re-implemented);
 //! - the settings merge, validation, redaction and the guided catalogue — `nostream-config`;
 //! - the event store and the repositories — `nostream-storage`;
-//! - every tool family outside slice 1: `relay_status`, `delete_event`, `user_admin`,
-//!   `invoices_*`, `reports_*` and `maintenance_*` are later slices of #1183.
+//! - every tool family outside this surface: `delete_event`, `user_admin`, `invoices_*`,
+//!   `reports_*` and `maintenance_*` are later slices of #1183.
 
 mod credential;
 mod error;
@@ -38,6 +38,6 @@ pub use error::McpError;
 pub use server::{
     AUDIT_DENIED, AdminMcp, FORBIDDEN, GetEventArgs, ListEventsArgs, MAX_FILTER_TERMS,
     MAX_ROWS_PER_PAGE, MCP_INSTRUCTIONS, MCP_SERVER_NAME, NOT_FOUND, Requires, SettingsSetArgs,
-    TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET, TOOLS, Tool,
-    UNAUTHORIZED, arguments_parse, audit_action, required_scope,
+    TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_RELAY_STATUS, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET,
+    TOOLS, Tool, UNAUTHORIZED, arguments_parse, audit_action, required_scope,
 };

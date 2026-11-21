@@ -86,10 +86,19 @@ pub async fn serve(
     let (state, _router) =
         crate::admin_http::compose(paths, cwd.join("resources"), stores, http, fetch)?;
 
+    // R11: the composition root reads the environment and resolves the relay's key once; the
+    // server takes it as a value, so a settings failure here is a setup failure.
+    let settings = state
+        .settings()
+        .map_err(|error| DaemonError::Setup(error.to_string()))?;
+    let signing_pubkey = nostream_relay::relay_key::RelayKeySource::from_env()
+        .try_public_key(&settings.info.relay_url);
+
     let server = nostream_mcp::AdminMcp::new(
         state,
         credential,
         Implementation::new(nostream_mcp::MCP_SERVER_NAME, env!("CARGO_PKG_VERSION")),
+        signing_pubkey,
     );
 
     // The one forced line: it is what tells a reader — and AC5's first case — that the banner

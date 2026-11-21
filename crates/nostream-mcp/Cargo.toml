@@ -11,6 +11,7 @@ description = "The admin MCP server: the tool router, the credential gate and th
 nostream-admin.workspace = true
 nostream-config.workspace = true
 nostream-core.workspace = true
+nostream-relay.workspace = true
 nostream-storage.workspace = true
 rmcp.workspace = true
 serde.workspace = true

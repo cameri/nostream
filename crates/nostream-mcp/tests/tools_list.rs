@@ -18,7 +18,8 @@ mod common;
 
 use common::TestMcp;
 use nostream_mcp::{
-    MAX_ROWS_PER_PAGE, TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET,
+    MAX_ROWS_PER_PAGE, TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_RELAY_STATUS, TOOL_SETTINGS_GET,
+    TOOL_SETTINGS_SET,
 };
 use serde_json::{Value, json};
 
@@ -174,10 +175,11 @@ async fn the_required_parameters_are_typed() {
         vec![
             TOOL_GET_EVENT,
             TOOL_LIST_EVENTS,
+            TOOL_RELAY_STATUS,
             TOOL_SETTINGS_GET,
             TOOL_SETTINGS_SET
         ],
-        "the four slice-1 tools, name-sorted"
+        "the five tools, name-sorted"
     );
 }
 
@@ -212,6 +214,7 @@ async fn initialize_publishes_the_prerequisites() {
         "admin.enabled",
         "write",
         "mcp.denied",
+        TOOL_RELAY_STATUS,
     ] {
         assert!(
             instructions.contains(needle),

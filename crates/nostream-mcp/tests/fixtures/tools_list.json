@@ -88,6 +88,14 @@
       "name": "list_events"
     },
     {
+      "description": "Read the relay's status: the software version, the relay process's uptime, its live connection count and its worker rows, and the NIP-11 document it advertises. Facts only the relay process can know come from the status document it publishes; when that document is absent, unreadable or older than its freshness bound they are null, and `relay.reason` says which",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "relay_status"
+    },
+    {
       "description": "Read the merged settings document, narrowed to the defaults' keys and redacted. The document arrives under `settings`",
       "inputSchema": {
         "properties": {},

@@ -1,4 +1,4 @@
-//! The MCP server: the four tools, the credential gate and the audit sink.
+//! The MCP server: the five tools, the credential gate and the audit sink.
 //!
 //! Every tool is a thin handler over a seam that already exists — `AdminState` for the settings,
 //! `EventRepository` for the events — and nothing here knows what an HTTP status is (R3). The
@@ -14,7 +14,9 @@ use std::sync::Arc;
 use nostream_admin::AdminState;
 use nostream_admin::controllers::admin_json_body_middleware::settings_patch;
 use nostream_admin::controllers::patch_settings::{self, SettingsWrite};
-use nostream_core::{Filter, Kind};
+use nostream_admin::utils::status;
+use nostream_core::{Filter, Kind, Pubkey};
+use nostream_relay::nip11;
 use nostream_storage::repositories::{EventRecord, collect_page, collect_records};
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::tool::ToolCallContext;
@@ -44,18 +46,20 @@ pub const MCP_SERVER_NAME: &str = "nostream";
 pub const MCP_INSTRUCTIONS: &str = "\
 The nostream admin MCP server. Every call is decided by the scoped token document the mode was \
 started with — `--admin-token-file <path>` or `--admin-token-fd <n>`, exactly one, its shape \
-{\"scopes\": [\"write\"]}: the document's presence authorises `settings_get`, `list_events` and \
-`get_event`, and the \"write\" scope authorises `settings_set` (else the call is `Forbidden`). \
+{\"scopes\": [\"write\"]}: the document's presence authorises `settings_get`, `list_events`, \
+`get_event` and `relay_status`, and the \"write\" scope authorises `settings_set` (else the call \
+is `Forbidden`). \
 `admin.enabled` must be true in the settings, or every call answers `Not Found`; a document \
 that cannot be read answers `Unauthorized`. Each executed call appends one `mcp.<tool>` line to \
 `<config>/admin-audit.jsonl`, and a call the document's scopes deny appends one `mcp.denied` \
 line.";
 
-/// The tool names slice 1 registers (R5). Each is also its audit action's suffix (R9).
+/// The tool names this surface registers (R5). Each is also its audit action's suffix (R9).
 pub const TOOL_SETTINGS_GET: &str = "settings_get";
 pub const TOOL_SETTINGS_SET: &str = "settings_set";
 pub const TOOL_LIST_EVENTS: &str = "list_events";
 pub const TOOL_GET_EVENT: &str = "get_event";
+pub const TOOL_RELAY_STATUS: &str = "relay_status";
 
 /// The most `ids` or `authors` criteria one call may carry.
 ///
@@ -97,7 +101,7 @@ pub fn audit_action(tool: &str) -> String {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Requires {
     /// Reading: the grant every accepted document carries, so no scope names it and none is
-    /// asked for at dispatch. The three read tools say this in the table rather than leaving
+    /// asked for at dispatch. The four read tools say this in the table rather than leaving
     /// the column empty.
     Read,
     /// [`SCOPE_WRITE`]: the one scope a document may add, and the right to call `settings_set`.
@@ -177,6 +181,11 @@ pub const TOOLS: &[Tool] = &[
     Tool {
         name: TOOL_GET_EVENT,
         parses: get_event_parses,
+        needs: Requires::Read,
+    },
+    Tool {
+        name: TOOL_RELAY_STATUS,
+        parses: accepts_any_arguments,
         needs: Requires::Read,
     },
 ];
@@ -340,6 +349,10 @@ pub struct AdminMcp {
     /// be revoked per door, and could not be tested without racing.
     credential: Credential,
     implementation: Implementation,
+    /// The key the relay signs with, resolved once by the composition root (R11): the
+    /// environment is the root's to read, and the NIP-11 document's `self` is this value when
+    /// `info.self` does not parse.
+    signing_pubkey: Option<Pubkey>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -351,12 +364,30 @@ impl AdminMcp {
         state: Arc<AdminState>,
         credential: Credential,
         implementation: Implementation,
+        signing_pubkey: Option<Pubkey>,
     ) -> Self {
         Self {
             state,
             credential,
             implementation,
+            signing_pubkey,
             tool_router: Self::tool_router(),
+        }
+    }
+
+    /// The relay's status (R9, R10): the composition's version, the facts the daemon publishes
+    /// and the NIP-11 document this relay advertises.
+    ///
+    /// The published document is read per call. When it is absent, unreadable or past its
+    /// freshness bound, every fact only the relay process can know is `null` with a reason —
+    /// never `0`, which would read as "nothing is connected".
+    #[tool(
+        description = "Read the relay's status: the software version, the relay process's uptime, its live connection count and its worker rows, and the NIP-11 document it advertises. Facts only the relay process can know come from the status document it publishes; when that document is absent, unreadable or older than its freshness bound they are null, and `relay.reason` says which"
+    )]
+    async fn relay_status(&self) -> CallToolResult {
+        match self.status_payload() {
+            Ok(payload) => tool_ok(payload),
+            Err(error) => tool_error(&error),
         }
     }
 
@@ -423,6 +454,44 @@ impl AdminMcp {
         let filtered = nostream_config::store::filter_against_defaults(&merged, &defaults);
         let redacted = nostream_config::redaction::redact_settings_secrets(&filtered);
         Ok(serde_json::to_value(redacted)?)
+    }
+
+    /// The `relay_status` payload: `version`, the published `relay` block and `nip11` (R10).
+    ///
+    /// The document is read per call, so nothing is cached at start. A failed read is not an
+    /// error: it is the payload's `reason`, with every fact the relay process alone can know
+    /// `null`.
+    fn status_payload(&self) -> Result<Value, McpError> {
+        let settings = self.state.settings()?;
+        let nip11 = serde_json::to_value(nip11::document(
+            &settings,
+            &self.implementation.version,
+            self.signing_pubkey,
+        ))?;
+        let relay = match status::read(self.state.paths(), self.state.clock().now_ms()) {
+            Ok(published) => json!({
+                "reason": null,
+                "observedAt": published.document.generated_at,
+                "ageSeconds": published.age_seconds,
+                "uptimeSeconds": published.document.uptime_seconds,
+                "activeConnections": published.document.active_connections,
+                "workers": published.document.workers,
+            }),
+            Err(error) => json!({
+                "reason": error.reason,
+                "observedAt": null,
+                "ageSeconds": null,
+                "uptimeSeconds": null,
+                "activeConnections": null,
+                "workers": null,
+            }),
+        };
+
+        Ok(json!({
+            "version": &self.implementation.version,
+            "relay": relay,
+            "nip11": nip11,
+        }))
     }
 
     /// One page, oldest first, and whether it was full.

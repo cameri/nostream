@@ -70,7 +70,7 @@ pub fn base_settings() -> serde_yaml::Value {
 /// The scopes the fixture's token document names.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Grant {
-    /// `{"scopes": ["write"]}`: the three read tools and `settings_set`.
+    /// `{"scopes": ["write"]}`: the four read tools and `settings_set`.
     #[default]
     Write,
     /// `{"scopes": []}`: the read tools only — the door's default (R28).
@@ -261,6 +261,9 @@ impl TestMcp {
             Arc::clone(&self.state),
             credential,
             Implementation::new(MCP_SERVER_NAME, version),
+            // The in-process harness composes no relay key: the document's `self` is absent
+            // unless a case's settings name one.
+            None,
         );
         let (server_io, client_io) = tokio::io::duplex(64 * 1024);
         let handle = tokio::spawn(async move {
