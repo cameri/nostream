@@ -112,13 +112,15 @@ pub async fn publish_heartbeats(state: Arc<AdminState>, shutdown: ShutdownState)
 /// Rewrites the relay status document at start and every
 /// [`nostream_admin::utils::status::STATUS_INTERVAL`] until the drain (R6).
 ///
-/// The document is the relay process's own facts — uptime, the live connection total and the
-/// worker rows — published for the MCP door, which runs in another process. A failed assembly
+/// The document is the relay process's own facts — uptime, the live connection total, the worker
+/// rows and the key the relay signs with — published for the MCP door, which runs in another
+/// process. A failed assembly
 /// or write is one warning carrying the path and the error; the loop continues, and a full
 /// disk does not end the daemon.
 pub async fn publish_status(
     state: Arc<AdminState>,
     connections: Arc<nostream_relay::connection_cap::ConnectionCap>,
+    relay_pubkey: Option<nostream_core::Pubkey>,
     shutdown: ShutdownState,
 ) {
     let path = nostream_admin::utils::status::path(state.paths());
@@ -130,7 +132,7 @@ pub async fn publish_status(
     loop {
         let active = u64::try_from(connections.live_total()).unwrap_or(u64::MAX);
 
-        match nostream_admin::utils::status::collect(&state, active) {
+        match nostream_admin::utils::status::collect(&state, active, relay_pubkey) {
             Ok(document) => {
                 if let Err(error) = nostream_admin::utils::status::write(&path, &document) {
                     tracing::warn!(

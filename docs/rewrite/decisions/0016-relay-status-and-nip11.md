@@ -16,8 +16,11 @@ the daemon's `serve` loop starts, and the process that serves a tool call holds 
 `crates/nostreamd/src/main.rs`). Heartbeats are process memory
 (`crates/nostream-admin/src/state.rs`) and `AdminState` holds no relay handle. A payload built
 only from the MCP process would therefore report the *MCP process's* age as the relay's uptime,
-every monitored worker row as stale, and no connection total at all — three wrong facts wearing
-the relay's name, which is worse than a stub.
+every monitored worker row as stale, no connection total at all, and a NIP-11 `self` derived
+from that process's environment rather than the relay's — four wrong facts wearing the relay's
+name, which is worse than a stub. The document carries the relay's own key for the same reason it
+carries the rest: the daemon resolves it where the environment is read, and the door reports what
+the document says.
 
 **No connection total existed anywhere.** `ConnectionCap` exposed `max_per_ip`, `live(ip)`,
 `tracked_addresses()` and `refusals()`, and its map is private: the sum was not reachable from
@@ -86,10 +89,13 @@ So the seams are:
 and in `ConnectionSlot::drop` would be lock-free. The counter was rejected because it adds a
 second place that must stay in step with the map, and the total is read once every 5 s.
 
-### D3 — The document's four keys, and the console's worker rows verbatim
+### D3 — The document's five keys, and the console's worker rows verbatim
 
-`StatusDocument` is `generatedAt`, `uptimeSeconds`, `activeConnections`, `workers`, camelCase
-because `uptimeSeconds` and `activeConnections` are the console's own names. Its `workers` is
+`StatusDocument` is `generatedAt`, `uptimeSeconds`, `activeConnections`, `relayPubkey`,
+`workers`, camelCase because `uptimeSeconds` and `activeConnections` are the console's own names.
+`relayPubkey` is the relay's own x-only key — the identity `nip11.self` reports — written from
+the daemon's resolved key source and omitted when it has none, so the door never derives a key of
+its own from an environment the daemon does not share. Its `workers` is
 `Vec<nostream_admin::utils::workers::WorkerRow>` — the rows `GET /ops/workers` already serves,
 produced by `workers::rows` — so there is no second staleness judgement: a stale row reads
 `stale: true` with an old or absent `heartbeat`, and the tool adds nothing. `WorkerRow` and
@@ -111,8 +117,9 @@ enforces**.
 
 Kept, with their sources: `name`, `description`, `contact` (`Info`); `banner`, `icon`,
 `terms_of_service` when set; `pubkey` as hex (an `npub1…` decoded, as the capture does); `self`
-when resolved (`info.self` when it parses, else the signing key); `supported_nips`; `software`
-(the workspace repository, `env!("CARGO_PKG_REPOSITORY")`); `version` (the caller's);
+when resolved (`info.self` when it parses, else the published document's `relayPubkey`, absent
+when neither names one); `supported_nips`; `software` (the workspace repository,
+`env!("CARGO_PKG_REPOSITORY")`); `version` (the caller's);
 `limitation.max_message_length` (the transport's own `max_payload_size`); the five client limits
 and `max_content_length` when set and, for the client limits, non-zero (`0` means "no cap" to the
 checks that read it, and would read as "none allowed"); `min_pow_difficulty` when non-zero, at

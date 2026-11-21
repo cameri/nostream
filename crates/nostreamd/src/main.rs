@@ -237,6 +237,9 @@ async fn serve(
         Arc::clone(&service_stores.events),
     ));
     let relay_keys = RelayKeySource::from_env();
+    // The relay's identity, resolved once where the environment is read and handed to the
+    // published document: the door reports it and never derives one of its own.
+    let relay_public_key = relay_keys.try_public_key(&settings.info.relay_url);
 
     let relay = Relay::new(
         (*settings).clone(),
@@ -316,8 +319,13 @@ async fn serve(
     let status_state = Arc::clone(&admin_state);
     let status_shutdown = shutdown.clone();
     let status_task = tokio::spawn(async move {
-        nostreamd::admin_http::publish_status(status_state, status_connections, status_shutdown)
-            .await
+        nostreamd::admin_http::publish_status(
+            status_state,
+            status_connections,
+            relay_public_key,
+            status_shutdown,
+        )
+        .await
     });
 
     let workers_context = context.clone();

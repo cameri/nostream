@@ -15,7 +15,7 @@ use nostream_admin::AdminState;
 use nostream_admin::controllers::admin_json_body_middleware::settings_patch;
 use nostream_admin::controllers::patch_settings::{self, SettingsWrite};
 use nostream_admin::utils::status;
-use nostream_core::{Filter, Kind, Pubkey};
+use nostream_core::{Filter, Kind};
 use nostream_relay::nip11;
 use nostream_storage::repositories::{EventRecord, collect_page, collect_records};
 use rmcp::handler::server::router::tool::ToolRouter;
@@ -349,10 +349,6 @@ pub struct AdminMcp {
     /// be revoked per door, and could not be tested without racing.
     credential: Credential,
     implementation: Implementation,
-    /// The key the relay signs with, resolved once by the composition root (R11): the
-    /// environment is the root's to read, and the NIP-11 document's `self` is this value when
-    /// `info.self` does not parse.
-    signing_pubkey: Option<Pubkey>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -364,13 +360,11 @@ impl AdminMcp {
         state: Arc<AdminState>,
         credential: Credential,
         implementation: Implementation,
-        signing_pubkey: Option<Pubkey>,
     ) -> Self {
         Self {
             state,
             credential,
             implementation,
-            signing_pubkey,
             tool_router: Self::tool_router(),
         }
     }
@@ -460,15 +454,21 @@ impl AdminMcp {
     ///
     /// The document is read per call, so nothing is cached at start. A failed read is not an
     /// error: it is the payload's `reason`, with every fact the relay process alone can know
-    /// `null`.
+    /// `null`. `nip11.self` is one of them: it is the key the published document names, never
+    /// one this process derived from its own environment.
     fn status_payload(&self) -> Result<Value, McpError> {
         let settings = self.state.settings()?;
+        let published = status::read(self.state.paths(), self.state.clock().now_ms());
+        let signing_pubkey = published
+            .as_ref()
+            .ok()
+            .and_then(|published| published.document.relay_pubkey);
         let nip11 = serde_json::to_value(nip11::document(
             &settings,
             &self.implementation.version,
-            self.signing_pubkey,
+            signing_pubkey,
         ))?;
-        let relay = match status::read(self.state.paths(), self.state.clock().now_ms()) {
+        let relay = match published {
             Ok(published) => json!({
                 "reason": null,
                 "observedAt": published.document.generated_at,

@@ -11,6 +11,7 @@
 //! | `the_document_is_read_at_call_time` | nothing is cached at start |
 //! | `every_call_appends_its_dispatch_line` | one `mcp.relay_status` line, written before the handler |
 //! | `a_read_only_document_can_read_the_status` | the row is `Requires::Read` |
+//! | `self_follows_the_documents_identity_and_not_the_process` | `nip11.self` is the published key, re-read per call |
 //!
 //! The harness clock is [`NOW_MS`], so a document generated at that instant is `ageSeconds: 0`.
 
@@ -36,19 +37,27 @@ const PUBLISHED: [&str; 5] = [
     "workers",
 ];
 
+/// The identity a daemon with a key source publishes, and one no daemon has.
+const RELAY_PUBKEY: &str = "0707070707070707070707070707070707070707070707070707070707070707";
+const OTHER_PUBKEY: &str = "0808080808080808080808080808080808080808080808080808080808080808";
+
 fn write_document(
     config_dir: &Path,
     generated_at: &str,
     uptime_seconds: u64,
     active_connections: u64,
+    relay_pubkey: Option<&str>,
     workers: Value,
 ) {
-    let document = json!({
+    let mut document = json!({
         "generatedAt": generated_at,
         "uptimeSeconds": uptime_seconds,
         "activeConnections": active_connections,
         "workers": workers,
     });
+    if let Some(pubkey) = relay_pubkey {
+        document["relayPubkey"] = json!(pubkey);
+    }
 
     std::fs::write(config_dir.join("relay-status.json"), document.to_string())
         .expect("the document is written");
@@ -72,6 +81,7 @@ async fn a_published_document_is_reported() {
         GENERATED_AT,
         4_242,
         7,
+        Some(RELAY_PUBKEY),
         maintenance_row(),
     );
     let client = fixture.client().await;
@@ -86,6 +96,45 @@ async fn a_published_document_is_reported() {
     assert_eq!(payload["relay"]["observedAt"], json!(GENERATED_AT));
     assert_eq!(payload["relay"]["ageSeconds"], json!(0));
     assert_eq!(payload["relay"]["workers"][0]["type"], json!("maintenance"));
+    assert_eq!(
+        payload["nip11"]["self"],
+        json!(RELAY_PUBKEY),
+        "the identity the document names, not one this process derived: {payload}"
+    );
+}
+
+/// The payload's `self` is the published document's, and it moves when the document does: a
+/// process deriving its own key would answer the same value twice.
+#[tokio::test]
+async fn self_follows_the_documents_identity_and_not_the_process() {
+    let fixture = TestMcp::start().await;
+    write_document(
+        &fixture.config_dir,
+        GENERATED_AT,
+        1,
+        1,
+        Some(RELAY_PUBKEY),
+        maintenance_row(),
+    );
+    let client = fixture.client().await;
+
+    let first = payload(&client.call(TOOL_RELAY_STATUS, json!({})).await);
+    assert_eq!(first["nip11"]["self"], json!(RELAY_PUBKEY), "{first}");
+
+    write_document(
+        &fixture.config_dir,
+        GENERATED_AT,
+        1,
+        1,
+        Some(OTHER_PUBKEY),
+        maintenance_row(),
+    );
+    let second = payload(&client.call(TOOL_RELAY_STATUS, json!({})).await);
+    assert_eq!(
+        second["nip11"]["self"],
+        json!(OTHER_PUBKEY),
+        "read at call time, like the rest of the document: {second}"
+    );
 }
 
 #[tokio::test]
@@ -110,6 +159,11 @@ async fn no_document_reports_nothing_but_the_version_and_the_document() {
     assert!(reason.contains("relay-status.json"), "{reason}");
     assert_eq!(payload["version"], json!(env!("CARGO_PKG_VERSION")));
     assert_eq!(payload["nip11"]["name"], json!("Example"));
+    assert_eq!(
+        payload["nip11"].get("self"),
+        None,
+        "no document names no identity, and this process derives none of its own: {payload}"
+    );
 }
 
 #[tokio::test]
@@ -120,6 +174,7 @@ async fn a_stale_document_is_not_a_current_one() {
         GENERATED_AT,
         4_242,
         7,
+        Some(RELAY_PUBKEY),
         maintenance_row(),
     );
     fixture.clock.advance(31_000);
@@ -166,7 +221,7 @@ async fn a_corrupt_document_is_reported_not_guessed() {
 #[tokio::test]
 async fn a_zero_from_the_document_is_a_number() {
     let fixture = TestMcp::start().await;
-    write_document(&fixture.config_dir, GENERATED_AT, 0, 0, json!([]));
+    write_document(&fixture.config_dir, GENERATED_AT, 0, 0, None, json!([]));
     let client = fixture.client().await;
 
     let result = client.call(TOOL_RELAY_STATUS, json!({})).await;
@@ -195,6 +250,7 @@ async fn the_document_is_read_at_call_time() {
         GENERATED_AT,
         4_242,
         7,
+        Some(RELAY_PUBKEY),
         maintenance_row(),
     );
 

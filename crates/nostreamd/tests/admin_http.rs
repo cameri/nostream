@@ -282,9 +282,21 @@ async fn the_daemon_publishes_its_status_document() {
             "generatedAt",
             "uptimeSeconds",
             "activeConnections",
+            "relayPubkey",
             "workers"
         ]),
-        "the document's four keys: {document}"
+        "the document's five keys: {document}"
+    );
+    // The relay's own identity, so the door reports the key this process signs with.
+    let relay_pubkey = document["relayPubkey"]
+        .as_str()
+        .expect("the document names the relay's key");
+    assert_eq!(relay_pubkey.len(), 64, "{relay_pubkey}");
+    assert!(
+        relay_pubkey
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f')),
+        "x-only hex: {relay_pubkey}"
     );
     assert_eq!(
         document["activeConnections"],

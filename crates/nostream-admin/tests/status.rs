@@ -1,8 +1,9 @@
-//! AC6 — the relay status document's assembly, its atomic write and its three reasons.
+//! AC6 — the relay status document's assembly, its atomic write and its reasons.
 //!
 //! | case | what it proves |
 //! |---|---|
-//! | `the_document_carries_the_daemons_three_facts` | uptime, the connection count passed in, and the console's own worker rows |
+//! | `the_document_carries_the_daemons_four_facts` | uptime, the connection count and the identity passed in, and the console's own worker rows |
+//! | `a_daemon_without_a_key_publishes_no_identity` | no key source: no `relayPubkey` key at all |
 //! | `a_written_document_reads_back` | the round trip at one instant, and no `.tmp` left behind |
 //! | `a_document_at_the_bound_is_fresh_and_one_past_it_is_not` | 30 s is fresh, 31 s is not |
 //! | `a_missing_document_is_a_reason` | absent: a reason naming the file |
@@ -19,14 +20,19 @@ use nostream_admin::state::iso8601;
 use nostream_admin::utils::status::{self, STATUS_TTL_SECONDS, StatusDocument};
 use nostream_admin::utils::workers::{self, WorkerRow};
 use nostream_config::SettingsPaths;
-use nostream_core::Clock;
+use nostream_core::{Clock, Pubkey};
+
+/// The identity a daemon with a key source would publish.
+fn relay_pubkey() -> Pubkey {
+    Pubkey::from_byte_array([7; 32])
+}
 
 #[tokio::test]
-async fn the_document_carries_the_daemons_three_facts() {
+async fn the_document_carries_the_daemons_four_facts() {
     let server = TestServer::start().await;
     server.clock.advance(60_000);
 
-    let document = status::collect(&server.state, 7).expect("a document");
+    let document = status::collect(&server.state, 7, Some(relay_pubkey())).expect("a document");
     let settings = server.state.settings().expect("the fixture settings");
 
     assert_eq!(document.uptime_seconds, 60, "the state's own age");
@@ -37,12 +43,29 @@ async fn the_document_carries_the_daemons_three_facts() {
         "the console's rows, row for row"
     );
     assert_eq!(document.generated_at, iso8601(server.clock.now_ms()));
+    assert_eq!(
+        document.relay_pubkey,
+        Some(relay_pubkey()),
+        "the identity the caller resolved"
+    );
+}
+
+/// A daemon with no key source writes no `relayPubkey`, so the reader cannot mistake a key the
+/// relay does not have for one it signs with.
+#[tokio::test]
+async fn a_daemon_without_a_key_publishes_no_identity() {
+    let server = TestServer::start().await;
+    let document = status::collect(&server.state, 0, None).expect("a document");
+
+    assert_eq!(document.relay_pubkey, None);
+    let value = serde_json::to_value(&document).expect("a document");
+    assert!(value.get("relayPubkey").is_none(), "{value}");
 }
 
 #[tokio::test]
 async fn a_written_document_reads_back() {
     let server = TestServer::start().await;
-    let document = status::collect(&server.state, 3).expect("a document");
+    let document = status::collect(&server.state, 3, Some(relay_pubkey())).expect("a document");
     let path = status::path(server.state.paths());
 
     status::write(&path, &document).expect("a write");
@@ -70,7 +93,7 @@ async fn a_written_document_reads_back() {
 #[tokio::test]
 async fn a_document_at_the_bound_is_fresh_and_one_past_it_is_not() {
     let server = TestServer::start().await;
-    let document = status::collect(&server.state, 0).expect("a document");
+    let document = status::collect(&server.state, 0, None).expect("a document");
     status::write(&status::path(server.state.paths()), &document).expect("a write");
 
     let at_the_bound = NOW_MS + STATUS_TTL_SECONDS * 1_000;
@@ -143,6 +166,7 @@ async fn a_missing_config_directory_is_created() {
         generated_at: iso8601(NOW_MS),
         uptime_seconds: 1,
         active_connections: 2,
+        relay_pubkey: Some(relay_pubkey()),
         workers: Vec::new(),
     };
 
@@ -163,6 +187,7 @@ fn document_with_workers(rows: usize) -> StatusDocument {
         generated_at: iso8601(NOW_MS),
         uptime_seconds: 1,
         active_connections: 2,
+        relay_pubkey: None,
         workers: (0..rows)
             .map(|index| WorkerRow {
                 worker_type: "worker".to_owned(),

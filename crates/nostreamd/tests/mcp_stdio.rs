@@ -403,6 +403,77 @@ async fn settings_get_answers_redacted_over_stdio() {
     assert!(outcome.status.success(), "{}", outcome.stderr);
 }
 
+/// The relay's identity is the document's, not this process's: the door started with a
+/// `RELAY_PRIVATE_KEY` of its own still reports the key the daemon published, and with no
+/// document at all it reports none. A door that derived the key from its environment would
+/// answer a key the relay never signs with — the wrong fact ADR 0016 D1 rejects.
+#[tokio::test]
+async fn the_identity_is_the_documents_not_the_processes() {
+    // The daemon's key, and one this process holds in its own environment.
+    let published = "11".repeat(32);
+    let ambient_secret = "22".repeat(32);
+    let prepared = Prepared::new();
+    // Fresh to the system clock the spawned mode reads, so the document is a fact.
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+        .try_into()
+        .unwrap();
+    std::fs::write(
+        prepared.config_dir.join("relay-status.json"),
+        json!({
+            "generatedAt": nostream_admin::state::iso8601(now_ms),
+            "uptimeSeconds": 1,
+            "activeConnections": 0,
+            "relayPubkey": published,
+            "workers": [],
+        })
+        .to_string(),
+    )
+    .expect("a published document");
+
+    let mut command = base_command();
+    command
+        .args(prepared.arguments(&[]))
+        .env("RELAY_PRIVATE_KEY", &ambient_secret);
+    let mut daemon = Daemon::spawn(command);
+    daemon.initialize().await;
+    let response = daemon.call("relay_status", json!({})).await;
+    let outcome = daemon.finish().await;
+
+    let payload = &response["result"]["structuredContent"];
+    assert_eq!(
+        payload["nip11"]["self"], published,
+        "the document's key, not the ambient one: {response}"
+    );
+    assert!(
+        !outcome.stderr.contains(&ambient_secret),
+        "the ambient secret is never reported: {}",
+        outcome.stderr
+    );
+    assert!(outcome.status.success(), "{}", outcome.stderr);
+
+    // No document: no identity, and the reason says which file is missing.
+    let prepared = Prepared::new();
+    let mut daemon = Daemon::start(&prepared, &[]);
+    daemon.initialize().await;
+    let response = daemon.call("relay_status", json!({})).await;
+    let outcome = daemon.finish().await;
+
+    let payload = &response["result"]["structuredContent"];
+    assert_eq!(
+        payload["nip11"].get("self"),
+        None,
+        "no document names no identity: {response}"
+    );
+    let reason = payload["relay"]["reason"]
+        .as_str()
+        .expect("the payload says why");
+    assert!(reason.contains("relay-status.json"), "{reason}");
+    assert!(outcome.status.success(), "{}", outcome.stderr);
+}
+
 #[tokio::test]
 async fn the_mode_binds_no_socket() {
     // Held open for the whole dialogue: the child never binds it.

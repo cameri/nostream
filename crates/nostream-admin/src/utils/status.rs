@@ -1,16 +1,19 @@
 //! The relay status document: the daemon publishes it, the MCP door reads it (ADR 0016 D1).
 //!
 //! It is the one artifact carrying the relay process's own facts — its uptime, its live
-//! connection count and its worker rows — to a process that hosts no relay: heartbeats are
-//! process memory and `AdminState` holds no `Relay` handle, so a tool answering from its own
-//! process would report a running relay as idle. The daemon is its only writer and the MCP
-//! door its only reader, which is not ADR 0014 D18's second-writer hazard — that is about
-//! `admin-audit.jsonl` and the settings write, and neither is this file.
+//! connection count, its worker rows and the key it signs with — to a process that hosts no
+//! relay: heartbeats are process memory and `AdminState` holds no `Relay` handle, so a tool
+//! answering from its own process would report a running relay as idle, and one deriving the
+//! identity from its own environment would report a key the relay never signs with. The daemon
+//! is its only writer and the MCP door its only reader, which is not ADR 0014 D18's
+//! second-writer hazard — that is about `admin-audit.jsonl` and the settings write, and neither
+//! is this file.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use nostream_config::SettingsPaths;
+use nostream_core::Pubkey;
 use serde::{Deserialize, Serialize};
 
 use crate::error::AdminError;
@@ -28,13 +31,18 @@ pub const STATUS_INTERVAL: Duration = Duration::from_millis(5_000);
 /// How old a document may be and still be reported: 30 s is fresh, 31 s is not.
 pub const STATUS_TTL_SECONDS: u64 = 30;
 
-/// The document's four keys, camelCase like the console's own `uptimeSeconds`.
+/// The document's keys, camelCase like the console's own `uptimeSeconds`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatusDocument {
     pub generated_at: String,
     pub uptime_seconds: u64,
     pub active_connections: u64,
+    /// The key the relay signs with, resolved by the daemon where the environment is read, so
+    /// the MCP door reads the relay's identity here instead of deriving one of its own. Omitted
+    /// when the daemon has no key source.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relay_pubkey: Option<Pubkey>,
     pub workers: Vec<WorkerRow>,
 }
 
@@ -58,14 +66,19 @@ pub fn path(paths: &SettingsPaths) -> PathBuf {
 }
 
 /// Assembles the document from the implementations that already exist and nothing else: the
-/// state's own uptime, its clock, and the console's worker rows.
-pub fn collect(state: &AdminState, active_connections: u64) -> Result<StatusDocument, AdminError> {
+/// state's own uptime, its clock, the console's worker rows and the identity the caller resolved.
+pub fn collect(
+    state: &AdminState,
+    active_connections: u64,
+    relay_pubkey: Option<Pubkey>,
+) -> Result<StatusDocument, AdminError> {
     let settings = state.settings()?;
 
     Ok(StatusDocument {
         generated_at: iso8601(state.clock().now_ms()),
         uptime_seconds: state.uptime_seconds(),
         active_connections,
+        relay_pubkey,
         workers: workers::rows(state, &settings),
     })
 }

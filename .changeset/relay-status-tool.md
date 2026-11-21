@@ -10,7 +10,9 @@ the relay process can know are not invented by the answering process — `nostre
 and a rename so no reader sees a half-written document) and the tool reads it per call. When the
 document is absent, unreadable or older than the bound those values are `null` with a reason
 naming the file, never `0`: a zero would read as "nothing is connected". `ConnectionCap` gains
-`live_total()`, the socket count the document carries.
+`live_total()`, the socket count the document carries. The document also carries `relayPubkey`,
+the key the daemon signs with, so the tool's NIP-11 `self` is the relay's identity rather than one
+the answering process derived from its own environment.
 
 The NIP-11 document is built by `nostream_relay::nip11` from the settings, and every key's
 presence is decided there: `supported_nip_extensions`, `supported_mips`, `payments_url`,
