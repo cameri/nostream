@@ -146,7 +146,10 @@ async fn a_missing_config_directory_is_created() {
         workers: Vec::new(),
     };
 
-    assert!(!config_dir.exists(), "the fixture starts without a config dir");
+    assert!(
+        !config_dir.exists(),
+        "the fixture starts without a config dir"
+    );
     status::write(&status::path(&paths), &document).expect("the write creates the directory");
 
     assert!(config_dir.is_dir(), "the write created the config dir");
@@ -202,8 +205,9 @@ fn a_racing_reader_never_sees_a_partial_document() {
 
     let mut reads = 0;
     while !writer.is_finished() {
-        let published = status::read(&paths, NOW_MS)
-            .unwrap_or_else(|error| panic!("a read failed during a concurrent write: {}", error.reason));
+        let published = status::read(&paths, NOW_MS).unwrap_or_else(|error| {
+            panic!("a read failed during a concurrent write: {}", error.reason)
+        });
         assert!(
             published.document == large || published.document == small,
             "a read carried a whole document, not a partial one: {} workers",
