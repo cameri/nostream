@@ -15,8 +15,13 @@
 //! - `src/services/event-import-service.ts` and `src/import-events.ts`'s parser
 //! - `src/@types/{services,dvm}.ts`
 //! - `src/utils/{invoice,nip05,secret,transform}.ts`'s payment-related surface
+//! - `src/cli/utils/{process,docker,bootstrap}.ts`'s **spawning** only: the seam every caller
+//!   goes through (`process::{run,capture}`, five failure classes, a caller-owned runtime). The
+//!   CLI's own command logic stays in `nostream-cli`; this crate only starts the child
+//!   (ADR 0015, D11)
 //!
-//! **Implemented here:** the supervisor (`scheduler`) and its two workers (`workers`), the
+//! **Implemented here:** the spawn seam the operator CLI and the compose paths drive
+//! (`process`), the supervisor (`scheduler`) and its two workers (`workers`), the
 //! payments trait with all seven processors and the invoice lifecycle (`payments`,
 //! `invoice`, `services::payments_service`), the notification outbox, dispatcher and four
 //! channels, the retention step, the web-of-trust graph, the Tor control-port client and its
@@ -34,6 +39,7 @@ pub mod http;
 pub mod invoice;
 pub mod monitor;
 pub mod payments;
+pub mod process;
 pub mod scheduler;
 pub mod services;
 pub mod testing;

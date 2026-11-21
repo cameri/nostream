@@ -43,15 +43,19 @@ pub enum ParsedArgs {
     Run { file: PathBuf, batch_size: u64 },
 }
 
-/// `--help` as clap renders it for this subcommand.
+/// `--help` as clap renders it for this subcommand. The program name is `nostream`, as on every
+/// other page (R4): `nostream-cli` is the binary's file name only.
 #[derive(Debug, clap::Parser)]
 #[command(
-    name = "nostream-cli import",
+    name = "nostream import",
     about = "Import events from a .jsonl or .json file"
 )]
 struct ImportHelp {
     /// The .jsonl or .json file to import.
     file: Option<PathBuf>,
+    /// Path to .jsonl/.json file.
+    #[arg(long = "file", value_name = "file")]
+    file_option: Option<PathBuf>,
     /// Events per insert batch.
     #[arg(long, value_name = "N")]
     batch_size: Option<u64>,
@@ -80,6 +84,31 @@ pub fn parse_args(args: &[String]) -> Result<ParsedArgs, CliError> {
 
     while index < args.len() {
         let arg = &args[index];
+
+        if arg == "--file" {
+            let Some(value) = args.get(index + 1) else {
+                return Err(CliError::Import("Missing value for --file".to_owned()));
+            };
+            if file.is_some() {
+                return Err(CliError::Import(format!(
+                    "Unexpected extra argument: {value}"
+                )));
+            }
+            file = Some(PathBuf::from(value));
+            index += 2;
+            continue;
+        }
+
+        if let Some(value) = arg.strip_prefix("--file=") {
+            if file.is_some() {
+                return Err(CliError::Import(format!(
+                    "Unexpected extra argument: {value}"
+                )));
+            }
+            file = Some(PathBuf::from(value));
+            index += 1;
+            continue;
+        }
 
         if arg == "--batch-size" {
             let Some(value) = args.get(index + 1) else {
@@ -167,12 +196,22 @@ pub fn validate_input(cwd: &Path, file: &Path) -> Result<(PathBuf, ImportFormat)
     }
 }
 
-/// `runImportEvents` over the process's Postgres backend.
+/// `runImportEvents` over Postgres, through the one assembly the workspace has
+/// (`PostgresBackend::from_lookup`) and the CLI's own environment, so a `DB_*` value in `.env`
+/// is configured for `import` exactly as it is for every other store command.
+///
+/// Import is Postgres-only and does not take the settings' `eventStore.backend`: it is the
+/// command that fills a relay's database, and the capture's own has no LMDB route.
 ///
 /// `out` is the stream `main` owns and hands down. Help lines still come back through
 /// [`CommandOutput`], because they exist before the import starts and `main` prints them like
 /// every other command's.
-pub fn run(args: &[String], cwd: &Path, out: &mut dyn Write) -> Result<CommandOutput, CliError> {
+pub fn run(
+    args: &[String],
+    cwd: &Path,
+    env: &crate::env_file::Environment,
+    out: &mut dyn Write,
+) -> Result<CommandOutput, CliError> {
     let parsed = parse_args(args)?;
 
     let ParsedArgs::Run { file, batch_size } = parsed else {
@@ -190,7 +229,7 @@ pub fn run(args: &[String], cwd: &Path, out: &mut dyn Write) -> Result<CommandOu
         .map_err(|error| CliError::Config(format!("tokio runtime: {error}")))?;
 
     runtime.block_on(async move {
-        let backend = nostream_storage::PostgresBackend::from_env()
+        let backend = nostream_storage::PostgresBackend::from_lookup(&|key: &str| env.get(key))
             .await
             .map_err(|error| CliError::Import(error.to_string()))?;
         let persister: Arc<dyn EventBatchPersister> =

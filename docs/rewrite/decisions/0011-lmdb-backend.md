@@ -130,6 +130,11 @@ seam performs is atomic across every database it touches. What it leaves **unmea
 atomicity *across repository calls* — a caller that needs two writes to succeed or fail
 together has no form for it here. `PostgresTransaction` and `begin()` are untouched.
 
+The one place the seam commits **more than one** write transaction on purpose is the clean-up
+delete, which takes a batch at a time so the single writer is not held for a whole store's run.
+That shape, the measured curve behind `CLEAN_BATCH_ROWS` and the price it pays in written bytes
+are ADR 0015's D13.
+
 This resolves nothing about ADR 0003 trigger 2 (a second backend needs a transaction
 abstraction) except the shape a future one must take: a held LMDB transaction cannot satisfy
 it, so the abstraction has to be closure-shaped — `with_write_txn(|tx| …)` — with the

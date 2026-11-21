@@ -14,10 +14,12 @@ aes = "0.8"
 anyhow = "1"
 axum = "0.8"
 base64 = "0.22.1"
+bech32 = "0.11"
 cbc = { version = "0.1", features = ["alloc", "block-padding"] }
 chacha20 = "0.10.2"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
 clap = { version = "4", features = ["derive"] }
+flate2 = "1"
 futures-core = "0.3"
 futures-util = "0.3"
 getrandom = "0.3"
@@ -58,6 +60,7 @@ tracing-opentelemetry = "0.34"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 url = "2"
 uuid = { version = "1", features = ["v4"] }
+xz2 = "0.1"
 
 # Nothing reads debug info here. The 66 integration-test binaries this workspace links are
 # 81% DWARF — one measured 236 MB unstripped against 45 MB stripped, and `.debug_str` alone

@@ -278,7 +278,7 @@ jobs:
       - name: Storage parity against Postgres
         env:
           PARITY_ADMIN_URL: postgres://postgres:postgres@localhost:5432/postgres
-        run: cargo test -p nostream-storage --test migrations --test parity --test migration_pg -- --ignored --test-threads=1
+        run: cargo test -p nostream-storage --test migrations --test parity --test migration_pg --test clean_up -- --ignored --test-threads=1
       # The benchmark rig's Postgres column: the same workload and the same `--verify` the LMDB
       # arm runs, against the scratch database it drops and recreates. The dev profile is
       # deliberate — this proves the path and the counts, and its timings are cited nowhere.
@@ -313,6 +313,8 @@ jobs:
         run: cargo build -p nostream-cli --no-default-features
       - name: CLI refuses the migration on Windows
         run: cargo test -p nostream-cli --no-default-features --test migrate_cli_unsupported
+      - name: CLI surface on Windows
+        run: cargo test -p nostream-cli --no-default-features --test cli_surface_windows
 
   changeset-check:
     name: Changeset Required

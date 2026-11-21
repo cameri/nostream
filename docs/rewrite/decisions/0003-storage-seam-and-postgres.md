@@ -108,7 +108,8 @@ knex schema, so a different index definition fails.
 
 ## Session time zone — UTC on every connection
 
-Every constructor (`from_env`, `connect`, `connect_lazy`) sets `timezone=UTC`, so
+Every constructor (`from_lookup`, its copy-side arm `master_only_from_env`, `connect_lazy`) sets
+`timezone=UTC` through the one `utc` wrapper in `postgres/mod.rs`, so
 `timestamp` columns round-trip deterministically and the capture's server-default
 assumption holds. The capture's generator must run with `TZ=UTC` as well:
 `node-postgres` parses a `timestamp without time zone` column in the process's local

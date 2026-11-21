@@ -140,7 +140,8 @@ it is honest and the run starts one.
 ## The command surface (D6)
 
 The source is named before it is dialled. With nothing configured, `PostgresBackend::from_env`
-falls back to `postgres@localhost:5432/postgres`, so the run refuses at once and names `DB_URI`
+— deleted by the CLI port, its defaults now inherited by `from_lookup` — fell back to
+`postgres@localhost:5432/postgres`, so the run refuses at once and names `DB_URI`
 and the `DB_*` parts rather than copying whatever a local server happens to hold; a source that
 cannot be reached is reported as the database it could not read — host and database, password
 dropped — instead of as the pool's acquire timeout a minute later.

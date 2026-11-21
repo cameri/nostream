@@ -103,7 +103,7 @@ resolver 3:
 | `nostream-relay` | connections, wire protocol, handlers, rate limiters, live dispatch, NIP-77 engine (the acceptor lives in `nostreamd`) |
 | `nostream-services` | payment processors and the invoice lifecycle, operator notifications, the web-of-trust graph, Tor, the scheduler and its workers, event import, NIP-66 monitors (#865) |
 | `nostream-admin` | admin API and auth |
-| `nostream-cli` | operator command line (`nostream-cli config validate`, `nostream-cli import`, `nostream-cli migrate pg-to-lmdb`) |
+| `nostream-cli` | operator command line: `start`, `stop`, `update`, `clean`, `info`, `seed`, `invite`, `setup`, `export`, `clean-db`, `import`, `config`, `migrate pg-to-lmdb`, `tui` (stub) |
 | `nostreamd` | the daemon binary: runtime, telemetry, signals, the services composition root and the worker supervisor |
 
 - Every crate manifest repeats `version.workspace = true`, `edition.workspace = true`,
@@ -115,9 +115,11 @@ resolver 3:
   bump; do not add one.
 - `nostream-services` is the only crate that opens sockets and child processes:
   `reqwest` (`default-features = false` with `rustls-tls`, so no new TLS stack) behind the
-  `HttpClient` seam, and tokio's `process`/`fs` for the DVM worker pipes and the onion key
-  file. Nothing else may take those features. The branch's other third-party additions are
-  `aes` and `cbc`, in `nostream-core`, for the NIP-04 body NIP-47 encrypts (ADR 0010, A23).
+  `HttpClient` seam, and tokio's `process`/`fs` for the DVM worker pipes, the onion key file
+  and the operator CLI's spawn seam (ADR 0015, D11). Nothing else may take those features.
+  The branch's other third-party additions are `aes` and `cbc`, in `nostream-core`, for the
+  NIP-04 body NIP-47 encrypts (ADR 0010, A23); `bech32` in `nostream-core` for NIP-19 `npub`
+  decoding; and `flate2` and `xz2` in `nostream-cli` for `export`'s two codecs (ADR 0015, D6).
 - Each crate's `lib.rs` doc comment names the TypeScript paths it owns at the capture
   commit, and separately names what it deliberately does **not** own. Preserve both: a
   reader must be able to tell an omission from a gap.

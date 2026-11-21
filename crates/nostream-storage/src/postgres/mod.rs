@@ -101,12 +101,6 @@ impl Default for PoolBounds {
 }
 
 impl PostgresBackend {
-    /// Connects a master pool and, when `READ_REPLICA_ENABLED=true`, the replica pool this
-    /// worker reads from. Both pools use the capture's `DB_*` names and defaults.
-    pub async fn from_env() -> Result<Self, StorageError> {
-        Self::from_lookup(&|name| env::var(name).ok()).await
-    }
-
     /// Connects the master pool from `url`; with no replica configured the reader is the
     /// master pool itself (`src/database/client.ts:97-100`). The harness and the tests use
     /// this.
@@ -115,8 +109,10 @@ impl PostgresBackend {
         Self::with_pools(utc(options), PoolBounds::default(), None).await
     }
 
-    /// Builds the backend without dialling. The dyn-compatibility test and the migration
-    /// target use it, because neither needs a live connection to prove the trait objects.
+    /// Builds the backend without dialling, from a complete URL. Three tests use it — the
+    /// dyn-compatibility one, which needs an object of this type rather than a live connection
+    /// to prove the trait objects, among them. Nothing in production does: the migration's
+    /// target is `LmdbBackend` (`lmdb/migration.rs:21`), not this type.
     pub fn connect_lazy(url: &str) -> Result<Self, StorageError> {
         let options = url.parse::<PgConnectOptions>()?;
         let master = lazy_pool(utc(options), &PoolBounds::default());
@@ -196,7 +192,19 @@ impl PostgresBackend {
         Gates { nip50, nip56 }
     }
 
-    async fn from_lookup<F>(lookup: &F) -> Result<Self, StorageError>
+    /// Connects the master pool, and the replica pool when `READ_REPLICA_ENABLED=true`, from a
+    /// settings lookup: the one assembly of a Postgres connection the workspace has. It builds
+    /// `PgConnectOptions` field by field from `master_parts`/`replica_parts` — no URL is
+    /// composed and no value is encoded, because nothing is parsed back out. The caller owns the
+    /// lookup, so a deployment's `.env` layer is reachable: the CLI passes its own environment's
+    /// `get`. One parse, `master_options`, serves three doors with one policy each:
+    /// `from_lookup` dials the master and, when enabled, the replica; `master_only_from_env`/
+    /// `master_only_from_lookup` is the copy's door, which reads no replica setting and dials
+    /// nothing; and `probe_master_from_env` makes one direct attempt inside its budget, so a
+    /// refused port is answered rather than masked by a pool timeout. `connect_lazy` is the
+    /// fourth entry and not one of these: it takes a complete URL, dials nothing, and has no
+    /// production caller — the tests that build an object without a live server use it.
+    pub async fn from_lookup<F>(lookup: &F) -> Result<Self, StorageError>
     where
         F: Fn(&str) -> Option<String> + Sync,
     {
@@ -220,10 +228,10 @@ impl PostgresBackend {
     /// reachable.
     ///
     /// The migration copies from the master and nothing else, so a replica that is offline
-    /// during a cutover must not be able to stop it: `from_env` dials both and fails when the
-    /// replica is down, which is right for the relay and wrong for a one-shot copy. The copy's
-    /// own probe is what waits for the source, and `MIGRATION_CONNECT_CAP_MS` is the default
-    /// it waits with.
+    /// during a cutover must not be able to stop it: `from_lookup` dials both when the replica
+    /// is enabled and fails when it is down, which is right for the relay and wrong for a
+    /// one-shot copy. The copy's own probe is what waits for the source, and
+    /// `MIGRATION_CONNECT_CAP_MS` is the default it waits with.
     pub fn master_only_from_env() -> Result<Self, StorageError> {
         Self::master_only_from_lookup(&|name| env::var(name).ok())
     }

@@ -21,13 +21,14 @@ use nostream_config::settings::Settings;
 use nostream_core::clock::Clock;
 use nostream_core::nip05::{FetchOutcome, Nip05Fetch};
 use nostream_core::{Event, EventId, Filter, Kind, Pubkey, Secret};
+use nostream_storage::StorageError;
 use nostream_storage::repositories::{
     DeliveryLogEntry, DeliveryLogFilters, DvmJob, DvmJobRepository, DvmJobStatus, DvmJobUpdate,
-    EventPurgeCounts, EventRecord, EventRepository, EventRetentionOptions, FieldUpdate, Invoice,
-    InvoiceRepository, InvoiceStatus, NewDeliveryLogEntry, Nip05Verification,
+    EventCleanCriteria, EventPurgeCounts, EventRecord, EventRepository, EventRetentionOptions,
+    FieldUpdate, Invoice, InvoiceRepository, InvoiceStatus, NewDeliveryLogEntry, Nip05Verification,
     Nip05VerificationRepository, NotificationDeliveryLogRepository, NotificationOutboxRepository,
-    OutboxMessage, OutboxPayload, QueryStream, ReconciliationItem, StorageFuture, StreamedEvent,
-    User, UserPatch, UserRepository,
+    OutboxMessage, OutboxPayload, QueryStream, ReconciliationItem, ScanCursor, StorageFuture,
+    StreamedEvent, User, UserPatch, UserRepository,
 };
 
 use crate::error::ServicesError;
@@ -432,6 +433,18 @@ impl InMemoryEventRepository {
     }
 }
 
+/// Whether one row is in a clean-up predicate's selection: `created_at < before` when set, and a
+/// kind in `kinds` when set. A soft-deleted row is selected, as the capture's `DELETE` is.
+fn selects(record: &EventRecord, criteria: &EventCleanCriteria) -> bool {
+    criteria
+        .before
+        .is_none_or(|before| record.event.created_at < before)
+        && criteria
+            .kinds
+            .as_ref()
+            .is_none_or(|kinds| kinds.contains(&record.event.kind))
+}
+
 fn matches_filter(record: &EventRecord, filter: &Filter) -> bool {
     if let Some(ids) = &filter.ids
         && !ids.iter().any(|id| *id == record.event.id.to_string())
@@ -630,6 +643,75 @@ impl EventRepository for InMemoryEventRepository {
                 .push(options.clone());
 
             Ok(EventPurgeCounts::default())
+        })
+    }
+
+    /// The double's live rows, oldest first: a soft-deleted or expired row is hidden, as both
+    /// shipped backends hide it.
+    fn scan_live<'a>(
+        &'a self,
+        after: Option<ScanCursor>,
+        limit: u64,
+    ) -> StorageFuture<'a, QueryStream<'a, EventRecord>> {
+        Box::pin(async move {
+            let now = chrono::Utc::now().timestamp();
+            let mut live: Vec<EventRecord> = self
+                .records
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .iter()
+                .filter(|record| {
+                    record.deleted_at.is_none()
+                        && record.expires_at.is_none_or(|expires_at| expires_at > now)
+                        && after.is_none_or(|cursor| {
+                            (record.event.created_at, record.event.id)
+                                > (cursor.created_at, cursor.event_id)
+                        })
+                })
+                .cloned()
+                .collect();
+            live.sort_by_key(|record| (record.event.created_at, record.event.id));
+            live.truncate(usize::try_from(limit.min(nostream_storage::MAX_PAGE_ROWS)).unwrap_or(0));
+
+            let items: Vec<Result<EventRecord, StorageError>> = live.into_iter().map(Ok).collect();
+            Ok(Box::pin(futures_util::stream::iter(items)) as QueryStream<'a, EventRecord>)
+        })
+    }
+
+    fn count_by_criteria<'a>(&'a self, criteria: &'a EventCleanCriteria) -> StorageFuture<'a, u64> {
+        Box::pin(async move {
+            Ok(self
+                .records
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .iter()
+                .filter(|record| selects(record, criteria))
+                .count() as u64)
+        })
+    }
+
+    fn delete_by_criteria<'a>(
+        &'a self,
+        criteria: &'a EventCleanCriteria,
+    ) -> StorageFuture<'a, u64> {
+        Box::pin(async move {
+            let mut records = self
+                .records
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let before = records.len();
+            records.retain(|record| !selects(record, criteria));
+            Ok((before - records.len()) as u64)
+        })
+    }
+
+    fn delete_all_events(&self) -> StorageFuture<'_, ()> {
+        Box::pin(async move {
+            self.records
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clear();
+            Ok(())
         })
     }
 }

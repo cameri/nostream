@@ -9,12 +9,12 @@ use super::{
 use crate::error::StorageError;
 use crate::repositories::{
     ActionableTarget, CreateInviteCodeOptions, DeliveryLogEntry, DeliveryLogFilters, DvmJob,
-    DvmJobRepository, DvmJobUpdate, EmptyTagRule, EventPurgeCounts, EventRecord, EventRepository,
-    EventRetentionOptions, InviteCode, InviteCodeRepository, Invoice, InvoiceRepository,
-    InvoiceStatus, NewDeliveryLogEntry, NewReport, Nip05Verification, Nip05VerificationRepository,
-    NotificationDeliveryLogRepository, NotificationOutboxRepository, OutboxMessage, OutboxPayload,
-    QueryStream, ReconciliationItem, Report, ReportRepository, SearchRule, StorageFuture,
-    StreamedEvent, User, UserPatch, UserRepository,
+    DvmJobRepository, DvmJobUpdate, EmptyTagRule, EventCleanCriteria, EventPurgeCounts,
+    EventRecord, EventRepository, EventRetentionOptions, InviteCode, InviteCodeRepository, Invoice,
+    InvoiceRepository, InvoiceStatus, NewDeliveryLogEntry, NewReport, Nip05Verification,
+    Nip05VerificationRepository, NotificationDeliveryLogRepository, NotificationOutboxRepository,
+    OutboxMessage, OutboxPayload, QueryStream, ReconciliationItem, Report, ReportRepository,
+    ScanCursor, SearchRule, StorageFuture, StreamedEvent, User, UserPatch, UserRepository,
 };
 
 impl EventRepository for PostgresBackend {
@@ -120,6 +120,34 @@ impl EventRepository for PostgresBackend {
     ) -> StorageFuture<'a, EventPurgeCounts> {
         Box::pin(async move { events::delete_expired_and_retained(&self.master, options).await })
     }
+
+    fn scan_live<'a>(
+        &'a self,
+        after: Option<ScanCursor>,
+        limit: u64,
+    ) -> StorageFuture<'a, QueryStream<'a, EventRecord>> {
+        Box::pin(async move {
+            events::scan_live(&self.reader, after, limit, chrono::Utc::now().timestamp())
+        })
+    }
+
+    // On the **master**, where `delete_by_criteria` writes: the reader may lag, and a dry run's
+    // number is part of a destructive command's contract, so it must describe the rows the
+    // delete will actually remove (`repositories.rs`'s `count_by_criteria` doc).
+    fn count_by_criteria<'a>(&'a self, criteria: &'a EventCleanCriteria) -> StorageFuture<'a, u64> {
+        Box::pin(async move { events::count_by_criteria(&self.master, criteria).await })
+    }
+
+    fn delete_by_criteria<'a>(
+        &'a self,
+        criteria: &'a EventCleanCriteria,
+    ) -> StorageFuture<'a, u64> {
+        Box::pin(async move { events::delete_by_criteria(&self.master, criteria).await })
+    }
+
+    fn delete_all_events(&self) -> StorageFuture<'_, ()> {
+        Box::pin(async move { events::delete_all_events(&self.master).await })
+    }
 }
 
 impl InvoiceRepository for PostgresBackend {
@@ -179,12 +207,15 @@ impl UserRepository for PostgresBackend {
         Box::pin(async move { users::get_balance_by_pubkey(&self.master, pubkey).await })
     }
 
+    // The trait doc carries the rule (hydration and cache write on the master, because the cached
+    // "no" is permanent); the transactional twin resolves the same question inside one master
+    // transaction.
     fn is_vanished<'a>(&'a self, pubkey: &'a Pubkey) -> StorageFuture<'a, bool> {
         Box::pin(async move {
             if let Some(user) = users::find_by_pubkey(&self.master, pubkey).await? {
                 return Ok(user.is_vanished);
             }
-            let vanished = events::has_active_request_to_vanish(&self.reader, pubkey).await?;
+            let vanished = events::has_active_request_to_vanish(&self.master, pubkey).await?;
             users::upsert_vanish_state(&self.master, pubkey, vanished).await?;
             Ok(vanished)
         })

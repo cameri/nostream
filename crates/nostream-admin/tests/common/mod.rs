@@ -573,6 +573,35 @@ impl EventRepository for SlowEventRepository {
         Box::pin(async { Err(not_implemented()) })
     }
 
+    fn scan_live<'a>(
+        &'a self,
+        _after: Option<nostream_storage::repositories::ScanCursor>,
+        _limit: u64,
+    ) -> nostream_storage::repositories::StorageFuture<
+        'a,
+        QueryStream<'a, nostream_storage::repositories::EventRecord>,
+    > {
+        Box::pin(async { Err(not_implemented()) })
+    }
+
+    fn count_by_criteria<'a>(
+        &'a self,
+        _criteria: &'a nostream_storage::repositories::EventCleanCriteria,
+    ) -> nostream_storage::repositories::StorageFuture<'a, u64> {
+        Box::pin(async { Err(not_implemented()) })
+    }
+
+    fn delete_by_criteria<'a>(
+        &'a self,
+        _criteria: &'a nostream_storage::repositories::EventCleanCriteria,
+    ) -> nostream_storage::repositories::StorageFuture<'a, u64> {
+        Box::pin(async { Err(not_implemented()) })
+    }
+
+    fn delete_all_events(&self) -> nostream_storage::repositories::StorageFuture<'_, ()> {
+        Box::pin(async { Err(not_implemented()) })
+    }
+
     fn page_bound(&self) -> u64 {
         nostream_storage::MAX_PAGE_ROWS
     }

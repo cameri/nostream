@@ -10,6 +10,7 @@ use std::path::PathBuf;
 
 use nostream_cli::commands::config;
 use nostream_cli::config::resolve_paths;
+use nostream_cli::env_file::Environment;
 
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -18,22 +19,29 @@ fn workspace_root() -> PathBuf {
         .expect("the workspace root exists")
 }
 
+/// No `.env` layer, which is what these cases want: each one names its config directory or
+/// reads the workspace's own.
+fn no_env() -> Environment {
+    Environment::empty()
+}
+
 #[test]
 fn config_get_prints_the_relay_url() {
-    let output = config::get(&workspace_root(), None, "info.relay_url", false).expect("get");
+    let output =
+        config::get(&workspace_root(), None, "info.relay_url", false, &no_env()).expect("get");
     assert_eq!(output.lines, ["wss://nostream.your-domain.com"]);
     assert_eq!(output.exit_code, 0);
 }
 
 #[test]
 fn config_get_json_round_trips() {
-    let output = config::get(&workspace_root(), None, "info.pubkey", true).expect("get");
+    let output = config::get(&workspace_root(), None, "info.pubkey", true, &no_env()).expect("get");
     assert_eq!(output.lines, ["\"replace-with-your-pubkey-in-hex\""]);
 }
 
 #[test]
 fn config_validate_reports_the_clean_document() {
-    let output = config::validate(&workspace_root(), None, None).expect("validate");
+    let output = config::validate(&workspace_root(), None, None, &no_env()).expect("validate");
     assert_eq!(output.lines, ["settings valid: 0 issues"]);
     assert_eq!(output.exit_code, 0);
 }
@@ -46,8 +54,8 @@ fn config_validate_reports_issues_from_the_config_file() {
         "limits:\n  rateLimiter:\n    strategy: random\n",
     )
     .expect("write");
-    let output =
-        config::validate(&workspace_root(), Some(directory.path()), None).expect("validate");
+    let output = config::validate(&workspace_root(), Some(directory.path()), None, &no_env())
+        .expect("validate");
     assert_eq!(output.exit_code, 2);
     assert!(output.lines[0].starts_with("limits.rateLimiter.strategy: "));
     assert_eq!(
@@ -59,7 +67,7 @@ fn config_validate_reports_issues_from_the_config_file() {
 #[test]
 fn the_paths_resolver_honours_the_config_dir() {
     let directory = tempfile::tempdir().expect("tempdir");
-    let paths = resolve_paths(&workspace_root(), Some(directory.path()));
+    let paths = resolve_paths(&workspace_root(), Some(directory.path()), &no_env());
     assert_eq!(
         paths.default_settings_file,
         workspace_root().join("resources/default-settings.yaml")
@@ -79,8 +87,13 @@ fn config_validate_refuses_a_zero_bound() {
     )
     .expect("write");
 
-    let output =
-        config::validate(&workspace_root(), Some(directory.path()), Some(&path)).expect("validate");
+    let output = config::validate(
+        &workspace_root(),
+        Some(directory.path()),
+        Some(&path),
+        &no_env(),
+    )
+    .expect("validate");
     assert_eq!(output.exit_code, 2);
     assert_eq!(
         output.lines,
@@ -104,8 +117,13 @@ fn config_validate_refuses_an_over_ceiling_bound() {
     )
     .expect("write");
 
-    let output =
-        config::validate(&workspace_root(), Some(directory.path()), Some(&path)).expect("validate");
+    let output = config::validate(
+        &workspace_root(),
+        Some(directory.path()),
+        Some(&path),
+        &no_env(),
+    )
+    .expect("validate");
     assert_eq!(output.exit_code, 2);
     assert_eq!(
         output.lines,
@@ -129,8 +147,13 @@ fn config_validate_accepts_both_bounds_at_their_ceilings() {
     )
     .expect("write");
 
-    let output =
-        config::validate(&workspace_root(), Some(directory.path()), Some(&path)).expect("validate");
+    let output = config::validate(
+        &workspace_root(),
+        Some(directory.path()),
+        Some(&path),
+        &no_env(),
+    )
+    .expect("validate");
     assert_eq!(output.exit_code, 0);
     assert_eq!(output.lines, ["settings valid: 0 issues"]);
 }
@@ -147,8 +170,13 @@ fn config_validate_reports_a_ceiling_and_a_schema_fault_together() {
     )
     .expect("write");
 
-    let output =
-        config::validate(&workspace_root(), Some(directory.path()), Some(&path)).expect("validate");
+    let output = config::validate(
+        &workspace_root(),
+        Some(directory.path()),
+        Some(&path),
+        &no_env(),
+    )
+    .expect("validate");
     assert_eq!(output.exit_code, 2);
     assert_eq!(
         output.lines,
