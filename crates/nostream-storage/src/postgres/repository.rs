@@ -131,8 +131,11 @@ impl EventRepository for PostgresBackend {
         })
     }
 
+    // On the **master**, where `delete_by_criteria` writes: the reader may lag, and a dry run's
+    // number is part of a destructive command's contract, so it must describe the rows the
+    // delete will actually remove (`repositories.rs`'s `count_by_criteria` doc).
     fn count_by_criteria<'a>(&'a self, criteria: &'a EventCleanCriteria) -> StorageFuture<'a, u64> {
-        Box::pin(async move { events::count_by_criteria(&self.reader, criteria).await })
+        Box::pin(async move { events::count_by_criteria(&self.master, criteria).await })
     }
 
     fn delete_by_criteria<'a>(

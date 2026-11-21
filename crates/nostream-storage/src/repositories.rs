@@ -727,7 +727,10 @@ pub trait EventRepository: Send + Sync {
     /// Counts the rows [`delete_by_criteria`](Self::delete_by_criteria) would remove.
     ///
     /// The two read one [`EventCleanCriteria`], so a `--dry-run`'s number is the delete's, row
-    /// for row, including soft-deleted rows the predicate does not exclude.
+    /// for row, including soft-deleted rows the predicate does not exclude. A backend with a
+    /// replica counts on the pool it deletes through, not the one it reads through: a lagging
+    /// reader would describe a different set of rows than the delete removes, and a destructive
+    /// command's own number is part of its contract.
     fn count_by_criteria<'a>(&'a self, criteria: &'a EventCleanCriteria) -> StorageFuture<'a, u64>;
 
     /// Hard-deletes every row the criteria select, returning how many it removed.
