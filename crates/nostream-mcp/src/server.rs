@@ -309,7 +309,7 @@ pub struct GetEventArgs {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DeleteEventArgs {
-    /// The event's hex id, in either case; a prefix shorter than 64 characters names no event and deletes nothing
+    /// The event's hex id, in either case; a prefix shorter than 64 characters is refused and deletes nothing
     pub id: String,
 }
 
@@ -531,7 +531,7 @@ impl AdminMcp {
 author makes. The event leaves REQ and COUNT and keeps its row, so `get_event` and `list_events` \
 still return it with `deleted_at` set — unless an actionable report hides it, in which case it \
 stays hidden until the report is allowed. The argument is the event's hex id; a prefix shorter \
-than 64 characters names no event, so nothing is deleted. Answers `outcome` — `deleted`, \
+than 64 characters is refused rather than widened to whatever the store's range would match. Answers `outcome` — `deleted`, \
 `already_deleted`, `not_deleteable` (kind 62 is never deleted), or `not_found` — and the row as \
 it stands after the call"
     )]
