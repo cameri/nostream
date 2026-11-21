@@ -13,18 +13,30 @@
 //! **Known divergences from `node --env-file`, all safe, and what the port answers instead.**
 //! The *line* is the capture's `ENV_LINE_REGEX` (`src/cli/utils/env-config.ts:16`) and only the
 //! *value* is node's, so node honours lines this parser skips — `export A=1`, and keys like `A.B`
-//! or `A B` (measured on this host with v24.22.1). Nothing the CLI reads is such a key: every
-//! consumer goes through [`SUPPORTED_KEYS`], which holds none of them, so the only exposure is a
-//! line node would honour and the port would not, such as `export NOSTR_CONFIG_DIR=…`.
+//! or `A B` (measured on this host with v24.22.1). No consumer reads a key of that shape: what the
+//! CLI looks up is [`SUPPORTED_KEYS`] and the `RR<digits>_DB_*` family, plus the handful its
+//! commands name by hand — `NOSTR_CONFIG_DIR` (`config.rs:34`), `DB_URI`/`DB_HOST`
+//! (`store.rs:81`), `RELAY_DOMAIN` (`compose.rs:136`), `NOSTREAM_XZ_PRESET`/`_THREADS`
+//! (`compression.rs:73,85`) — and an `export`/dotted/spaced key is in none of them. So the only
+//! exposure is a line node would honour and the port would not, such as `export NOSTR_CONFIG_DIR=…`.
 //!
-//! **Multi-line values are the second and this port does not support them**, deliberately. Measured
-//! on node v24.22.1: a closed pair across a newline (`M="a` then `b"`) is one value `a\nb` there,
-//! while this parser — which reads line by line, as the capture's own reader does — answers `"a`
-//! and then skips `b"` as a line that is not `KEY=…`. An **unterminated** quote is the case node
-//! does *not* swallow (`LONE="unbal` answers `"unbal` and the following `NEXT=5` still parses),
-//! which is what this parser does too. So the divergence is exactly one shape: a closed value
-//! spanning lines; the line-by-line reading is the capture's, and the capture is this crate's
-//! reference for the file's own view.
+//! **Multi-line values are the second, and this parser does not join them**, deliberately. Measured
+//! on node v24.22.1, node continues a value onto the next line in **two** shapes: a **closed quote
+//! pair** across a newline (`M="a` then `b"` → `a\nb`), and a value that is **only whitespace**
+//! (`ZQ1=` then three spaces then `ZQ2=5` → `ZQ1` is `ZQ2=5` and `ZQ2` is null). This parser, which
+//! reads line by line as the capture's own reader does, answers the first line in both cases —
+//! `M` is `"a` and the second line is skipped as not `KEY=…`; `ZQ1` is the empty value and
+//! `ZQ2` still parses. An **unterminated** quote is not a divergence at all: node answers `"unbal`
+//! for `LONE="unbal` and the following `NEXT=5` still parses, which is what this parser does. The
+//! line-by-line reading is the capture's, and the capture is this crate's reference for the file's
+//! own view.
+//!
+//! Two more divergences are pre-existing and belong in the same list rather than as code changes.
+//! A **lone `\r` with no `\n`** (an old-Mac line ending, which this parser strips): the capture's
+//! regex cannot match a `\r` line at all — JS `.` excludes it — so it drops the line where the
+//! port answers it, and the port's answer is the better one. A **UTF-8 BOM** diverges in both
+//! views: the capture's `\s*` eats U+FEFF, so `SECRET=abcdef` behind a BOM is read there and
+//! dropped here (the BOM is part of the key), and in a value the BOM is kept here and eaten there.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -283,7 +295,8 @@ pub fn parse_values(content: &str) -> BTreeMap<String, String> {
 /// whitespace the pattern's `\s*` eats is gone and **everything else is the value**, trailing
 /// spaces included: the capture answers `1  ` for `A=1  `. This is the **file** view — what
 /// `config env list`, `get` and `validate` report and what [`upsert_value`] writes back — so a
-/// value written by `config env set` reads back byte for byte.
+/// value with **trailing** whitespace reads back byte for byte. Leading whitespace does not, in
+/// either implementation: the pattern's `\s*` eats it, so `DB_PASSWORD=  x` is `x` on both sides.
 pub fn parse_raw(content: &str) -> BTreeMap<String, String> {
     parse_lines(content, |value| value.trim_start().to_owned())
 }
@@ -444,16 +457,24 @@ mod tests {
     }
 
     /// The multi-line divergence the module doc states, pinned so nobody "fixes" it toward node by
-    /// accident. Measured with node v24.22.1: a **closed** pair across a newline is one value `a`
-    /// then `b` there, and this parser answers the first line's `"a` and skips `b"` as a line that
-    /// is not `KEY=…`; an **unterminated** quote is not a divergence at all — node answers
-    /// `"unbal` and the following `NEXT=5` still parses, which is what this parser does.
+    /// accident. Measured with node v24.22.1, node joins a value onto the next line in two shapes:
+    /// a **closed** quote pair (`M="a` then `b"` is one value `a`⏎`b`) and a value that is **only
+    /// whitespace** (`ZQ1=` then spaces then `ZQ2=5` makes `ZQ1` the string `ZQ2=5`) — and this
+    /// parser answers the first line in both. An **unterminated** quote is not a divergence at all:
+    /// node answers `"unbal` and the following `NEXT=5` still parses, which is what this parser does.
     #[test]
     fn a_multi_line_value_is_the_line_it_started_on() {
         let values = parse_values("M=\"a\nb\"\nLONE=\"unbal\nNEXT=5\n");
         assert_eq!(values.get("M").map(String::as_str), Some("\"a"));
         assert_eq!(values.get("LONE").map(String::as_str), Some("\"unbal"));
         assert_eq!(values.get("NEXT").map(String::as_str), Some("5"));
+
+        // The second shape, where node continues a whitespace-only value onto the next line
+        // (`{"ZQ1":"ZQ2=5","ZQ2":null}` under `env -i`, v24.22.1): the port reads the empty value
+        // and the next line still parses, which is the capture's answer and the one it prints.
+        let values = parse_values("ZQ1=   \nZQ2=5\n");
+        assert_eq!(values.get("ZQ1").map(String::as_str), Some(""));
+        assert_eq!(values.get("ZQ2").map(String::as_str), Some("5"));
 
         let raw = parse_raw("M=\"a\nb\"\n");
         assert_eq!(raw.get("M").map(String::as_str), Some("\"a"));
