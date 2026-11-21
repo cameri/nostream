@@ -575,8 +575,10 @@ async fn export_stream<S: ExportSource, W: Write>(
             }
         }
 
-        // The trailer is this call's write, not `Drop`'s: a compressed export that cannot finish
-        // is a failed export, never a truncated archive behind an exit 0.
+        // On the normal exit and on the interrupt, the trailer is this call's write rather than
+        // `Drop`'s, so its failure is the run's and is never a truncated archive behind an exit 0.
+        // The three early returns above are already failing runs, and there the trailer is left
+        // to `Drop`, whose error is discarded because there is a failure to report anyway.
         sink.finish().map_err(stream_error)?;
     }
 
@@ -1104,6 +1106,134 @@ mod tests {
                 .to_string()
                 .contains("the sink refused the last write"),
             "{error}"
+        );
+    }
+
+    /// The xz arm is the gzip arm's twin by construction (`Sink::finish`'s two compressed arms),
+    /// and it was the one no test could fail: AC38 asserts the first six magic bytes, which a
+    /// `flush()` in place of the xz encoder's `try_finish` still writes. Same shape as the gzip
+    /// case — measure the archive, then allow one byte less than its footer needs.
+    #[tokio::test]
+    async fn an_xz_trailer_that_cannot_be_written_fails_the_export() {
+        let source = FixedSource(vec![record(1_700_000_000)]);
+        let flag = AtomicU8::new(SIGNAL_NONE);
+
+        let mut measure = CountingWriter::new(Vec::<u8>::new());
+        let mut printed: Vec<u8> = Vec::new();
+        export_stream(
+            &source,
+            Some(Compression::Xz),
+            &crate::env_file::Environment::empty(),
+            &mut measure,
+            &flag,
+            &mut printed,
+        )
+        .await
+        .expect("a sink that accepts everything writes the whole archive");
+        let payload = measure.bytes as usize;
+        // xz's footer is 12 bytes (the index and the stream footer's magic), so one byte short is
+        // a budget every earlier write fits inside and the footer cannot.
+        assert!(payload > 12, "the archive has a payload and a footer");
+
+        let mut refusing = CountingWriter::new(RefusingAfter {
+            budget: payload - 1,
+            written: 0,
+        });
+        let mut printed: Vec<u8> = Vec::new();
+        let error = export_stream(
+            &source,
+            Some(Compression::Xz),
+            &crate::env_file::Environment::empty(),
+            &mut refusing,
+            &flag,
+            &mut printed,
+        )
+        .await
+        .expect_err("the footer's failure is the run's");
+
+        assert!(
+            error
+                .to_string()
+                .contains("the sink refused the last write"),
+            "{error}"
+        );
+    }
+
+    /// The streamed shape's **interrupt** path still finalises what it wrote: the run answers 130
+    /// either way, but the bytes on disk must be a complete archive — the trailer is written by a
+    /// call now, not by `Drop`, and this branch leaves the loop without reaching its normal exit.
+    /// Decoding is the assertion: a gzip stream without its trailer does not decompress.
+    ///
+    /// The signal is raised by the **source**, not by the writer: the encoder buffers, so nothing
+    /// reaches the inner writer mid-run (the structured branch's `InterruptingWriter` works there
+    /// because it writes records straight through). The second page's request sets the flag, and
+    /// the loop's per-record check sees it after the first page has been written.
+    #[tokio::test]
+    async fn an_interrupted_stream_still_finalises_its_archive() {
+        use std::io::Read;
+
+        struct InterruptingSource<'a> {
+            rows: Vec<EventRecord>,
+            flag: &'a AtomicU8,
+        }
+
+        impl ExportSource for InterruptingSource<'_> {
+            fn page(&self, after: Option<ScanCursor>) -> StorageFuture<'_, Vec<EventRecord>> {
+                let rows: Vec<EventRecord> = match after {
+                    None => self.rows.iter().take(5).cloned().collect(),
+                    Some(cursor) => {
+                        // The signal arrives with the second page's request: the first page is
+                        // already written, and the loop's per-record check breaks before this
+                        // page's first row.
+                        self.flag.store(SIGNAL_INT, Ordering::SeqCst);
+                        self.rows
+                            .iter()
+                            .filter(|record| record.event.created_at > cursor.created_at)
+                            .cloned()
+                            .collect()
+                    }
+                };
+
+                Box::pin(async move { Ok(rows) })
+            }
+
+            fn bound(&self) -> u64 {
+                5
+            }
+        }
+
+        let flag = AtomicU8::new(SIGNAL_NONE);
+        let source = InterruptingSource {
+            // Distinct `created_at`s, so the second page really holds rows the first did not and
+            // the loop's per-record signal check is reached.
+            rows: (0..10).map(|step| record(1_700_000_000 + step)).collect(),
+            flag: &flag,
+        };
+        let mut writer = CountingWriter::new(Vec::<u8>::new());
+        let mut printed: Vec<u8> = Vec::new();
+
+        let exported = export_stream(
+            &source,
+            Some(Compression::Gzip),
+            &crate::env_file::Environment::empty(),
+            &mut writer,
+            &flag,
+            &mut printed,
+        )
+        .await
+        .expect("the loop runs");
+
+        assert_eq!(exported.interrupted, Some(Signal::Int));
+        assert_eq!(exported.exit_code(), 130);
+
+        let mut decoded = Vec::new();
+        flate2::read::GzDecoder::new(&writer.inner[..])
+            .read_to_end(&mut decoded)
+            .expect("the archive is finalised, so it decompresses");
+        let decoded = String::from_utf8(decoded).expect("utf-8");
+        assert!(
+            decoded.contains("event 1700000000"),
+            "the row written before the signal is in the archive: {decoded}"
         );
     }
 }
