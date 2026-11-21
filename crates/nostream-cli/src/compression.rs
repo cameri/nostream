@@ -128,22 +128,63 @@ fn parse_integer(key: &str, env: &Environment) -> Result<Option<i64>, CliError> 
         .map_err(|_| CliError::command(format!("Invalid {key}: {raw}. Expected an integer.")))
 }
 
-/// A writer that compresses `inner` in `format`.
+/// The sink an export writes through: the compressor a shape names, or the plain writer.
+///
+/// A boxed [`Write`] cannot be finished: `.gz`/`.xz` write their trailer from `Drop`, where an
+/// error has nowhere to go, so a failing trailer left a truncated archive behind an exit 0. This
+/// enum keeps the three writers named and gives them [`Sink::finish`], which reports the
+/// trailer's own result and is what the export path calls before it reports success.
+pub enum Sink<'a> {
+    Plain(&'a mut dyn Write),
+    Gzip(flate2::write::GzEncoder<&'a mut dyn Write>),
+    Xz(xz2::write::XzEncoder<&'a mut dyn Write>),
+}
+
+impl Write for Sink<'_> {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        match self {
+            Self::Plain(writer) => writer.write(buffer),
+            Self::Gzip(encoder) => encoder.write(buffer),
+            Self::Xz(encoder) => encoder.write(buffer),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            Self::Plain(writer) => writer.flush(),
+            Self::Gzip(encoder) => encoder.flush(),
+            Self::Xz(encoder) => encoder.flush(),
+        }
+    }
+}
+
+impl Sink<'_> {
+    /// Ends the stream and answers the trailer's write, which is the one `Drop` cannot report.
+    pub fn finish(mut self) -> std::io::Result<()> {
+        match &mut self {
+            Self::Plain(writer) => writer.flush(),
+            Self::Gzip(encoder) => encoder.try_finish(),
+            Self::Xz(encoder) => encoder.try_finish(),
+        }
+    }
+}
+
+/// The sink that compresses `inner` in `format`.
 ///
 /// The xz encoder's preset comes from the environment, so this can fail; gzip's cannot.
-pub fn encoder<'a, W: Write + 'a>(
+pub fn encoder<'a>(
     format: Compression,
-    inner: W,
+    inner: &'a mut dyn Write,
     env: &Environment,
-) -> Result<Box<dyn Write + 'a>, CliError> {
+) -> Result<Sink<'a>, CliError> {
     match format {
-        Compression::Gzip => Ok(Box::new(flate2::write::GzEncoder::new(
+        Compression::Gzip => Ok(Sink::Gzip(flate2::write::GzEncoder::new(
             inner,
             flate2::Compression::default(),
         ))),
         Compression::Xz => {
             let options = xz_options(env)?;
-            Ok(Box::new(xz2::write::XzEncoder::new(inner, options.preset)))
+            Ok(Sink::Xz(xz2::write::XzEncoder::new(inner, options.preset)))
         }
     }
 }

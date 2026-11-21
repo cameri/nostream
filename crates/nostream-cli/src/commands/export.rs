@@ -22,7 +22,7 @@ use nostream_storage::repositories::{
 };
 
 use crate::app::Context;
-use crate::compression::{Compression, encoder};
+use crate::compression::{Compression, Sink, encoder};
 use crate::config::CommandOutput;
 use crate::error::CliError;
 use crate::store;
@@ -521,11 +521,11 @@ async fn export_structured<S: ExportSource, W: Write>(
 }
 
 /// The plain and compressed branch: JSONL, through the compressor the shape named.
-async fn export_stream<S: ExportSource>(
+async fn export_stream<S: ExportSource, W: Write>(
     source: &S,
     compression: Option<Compression>,
     env: &crate::env_file::Environment,
-    writer: &mut CountingWriter,
+    writer: &mut CountingWriter<W>,
     interrupt: &AtomicU8,
     out: &mut dyn Write,
 ) -> Result<Exported, CliError> {
@@ -533,9 +533,9 @@ async fn export_stream<S: ExportSource>(
     let mut after: Option<ScanCursor> = None;
 
     {
-        let mut sink: Box<dyn Write + '_> = match compression {
+        let mut sink = match compression {
             Some(format) => encoder(format, &mut *writer, env)?,
-            None => Box::new(&mut *writer),
+            None => Sink::Plain(&mut *writer),
         };
 
         loop {
@@ -575,7 +575,9 @@ async fn export_stream<S: ExportSource>(
             }
         }
 
-        sink.flush().map_err(stream_error)?;
+        // The trailer is this call's write, not `Drop`'s: a compressed export that cannot finish
+        // is a failed export, never a truncated archive behind an exit 0.
+        sink.finish().map_err(stream_error)?;
     }
 
     Ok(exported)
@@ -606,18 +608,21 @@ fn cursor(record: &EventRecord) -> ScanCursor {
 }
 
 /// A writer that counts what reached the file, which is the summary's `on disk` number.
-pub struct CountingWriter {
-    inner: std::fs::File,
+///
+/// Generic over its inner writer so the loop's tests can put a sink that refuses the trailer
+/// where the command puts a [`std::fs::File`].
+pub struct CountingWriter<W: Write = std::fs::File> {
+    inner: W,
     bytes: u64,
 }
 
-impl CountingWriter {
-    fn new(inner: std::fs::File) -> Self {
+impl<W: Write> CountingWriter<W> {
+    fn new(inner: W) -> Self {
         Self { inner, bytes: 0 }
     }
 }
 
-impl Write for CountingWriter {
+impl<W: Write> Write for CountingWriter<W> {
     fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
         let written = self.inner.write(buffer)?;
         self.bytes = self.bytes.saturating_add(written as u64);
@@ -1029,5 +1034,76 @@ mod tests {
         assert_eq!(exported.rows, 3);
         let written = String::from_utf8(writer).expect("utf-8");
         assert_eq!(written.lines().count(), 3, "every page is read: {written}");
+    }
+
+    /// A writer that accepts `budget` bytes and then refuses everything: the compressor's
+    /// trailer is written after the payload, so the refusal lands on the export's last write.
+    struct RefusingAfter {
+        budget: usize,
+        written: usize,
+    }
+
+    impl Write for RefusingAfter {
+        fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+            if self.written + buffer.len() > self.budget {
+                return Err(std::io::Error::other("the sink refused the last write"));
+            }
+
+            self.written += buffer.len();
+            Ok(buffer.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// A compressed export whose trailer cannot be written is a **failed** export. The sink used
+    /// to be a `Box<dyn Write>`, so finalisation happened in `Drop`: the trailer's error was
+    /// dropped with it and the run answered 0 over a truncated archive. The budget is measured
+    /// first, so the refusal is exactly the trailer's write and nothing earlier.
+    #[tokio::test]
+    async fn a_trailer_that_cannot_be_written_fails_the_export() {
+        let source = FixedSource(vec![record(1_700_000_000)]);
+        let flag = AtomicU8::new(SIGNAL_NONE);
+
+        let mut measure = CountingWriter::new(Vec::<u8>::new());
+        let mut printed: Vec<u8> = Vec::new();
+        export_stream(
+            &source,
+            Some(Compression::Gzip),
+            &crate::env_file::Environment::empty(),
+            &mut measure,
+            &flag,
+            &mut printed,
+        )
+        .await
+        .expect("a sink that accepts everything writes the whole archive");
+        let payload = measure.bytes as usize;
+        // The measured archive ends with gzip's 8-byte trailer written in one call, so one byte
+        // short of the total is a budget every earlier write fits inside and the trailer cannot.
+        assert!(payload > 8, "the archive has a payload and a trailer");
+        let mut refusing = CountingWriter::new(RefusingAfter {
+            budget: payload - 1,
+            written: 0,
+        });
+        let mut printed: Vec<u8> = Vec::new();
+        let error = export_stream(
+            &source,
+            Some(Compression::Gzip),
+            &crate::env_file::Environment::empty(),
+            &mut refusing,
+            &flag,
+            &mut printed,
+        )
+        .await
+        .expect_err("the trailer's failure is the run's");
+
+        assert!(
+            error
+                .to_string()
+                .contains("the sink refused the last write"),
+            "{error}"
+        );
     }
 }
