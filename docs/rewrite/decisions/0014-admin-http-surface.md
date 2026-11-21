@@ -118,8 +118,9 @@ Nostr` branch exists; a request without a valid session is always
 
 The daemon already builds `Arc<ServiceStores>` for the relay and the services
 (`crates/nostreamd/src/main.rs`); the admin surface is handed the same `Arc` rather than a
-second bundle. The event store, the NIP-05 verifications, the notification outbox and the
-delivery log are the four it reads, and every one of them is a field of that struct. The
+second bundle. The event store, the report store, the NIP-05 verifications, the notification
+outbox and the delivery log are the five it reads (the report store since ADR 0017 D3), and every
+one of them is a field of that struct. The
 oracle test builds the bundle over `LmdbBackend::open(tempdir)`, which implements every trait
 the bundle needs (`crates/nostream-storage/src/lmdb/mod.rs:481,664,734,805,1027,1074`).
 

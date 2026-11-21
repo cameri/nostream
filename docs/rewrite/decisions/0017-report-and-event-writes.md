@@ -59,7 +59,10 @@ round-trips per call (read, delete, read-back), all on the answering process's o
 The argument is the report's **own** kind-1984 event id, exactly 64 hex characters — the
 `find_by_event_id` argument, no new reader — and `hide` means `Report.actionable = true`, `allow`
 means `false`. One call flips every row the report event wrote, returns the rows sorted by `id`
-(neither backend orders that read) and `changed`, the rows whose value moved. An id with no rows
+and `changed`, the rows whose value moved. The sort is the handler's and the contract's: LMDB's
+prefix walk happens to answer ascending by `report_id`, and Postgres does not order, so relying on
+either would be relying on an accident — which is why the branch's report seam reverses what the
+store answers and the case goes red when the sort is removed. An id with no rows
 answers `{"reports": [], "changed": 0}` — a result, as an unknown id is for `get_event`. An
 unknown action never reaches the handler: the closed set is the arguments type's deserialiser and
 the schema's `enum`.
@@ -102,7 +105,10 @@ indexes maintain themselves.
 **Cost:** eight repositories in a bundle seven services call, one of which no services worker
 touches; and the `InMemoryReportRepository` answers `Ok(0)` rather than modelling the setter,
 because a double that modelled rows would have to model the three indexes too — a second
-implementation of the thing under test, reached by no relay case.
+implementation of the thing under test, reached by no relay case. The double records the writes it
+is given and answers every read empty, so `Ok(0)` is the count it can honestly produce rather than
+a suppressed index constraint; a case that needs rows to move, like the ordering case, reads
+through the door's own report seam instead.
 
 ### D4 — The hidden-content cache needs no work
 
