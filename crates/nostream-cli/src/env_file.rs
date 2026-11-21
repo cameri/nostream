@@ -10,16 +10,21 @@
 //! `std::env::set_var` (it is `unsafe` in edition 2024 and the workspace denies unsafe code), so
 //! the `.env` layer is a lookup every caller goes through instead of a mutation.
 //!
-//! **Known divergences from `node --env-file`, both safe.** The *line* is the capture's
-//! `ENV_LINE_REGEX` (`src/cli/utils/env-config.ts:16`) and only the *value* is node's: node also
-//! honours `export A=1` and keys like `A.B` or `A B` (measured on this host with v24.22.1), and
-//! this parser skips all three. Nothing the CLI reads is such a key — every consumer goes through
-//! [`SUPPORTED_KEYS`], which holds none of them — so the only exposure is a line node would honour
-//! and the port would not, such as `export NOSTR_CONFIG_DIR=…`; an operator writing it gets the
-//! capture's behaviour only. Node's multi-line values are likewise not reproduced: an unterminated
-//! quote swallows the rest of the file there, while this parser reads line by line, as the
-//! capture's own reader does. Both answers are wrong for malformed input, and the line-by-line one
-//! is the capture's.
+//! **Known divergences from `node --env-file`, all safe, and what the port answers instead.**
+//! The *line* is the capture's `ENV_LINE_REGEX` (`src/cli/utils/env-config.ts:16`) and only the
+//! *value* is node's, so node honours lines this parser skips — `export A=1`, and keys like `A.B`
+//! or `A B` (measured on this host with v24.22.1). Nothing the CLI reads is such a key: every
+//! consumer goes through [`SUPPORTED_KEYS`], which holds none of them, so the only exposure is a
+//! line node would honour and the port would not, such as `export NOSTR_CONFIG_DIR=…`.
+//!
+//! **Multi-line values are the second and this port does not support them**, deliberately. Measured
+//! on node v24.22.1: a closed pair across a newline (`M="a` then `b"`) is one value `a\nb` there,
+//! while this parser — which reads line by line, as the capture's own reader does — answers `"a`
+//! and then skips `b"` as a line that is not `KEY=…`. An **unterminated** quote is the case node
+//! does *not* swallow (`LONE="unbal` answers `"unbal` and the following `NEXT=5` still parses),
+//! which is what this parser does too. So the divergence is exactly one shape: a closed value
+//! spanning lines; the line-by-line reading is the capture's, and the capture is this crate's
+//! reference for the file's own view.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -68,8 +73,10 @@ impl Environment {
     }
 
     /// One value: the process's, else the **node-parsed** file layer's. This is the view a launched
-    /// process would see, and it is what `store::open`, `import`, `migrate` and the rest of the
-    /// commands read.
+    /// process would see, and it is what `store::open`, `import` and the rest of the store
+    /// commands read. `migrate` is **not** among them: it reads `std::env::var` directly, because
+    /// its source must come from the process or an explicit setting and never from a copied
+    /// file's layer (ADR 0015 D14).
     pub fn get(&self, key: &str) -> Option<String> {
         std::env::var(key)
             .ok()
@@ -271,20 +278,24 @@ pub fn parse_values(content: &str) -> BTreeMap<String, String> {
     parse_lines(content, parse_value)
 }
 
-/// The same pairs with each value **raw**: everything after the first `=`, trimmed, exactly what
-/// the capture's `parseEnvFile` keeps in `match[2]` (`src/cli/utils/env-config.ts:75-112`). This is
-/// the **file** view — what `config env list`, `get` and `validate` report and what
-/// [`upsert_value`] writes back — so a value written by `config env set` reads back unchanged.
+/// The same pairs with each value **raw**: `ENV_LINE_REGEX`'s `match[2]`
+/// (`/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/`, `src/cli/utils/env-config.ts:16`) — the leading
+/// whitespace the pattern's `\s*` eats is gone and **everything else is the value**, trailing
+/// spaces included: the capture answers `1  ` for `A=1  `. This is the **file** view — what
+/// `config env list`, `get` and `validate` report and what [`upsert_value`] writes back — so a
+/// value written by `config env set` reads back byte for byte.
 pub fn parse_raw(content: &str) -> BTreeMap<String, String> {
-    parse_lines(content, |value| value.trim().to_owned())
+    parse_lines(content, |value| value.trim_start().to_owned())
 }
 
 /// The lines both views agree on: a comment line and a line that is not `KEY=…` are skipped,
-/// exactly as the capture's `ENV_LINE_REGEX` parse does, and the split is on the first `=`.
+/// exactly as the capture's `ENV_LINE_REGEX` parse does, the split is on the first `=`, and a
+/// CRLF document's carriage return is not part of the value (the capture splits on `/\r?\n/`).
 fn parse_lines(content: &str, value: impl Fn(&str) -> String) -> BTreeMap<String, String> {
     let mut values = BTreeMap::new();
 
     for line in content.split('\n') {
+        let line = line.strip_suffix('\r').unwrap_or(line);
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
@@ -430,6 +441,23 @@ mod tests {
         assert_eq!(values.get("SECRET").map(String::as_str), Some("abc=def"));
         assert_eq!(values.get("FOO").map(String::as_str), Some("bar"));
         assert_eq!(values.len(), 2);
+    }
+
+    /// The multi-line divergence the module doc states, pinned so nobody "fixes" it toward node by
+    /// accident. Measured with node v24.22.1: a **closed** pair across a newline is one value `a`
+    /// then `b` there, and this parser answers the first line's `"a` and skips `b"` as a line that
+    /// is not `KEY=…`; an **unterminated** quote is not a divergence at all — node answers
+    /// `"unbal` and the following `NEXT=5` still parses, which is what this parser does.
+    #[test]
+    fn a_multi_line_value_is_the_line_it_started_on() {
+        let values = parse_values("M=\"a\nb\"\nLONE=\"unbal\nNEXT=5\n");
+        assert_eq!(values.get("M").map(String::as_str), Some("\"a"));
+        assert_eq!(values.get("LONE").map(String::as_str), Some("\"unbal"));
+        assert_eq!(values.get("NEXT").map(String::as_str), Some("5"));
+
+        let raw = parse_raw("M=\"a\nb\"\n");
+        assert_eq!(raw.get("M").map(String::as_str), Some("\"a"));
+        assert_eq!(raw.len(), 1);
     }
 
     /// `node --env-file` is the oracle the module header names, and it strips a surrounding quote

@@ -879,6 +879,45 @@ fn the_env_file_commands_describe_the_file_and_the_layer_keeps_node_rules() {
     );
 }
 
+/// The raw view keeps trailing whitespace, as the capture's `match[2]` does (`A=1  ` answers
+/// `1  ` there): `config env set DB_PASSWORD 'p#ss '` must read back with its space, and the
+/// masked form shows it too. The assertion compares the bytes **without** trimming, so a parse
+/// that quietly trims fails here.
+#[test]
+fn the_env_file_view_keeps_trailing_whitespace() {
+    let work = Work::new();
+
+    let output = run_env(
+        work.path(),
+        &["config", "env", "set", "DB_PASSWORD", "p#ss "],
+        &[],
+    );
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    assert!(
+        fs::read_to_string(work.path().join(".env"))
+            .expect("the env file")
+            .contains("DB_PASSWORD=p#ss \n"),
+        "the writer keeps the space it was given"
+    );
+
+    let output = run_env(
+        work.path(),
+        &["config", "env", "get", "DB_PASSWORD", "--show-secrets"],
+        &[],
+    );
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "p#ss \n",
+        "byte for byte, trailing space included"
+    );
+
+    // And the mask is the capture's, on the value as the file holds it: first two and last two
+    // characters kept, so `p#ss ` masks to `p#***s ` — with the trailing space as the last one.
+    let output = run_env(work.path(), &["config", "env", "get", "DB_PASSWORD"], &[]);
+    assert_eq!(stdout(&output), "p#***s \n");
+}
+
 // ---------------------------------------------------------------------------------------------
 // AC16–AC21: start, stop, clean and update, over the shims.
 // ---------------------------------------------------------------------------------------------
