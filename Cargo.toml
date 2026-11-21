@@ -59,6 +59,26 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 url = "2"
 uuid = { version = "1", features = ["v4"] }
 
+# Nothing reads debug info here. The 66 integration-test binaries this workspace links are
+# 81% DWARF — one measured 236 MB unstripped against 45 MB stripped, and `.debug_str` alone
+# was 75 MB of what line-tables-only still wrote — and every consumer in this repository
+# (`cargo test`, `clippy`, `fmt`, the factory's lenses, CI) either never opens it or prints a
+# panic location, which the compiler emits with or without it (`#[track_caller]`).
+# `cargo test` runs the `test` profile, so this is the profile that decides the size of every
+# artifact a test run leaves behind.
+#
+# Measured 2026-11-21 on `-p nostream-mcp --test auth` from a cold target dir:
+#
+#   profile            binary   build   target dir
+#   dev (default, 2)   230 MB    75 s      1.6 GB
+#   line tables (1)    150 MB    54 s      1.3 GB
+#   none (0)            43 MB    49 s      0.8 GB
+#
+# `dev` deliberately keeps the default: `cargo build` artifacts are for a debugger to open by
+# hand, and that is the one case where the bytes are read. Everything automated uses `test`.
+[profile.test]
+debug = 0
+
 [workspace.lints.rust]
 # `deny` rather than `forbid`: heed's LMDB `EnvOpenOptions::open` is an `unsafe fn`
 # (heed 0.20.5, src/env.rs:236) and the storage crate wraps it in exactly one
