@@ -149,3 +149,10 @@ stands in for a registered name.
 **Cost:** the next slice that lands `user_admin` must move the example again, and the criterion is
 a grep rather than a compile error, so the mistake is found by a case rather than by the type
 checker.
+
+**And the grep is over `.rs` sources only.** Its pattern is an absolute absence of the literal
+`"delete_event"` in the test sources, while the snapshot fixture under the same directory must
+carry a `"name": "delete_event"` entry — data, not a case. A pattern that read the fixture as a
+case would make the snapshot criterion and this one unsatisfiable together, so the criterion names
+`--include=*.rs` and says why; the base reading is unchanged (three lines at `443cb985`, all in
+`.rs` files).
