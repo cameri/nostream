@@ -47,6 +47,12 @@
 //! port answers it, and the port's answer is the better one. A **UTF-8 BOM** diverges in both
 //! views: the capture's `\s*` eats U+FEFF, so `SECRET=abcdef` behind a BOM is read there and
 //! dropped here (the BOM is part of the key), and in a value the BOM is kept here and eaten there.
+//!
+//! One more, third of the same kind: an **exported but empty** variable. Measured on node v24.22.1,
+//! `NOSTR_CONFIG_DIR= node -e 'process.env.NOSTR_CONFIG_DIR'` answers `""`, and node keeps that,
+//! while [`Environment::get`] filters an empty process value out and falls through to the file's —
+//! so `NOSTR_CONFIG_DIR=` exported beside `NOSTR_CONFIG_DIR=sub` in `.env` resolves `sub` here and
+//! `""` in the capture. That filter predates the split and the port's answer is the saner one.
 
 use std::collections::BTreeMap;
 use std::path::Path;
