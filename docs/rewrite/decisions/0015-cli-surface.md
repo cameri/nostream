@@ -273,7 +273,7 @@ run will do.
 
 `ensureConfigBootstrap` in the capture copies the defaults into a config directory that has no
 `settings.yaml`. The port copies them only when **neither** `settings.yaml` nor the deprecated
-`settings.json` exists (`crates/nostream-cli/src/bootstrap.rs:52`), because the relay's loader
+`settings.json` exists (`crates/nostream-cli/src/bootstrap.rs:59`), because the relay's loader
 still falls back to `settings.json` and a deployment holding only that file would otherwise have
 its admission policy, payment settings and limits replaced by the defaults on the first `start`
 or `setup` — a silent override loss, not an error anyone would see.
