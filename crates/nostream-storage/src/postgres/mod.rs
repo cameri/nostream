@@ -109,8 +109,10 @@ impl PostgresBackend {
         Self::with_pools(utc(options), PoolBounds::default(), None).await
     }
 
-    /// Builds the backend without dialling. The dyn-compatibility test and the migration
-    /// target use it, because neither needs a live connection to prove the trait objects.
+    /// Builds the backend without dialling, from a complete URL. Three tests use it — the
+    /// dyn-compatibility one, which needs an object of this type rather than a live connection
+    /// to prove the trait objects, among them. Nothing in production does: the migration's
+    /// target is `LmdbBackend` (`lmdb/migration.rs:21`), not this type.
     pub fn connect_lazy(url: &str) -> Result<Self, StorageError> {
         let options = url.parse::<PgConnectOptions>()?;
         let master = lazy_pool(utc(options), &PoolBounds::default());
@@ -200,8 +202,8 @@ impl PostgresBackend {
     /// `master_only_from_lookup` is the copy's door, which reads no replica setting and dials
     /// nothing; and `probe_master_from_env` makes one direct attempt inside its budget, so a
     /// refused port is answered rather than masked by a pool timeout. `connect_lazy` is the
-    /// fourth entry and not one of these: it takes a complete URL, dials nothing, and serves the
-    /// dyn-compatibility test and the migration's target.
+    /// fourth entry and not one of these: it takes a complete URL, dials nothing, and has no
+    /// production caller — the tests that build an object without a live server use it.
     pub async fn from_lookup<F>(lookup: &F) -> Result<Self, StorageError>
     where
         F: Fn(&str) -> Option<String> + Sync,
