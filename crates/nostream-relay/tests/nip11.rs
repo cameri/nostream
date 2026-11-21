@@ -7,7 +7,7 @@
 //! | `the_limitation_block_reports_the_enforced_limits` | the enforced numbers, and a configured `0` omitted |
 //! | `restricted_writes_folds_the_arms_the_event_handler_enforces` | each arm alone flips it; the all-off fixture is false; a subscription plan alone does not |
 //! | `fees_reports_enabled_schedules_in_msats` | enabled schedules only, `publication` only when configured, empty under `payments.enabled: false` |
-//! | `self_is_the_configured_pubkey_or_the_signing_one` | configured hex wins, an `npub` decodes, an unparsable value falls back, neither is absent |
+//! | `self_is_the_published_identity_or_absent` | the published key wins over `info.self`; no key means no `self` |
 //! | `the_version_and_software_are_the_callers` | the version argument, the workspace repository, and a hex `pubkey` |
 //!
 //! The fixture is the shipped `resources/default-settings.yaml`, typed through the settings
@@ -49,8 +49,8 @@ fn minimal() -> Settings {
     settings
 }
 
-fn value(settings: &Settings, version: &str, signing_pubkey: Option<Pubkey>) -> Value {
-    serde_json::to_value(nip11::document(settings, version, signing_pubkey)).expect("a document")
+fn value(settings: &Settings, version: &str, relay_pubkey: Option<Pubkey>) -> Value {
+    serde_json::to_value(nip11::document(settings, version, relay_pubkey)).expect("a document")
 }
 
 fn advertised(document: &Value) -> Vec<u16> {
@@ -456,37 +456,31 @@ fn fees_reports_enabled_schedules_in_msats() {
     );
 }
 
+/// The document's `self` is the published identity and nothing else (R11): the key the caller
+/// resolved from a fresh status document wins over `info.self`, and with no key — no fresh
+/// document — `self` is absent however the settings read.
 #[test]
-fn self_is_the_configured_pubkey_or_the_signing_one() {
-    let signing: Pubkey = OTHER.parse().unwrap();
-    let expected: Pubkey = HEX.parse().unwrap();
+fn self_is_the_published_identity_or_absent() {
+    let published: Pubkey = OTHER.parse().unwrap();
 
     let mut settings = minimal();
     settings.info.self_ = Some(HEX.to_owned());
     assert_eq!(
-        value(&settings, "0.1.0", Some(signing))["self"],
-        json!(HEX),
-        "the configured hex wins over the signing key"
-    );
-
-    settings.info.self_ = Some(NPUB.to_owned());
-    assert_eq!(
-        value(&settings, "0.1.0", Some(signing))["self"],
-        json!(expected.to_string()),
-        "an npub decodes to the same hex"
-    );
-
-    settings.info.self_ = Some("not-a-key".to_owned());
-    assert_eq!(
-        value(&settings, "0.1.0", Some(signing))["self"],
+        value(&settings, "0.1.0", Some(published))["self"],
         json!(OTHER),
-        "an unparsable value falls back to the signing key"
+        "the published key wins over a configured one: the document is the relay's own word"
+    );
+
+    assert!(
+        value(&settings, "0.1.0", None).get("self").is_none(),
+        "no published key, no identity — the configured `info.self` does not stand in for it"
     );
 
     settings.info.self_ = None;
-    assert!(
-        value(&settings, "0.1.0", None).get("self").is_none(),
-        "neither configured nor supplied: the key is absent"
+    assert_eq!(
+        value(&settings, "0.1.0", Some(published))["self"],
+        json!(OTHER),
+        "the published key is the x-only hex `info.self` uses"
     );
 }
 

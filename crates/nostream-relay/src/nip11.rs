@@ -32,8 +32,8 @@ pub struct RelayInformationDocument {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
     pub pubkey: String,
-    /// The key the relay signs with, for NIP-43 clients: `info.self` when it parses, else the
-    /// key the composition derived.
+    /// The key the relay signs with, for NIP-43 clients: the published status document's
+    /// `relayPubkey`, and absent when no fresh document names one.
     #[serde(rename = "self", skip_serializing_if = "Option::is_none")]
     pub self_: Option<String>,
     pub contact: String,
@@ -98,11 +98,15 @@ pub struct Fee {
     pub unit: String,
 }
 
-/// The document for these settings, this version and this signing key.
+/// The document for these settings, this version and the identity the published document names.
+///
+/// `relay_pubkey` is the only source of `self`: with no fresh status document there is no
+/// identity, and a settings value or the answering process's environment would be a key the
+/// relay may not sign with (R11).
 pub fn document(
     settings: &Settings,
     version: &str,
-    signing_pubkey: Option<Pubkey>,
+    relay_pubkey: Option<Pubkey>,
 ) -> RelayInformationDocument {
     let info = &settings.info;
 
@@ -112,7 +116,7 @@ pub fn document(
         banner: info.banner.clone(),
         icon: info.icon.clone(),
         pubkey: hex_or_written(&info.pubkey),
-        self_: self_pubkey(settings, signing_pubkey).map(|pubkey| pubkey.to_string()),
+        self_: relay_pubkey.map(|pubkey| pubkey.to_string()),
         contact: info.contact.clone(),
         supported_nips: supported_nips(settings),
         software: env!("CARGO_PKG_REPOSITORY").to_owned(),
@@ -227,14 +231,6 @@ fn hex_or_written(value: &str) -> String {
         Ok(Some(pubkey)) => pubkey.to_string(),
         _ => value.to_owned(),
     }
-}
-
-/// `info.self` when it parses, else the key the composition resolved (`resolveRelaySelfPubkey`).
-fn self_pubkey(settings: &Settings, signing_pubkey: Option<Pubkey>) -> Option<Pubkey> {
-    parse_relay_pubkey(settings.info.self_.as_deref())
-        .ok()
-        .flatten()
-        .or(signing_pubkey)
 }
 
 /// `SUPPORTED_NIPS` in its own order, minus what does not run: 43 without NIP-43 enabled, 50

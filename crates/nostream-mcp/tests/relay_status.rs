@@ -12,6 +12,7 @@
 //! | `every_call_appends_its_dispatch_line` | one `mcp.relay_status` line, written before the handler |
 //! | `a_read_only_document_can_read_the_status` | the row is `Requires::Read` |
 //! | `self_follows_the_documents_identity_and_not_the_process` | `nip11.self` is the published key, re-read per call |
+//! | `the_nip11_shape_does_not_depend_on_the_document` | present and absent documents differ only in `self` |
 //!
 //! The harness clock is [`NOW_MS`], so a document generated at that instant is `ageSeconds: 0`.
 
@@ -100,6 +101,45 @@ async fn a_published_document_is_reported() {
         payload["nip11"]["self"],
         json!(RELAY_PUBKEY),
         "the identity the document names, not one this process derived: {payload}"
+    );
+}
+
+/// R11's shape rule: the `nip11` object does not depend on the document at all, so a present
+/// and an absent one differ in `self`'s presence and in nothing else.
+#[tokio::test]
+async fn the_nip11_shape_does_not_depend_on_the_document() {
+    let fixture = TestMcp::start().await;
+    let client = fixture.client().await;
+
+    let absent = payload(&client.call(TOOL_RELAY_STATUS, json!({})).await)["nip11"]
+        .as_object()
+        .expect("an object")
+        .clone();
+    assert!(
+        !absent.contains_key("self"),
+        "no document, no identity: {absent:?}"
+    );
+
+    write_document(
+        &fixture.config_dir,
+        GENERATED_AT,
+        1,
+        0,
+        Some(RELAY_PUBKEY),
+        json!([]),
+    );
+    let mut present = payload(&client.call(TOOL_RELAY_STATUS, json!({})).await)["nip11"]
+        .as_object()
+        .expect("an object")
+        .clone();
+    assert_eq!(
+        present.remove("self"),
+        Some(json!(RELAY_PUBKEY)),
+        "the document's key, in the same field"
+    );
+    assert_eq!(
+        absent, present,
+        "every other key is identical with and without a document"
     );
 }
 
