@@ -306,28 +306,22 @@ fn content_length(content: Option<&ContentLimitsOrVec>) -> Option<u64> {
     }
 }
 
-/// The lowest difficulty any client may be accepted at: the adaptive floor reduced by the
-/// smallest configured WoT factor when that is on, else the static event-id floor.
+/// The lowest difficulty any client may be accepted at: what `required_difficulty` enforces.
+///
+/// That function passes `None` as the WoT distance (`handlers/event.rs:371`) because the graph is
+/// `nostream-services`' and no crate supplies one yet, and with no distance
+/// `apply_wot_pow_policy` answers the computed difficulty unchanged
+/// (`nostream_core::adaptive_pow`), which is `floor_bits` at rest. The capture's
+/// `ceil(floor_bits × difficulty_factor)` discount is therefore granted to nobody here: it only
+/// applies once a distance exists, so advertising it would promise a bound the handler rejects.
+/// With the adaptive check off, the static event-id floor is the enforced one.
 fn min_pow_difficulty(event: Option<&EventLimits>) -> Option<u64> {
-    let pow = event.and_then(|event| event.pow.as_ref());
-
+    let pow = event
+        .and_then(|event| event.pow.as_ref())
+        .filter(|pow| pow.enabled);
     let difficulty = match pow {
-        Some(pow) if pow.enabled => {
-            let factor = pow
-                .wot_thresholds
-                .as_ref()
-                .into_iter()
-                .flatten()
-                .map(|threshold| threshold.difficulty_factor)
-                .fold(f64::INFINITY, f64::min);
-
-            if factor.is_finite() {
-                (f64::from(pow.floor_bits) * factor).ceil()
-            } else {
-                f64::from(pow.floor_bits)
-            }
-        }
-        _ => f64::from(
+        Some(pow) => u64::from(pow.floor_bits),
+        None => u64::from(
             event
                 .and_then(|event| event.event_id.as_ref())
                 .and_then(|event_id| event_id.min_leading_zero_bits)
@@ -335,7 +329,7 @@ fn min_pow_difficulty(event: Option<&EventLimits>) -> Option<u64> {
         ),
     };
 
-    (difficulty > 0.0).then_some(difficulty as u64)
+    (difficulty > 0).then_some(difficulty)
 }
 
 /// The enabled fee schedules, and only while payments are on — the predicate the admission

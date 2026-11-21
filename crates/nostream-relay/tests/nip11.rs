@@ -17,7 +17,9 @@
 
 use std::path::Path;
 
-use nostream_config::settings::{EventIdLimits, FeeSchedule, Settings, SubscriptionPlan};
+use nostream_config::settings::{
+    EventIdLimits, FeeSchedule, Settings, SubscriptionPlan, WotPowThreshold,
+};
 use nostream_core::constants::SUPPORTED_NIPS;
 use nostream_core::{Kind, KindSelector, Pubkey, SettingsPubkey};
 use nostream_relay::nip11;
@@ -199,6 +201,35 @@ fn the_limitation_block_reports_the_enforced_limits() {
     assert!(
         document["limitation"].get("max_filters").is_none(),
         "0 means no cap to the checks that read it, so it is omitted: {document}"
+    );
+
+    // The difficulty is the handler's answer with no WoT distance, not the capture's discount:
+    // a floor of 16 with a `maxDistance: 2, difficultyFactor: 0.5` threshold is enforced at 16,
+    // and `required_difficulty` passes `None` for the distance, so the × factor applies to nobody.
+    let mut enforced = shipped();
+    {
+        let pow = enforced
+            .limits
+            .as_mut()
+            .unwrap()
+            .event
+            .as_mut()
+            .unwrap()
+            .pow
+            .as_mut()
+            .unwrap();
+        pow.enabled = true;
+        pow.floor_bits = 16;
+        pow.wot_thresholds = Some(vec![WotPowThreshold {
+            max_distance: 2,
+            difficulty_factor: 0.5,
+        }]);
+    }
+    let document = value(&enforced, "0.1.0", None);
+    assert_eq!(
+        document["limitation"]["min_pow_difficulty"],
+        json!(16),
+        "the floor the handler enforces, not the capture's 8: {document}"
     );
 }
 

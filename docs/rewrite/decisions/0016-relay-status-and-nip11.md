@@ -51,7 +51,12 @@ workers: null}` and the reason names `relay-status.json`; a `0` in the payload c
 a document that says `0`.
 
 **Cost:** the numbers are up to 5 s old, and a daemon that stops writing is reported as
-unavailable after 30 s rather than as stale numbers. The alternative — a route on the daemon's
+unavailable after 30 s rather than as stale numbers. The bound is one-sided by construction:
+R5's formula is `(now − generated)/1000`, so a document dated ahead of the reader reports
+`ageSeconds: 0` and is fresh. A daemon whose clock steps back keeps publishing documents a correct
+reader treats as fresh, and a reader more than 30 s ahead of the writer reports a live daemon as
+stale; that is inherent to a wall-clock stamp, and the document says when it was written so a
+reader can see the skew.
 listener — would need D1's HTTP surface and an auth model; the file is the cross-process channel
 the tree already relies on (`admin-audit.jsonl`), with no new surface.
 
@@ -110,7 +115,12 @@ when resolved (`info.self` when it parses, else the signing key); `supported_nip
 (the workspace repository, `env!("CARGO_PKG_REPOSITORY")`); `version` (the caller's);
 `limitation.max_message_length` (the transport's own `max_payload_size`); the five client limits
 and `max_content_length` when set and, for the client limits, non-zero (`0` means "no cap" to the
-checks that read it, and would read as "none allowed"); `min_pow_difficulty` when non-zero;
+checks that read it, and would read as "none allowed"); `min_pow_difficulty` when non-zero, at
+the **enforced** value: `floor_bits` while `limits.event.pow.enabled`, else
+`limits.event.eventId.minLeadingZeroBits` — `required_difficulty` (`handlers/event.rs`) passes
+`None` as the WoT distance, and with no distance `apply_wot_pow_policy` answers the computed
+difficulty unchanged, so the capture's `ceil(floor_bits × difficulty_factor)` discount is granted
+to nobody here and is not advertised;
 `auth_required` as the literal `false` (the capture's deliberate split: publish-only AUTH is
 `restricted_writes`); `payment_required` when payments are configured; `created_at_lower_limit`
 and `created_at_upper_limit` when set; `default_limit` (`nostream_storage::DEFAULT_PAGE_ROWS`);
