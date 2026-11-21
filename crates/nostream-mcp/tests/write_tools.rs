@@ -22,8 +22,9 @@
 //! | `a_mixed_report_counts_only_the_rows_that_moved` | `changed` counts the rows that moved, and the payload lists every row of the event |
 //!
 //! Three fixtures carry the NIP-56 gate on (`nip56.enabled` and `nip56.hideActionableReports`),
-//! which is the only way the setter's index work is observable: the other cases seed no report
-//! row, so the gate never fires.
+//! which is the only way the setter's index work is observable. Cases that seed a report row
+//! without the gate still exercise the write and the row's flag; what they cannot see is the
+//! NIP-56 filter, because their settings leave `nip56.enabled` off and the gate never fires.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
