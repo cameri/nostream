@@ -13,5 +13,6 @@ pub mod nip05;
 pub mod password;
 pub mod rate_limit;
 pub mod session;
+pub mod status;
 pub mod storage;
 pub mod workers;

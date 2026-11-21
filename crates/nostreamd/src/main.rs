@@ -50,7 +50,8 @@ struct Cli {
     /// start — and at most 4 KiB.
     ///
     /// The document is `{"scopes": ["write"]}`; a document with no scopes grants the read tools
-    /// (`settings_get`, `list_events`, `get_event`), and the "write" scope adds `settings_set`.
+    /// (`settings_get`, `list_events`, `get_event`, `relay_status`), and the "write" scope adds
+    /// `settings_set`.
     /// An unknown scope refuses to start, naming it. The mode also needs `admin.enabled: true` in
     /// the settings.
     ///
@@ -236,6 +237,9 @@ async fn serve(
         Arc::clone(&service_stores.events),
     ));
     let relay_keys = RelayKeySource::from_env();
+    // The relay's identity, resolved once where the environment is read and handed to the
+    // published document: the door reports it and never derives one of its own.
+    let relay_public_key = relay_keys.try_public_key(&settings.info.relay_url);
 
     let relay = Relay::new(
         (*settings).clone(),
@@ -298,6 +302,9 @@ async fn serve(
 
     tracing::info!(at = %acceptor.local_addr(), "the acceptor is listening");
 
+    // R7: the status writer's handle on the cap is taken before the `Arc<Relay>` moves into
+    // the accept task.
+    let status_connections = Arc::clone(relay.connection_cap());
     let connection_shutdown = shutdown.clone();
     let http_fallback = nostreamd::admin_http::AdminHttp::new(admin_router);
     let accept_task =
@@ -307,6 +314,18 @@ async fn serve(
     let heartbeat_shutdown = shutdown.clone();
     let heartbeat_task = tokio::spawn(async move {
         nostreamd::admin_http::publish_heartbeats(heartbeat_state, heartbeat_shutdown).await
+    });
+
+    let status_state = Arc::clone(&admin_state);
+    let status_shutdown = shutdown.clone();
+    let status_task = tokio::spawn(async move {
+        nostreamd::admin_http::publish_status(
+            status_state,
+            status_connections,
+            relay_public_key,
+            status_shutdown,
+        )
+        .await
     });
 
     let workers_context = context.clone();
@@ -339,11 +358,15 @@ async fn serve(
     let heartbeat_result = heartbeat_task
         .await
         .map_err(|error| DaemonError::Setup(format!("heartbeat task: {error}")));
+    let status_result = status_task
+        .await
+        .map_err(|error| DaemonError::Setup(format!("status task: {error}")));
     for (name, result) in [
         ("acceptor", accept_result),
         ("workers", workers_result),
         ("tor", tor_result),
         ("heartbeats", heartbeat_result),
+        ("status", status_result),
     ] {
         if let Err(error) = result {
             tracing::warn!(task = name, error = %error, "background task ended with an error");

@@ -279,8 +279,9 @@ backend, whose query is a real await, that the shape is for.
 ### D18 — The audit vocabulary gains one `mcp.*` action per tool
 
 The MCP server writes its calls to the same `<config>/admin-audit.jsonl` (D9), one line per
-executed call, and it extends the recorded action vocabulary by **four names** rather than
-reusing one:
+executed call, and it extends the recorded action vocabulary by **one name per registered tool**
+rather than reusing one. Four names landed with the first slice; `relay_status` adds the fifth, and
+each later slice adds its own:
 
 | action | written by |
 |---|---|
@@ -288,6 +289,7 @@ reusing one:
 | `mcp.settings_set` | a dispatched `settings_set` |
 | `mcp.list_events` | a dispatched `list_events` |
 | `mcp.get_event` | a dispatched `get_event` |
+| `mcp.relay_status` | a dispatched `relay_status` (ADR 0016) |
 
 **These extend the capture's nine names; they do not replace them.** The capture's vocabulary is
 a closed nine-name union (`src/@types/admin-audit.ts:1-10`), and the rewrite's writer takes
@@ -324,6 +326,15 @@ second-writer hazard cannot arise. The two modes are alternatives, and running b
 directory is outside ADR 0012 D9 — `admin-audit.jsonl` (whose compaction is a read, a write and a
 rename on a shared staging path, `crates/nostream-admin/src/state.rs:715-733`) and the settings
 write both assume one writer per configuration.
+
+**The one artifact the two modes do share, and why it is not the hazard.** The MCP mode's
+`relay_status` reads `<config>/relay-status.json`, which the daemon rewrites every 5 s
+(`nostream_admin::utils::status`, `crates/nostreamd/src/admin_http.rs`'s `publish_status`; ADR
+0016 D1). That is **one writer and one reader**: the daemon's task is the file's only writer, and
+the MCP process only reads it, so neither `admin-audit.jsonl`'s read-write-rename compaction nor
+the settings write gains a second writer, and this slice does not widen what ADR 0012 D9
+supports. A document that is absent, unreadable or older than its 30 s bound is reported as
+unavailable with a reason, never as zero.
 
 **The table is total, and it carries both dispatch-time facts.** Every tool the router registers
 has one row in `crates/nostream-mcp`'s `TOOLS` table: its name, the check that says whether the
@@ -401,8 +412,9 @@ serving calls nobody could attribute.
 **The document declares what it may do.** `{"scopes": ["write"]}`, with `scopes` optional, and the
 set closed (`deny_unknown_fields`): a document still carrying a session token under `token` is
 refused for its shape rather than read for less than it says. Reading is not a scope — every
-accepted document may call `settings_get`, `list_events` and `get_event` — and `write` is the one
-name a document may add, the right to call `settings_set`. A name the door does not know refuses
+accepted document may call the read tools — `settings_get`, `list_events`, `get_event` and, since
+job 035's slice, `relay_status` — and `write` is the one name a document may add, the right to call
+`settings_set`. A name the door does not know refuses
 the load, naming the scope and the accepted set, because a typo narrowed silently would answer
 `Forbidden` to calls the operator believed it allowed with the typo nowhere in sight. A call the
 document's scopes deny is refused **and audited**: action `mcp.denied`, `detail`

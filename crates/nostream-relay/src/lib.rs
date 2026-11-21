@@ -36,8 +36,9 @@
 //! may be re-cut). `broadcast.rs` therefore carries no behaviour; the in-process fan-out this
 //! crate needs is the relay's own broadcast channel.
 //!
-//! Phase 2+ areas this crate does not own: the HTTP surface and NIP-11 document
-//! (`nostream-admin`), and the probe family and NIP-66 monitor (`nostream-services`).
+//! Phase 2+ areas this crate does not own: the HTTP surface (`nostream-admin`) and the probe
+//! family and NIP-66 monitor (`nostream-services`). The NIP-11 document's builder is this
+//! crate's ([`nip11`]); nothing serves it yet (D1).
 //!
 //! The event acceptance gate this crate owns is the *policy*: the kind-specific tag rules,
 //! which `created_at` deltas the settings supply, and where the check runs. The pure
@@ -52,6 +53,7 @@ pub mod error;
 pub mod handlers;
 pub mod hidden_content;
 pub mod limits;
+pub mod nip11;
 pub mod relay;
 pub mod relay_key;
 pub mod sink;

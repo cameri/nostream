@@ -73,13 +73,14 @@ fn nip43_invite_rate_limit_is_per_pubkey() {
 }
 
 #[test]
-fn info_self_is_left_unset_so_it_is_derived() {
+fn info_self_is_left_unset_so_the_invite_check_is_skipped() {
     let defaults = defaults();
     assert!(
         get_by_path(&defaults, "info.self")
             .expect("path parses")
             .is_none(),
-        "info.self must not be shipped; it is derived from SECRET"
+        "info.self must not be shipped; unset skips the invite check, and NIP-11's self is the \
+         derived key"
     );
 }
 

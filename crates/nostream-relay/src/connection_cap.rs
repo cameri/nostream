@@ -56,6 +56,15 @@ impl ConnectionCap {
             .len()
     }
 
+    /// How many sockets every address holds together: the sum of the per-address counts.
+    pub fn live_total(&self) -> usize {
+        self.live
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .values()
+            .sum()
+    }
+
     /// How many sockets were refused because their address was at the cap.
     pub fn refusals(&self) -> u64 {
         self.refusals.load(Ordering::SeqCst)

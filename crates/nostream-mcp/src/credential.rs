@@ -64,7 +64,7 @@ pub struct Scopes {
 }
 
 impl Scopes {
-    /// The grant a document with no `scopes` carries: the three read tools.
+    /// The grant a document with no `scopes` carries: the four read tools.
     pub fn read_only() -> Self {
         Self::default()
     }

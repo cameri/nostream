@@ -126,7 +126,7 @@ nostream info | grep 'Signing pubkey'
 nostream info --json     # same value under relay.signingPubkey
 ```
 
-Leave `info.self` unset in settings to have this value advertised automatically. Set it only if you want to pin it explicitly, and set it to exactly this value — a mismatch disables kind 28935 invite requests.
+The NIP-11 document advertises the relay's own derived signing pubkey — the value this command prints — and takes it from the daemon's status document, so it is absent while that document is missing or stale. `info.self` does not change what is advertised: it gates kind 28935 invite requests, and a configured, non-empty value must match the key the relay signs with — leaving it unset skips that check.
 
 ## Removed Legacy Wrappers
 

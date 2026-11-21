@@ -20,9 +20,9 @@ use std::time::Duration;
 
 use common::{CLIENT_SECRET, NOW_MS, NOW_SECS, RELAY_SECRET, Server, relay_keys, signed_event};
 use nostream_config::settings::{
-    ClientLimits, ClientSubscriptionLimits, ConnectionLimits, CreatedAtLimits, EventIdLimits,
-    EventLimits, EventRateLimit, KindLimits, Limits, MessageLimits, MessageRateLimit,
-    Nip05Settings, Payments, PubkeyLimits, RateLimit,
+    AdaptivePowSettings, ClientLimits, ClientSubscriptionLimits, ConnectionLimits, CreatedAtLimits,
+    EventIdLimits, EventLimits, EventRateLimit, KindLimits, Limits, MessageLimits,
+    MessageRateLimit, Nip05Settings, Payments, PubkeyLimits, RateLimit, WotPowThreshold,
 };
 use nostream_core::Event;
 use nostream_core::clock::TestClock;
@@ -381,6 +381,46 @@ async fn the_static_proof_of_work_requirements_are_enforced() {
             r#"false,"pow: pubkey difficulty {observed}<256"]"#
         )),
         "{frame}"
+    );
+}
+
+/// The advertised floor and the enforced floor are one value, measured at both ends from one
+/// settings document: a WoT discount is configured and there is no distance to grant it at, so
+/// the handler requires `floor_bits` and the document advertises the same number. A change to
+/// either end alone — the handler learning a distance, or the document reading the factor —
+/// reddens this case.
+#[tokio::test]
+async fn the_advertised_minimum_difficulty_is_the_one_enforced() {
+    let configured = settings_with(event_limits(EventLimits {
+        pow: Some(AdaptivePowSettings {
+            enabled: true,
+            floor_bits: 16,
+            ceiling_bits: 32,
+            target_events_per_second: 50.0,
+            period_ms: 60_000,
+            wot_thresholds: Some(vec![WotPowThreshold {
+                max_distance: 2,
+                difficulty_factor: 0.5,
+            }]),
+        }),
+        ..Default::default()
+    }));
+    let server = start(Fixture::new(configured.clone())).await;
+    let event = signed_event(&CLIENT_SECRET, 1, vec![], "", NOW_SECS);
+
+    let frame = send_event(&server, &event).await;
+
+    let observed = nostream_core::pow::leading_zero_bits(event.id.as_bytes());
+    assert!(
+        frame.ends_with(&format!(r#"false,"pow: difficulty {observed}<16"]"#)),
+        "the handler requires the floor, not the capture's discounted 8: {frame}"
+    );
+
+    let document = nostream_relay::nip11::document(&configured, "0.1.0", None);
+    assert_eq!(
+        serde_json::to_value(document).expect("document json")["limitation"]["min_pow_difficulty"],
+        serde_json::json!(16),
+        "the document advertises the number the handler just required"
     );
 }
 

@@ -22,6 +22,7 @@ use common::{
 };
 use futures_util::SinkExt;
 use nostream_relay::RelayConfig;
+use nostream_relay::connection_cap::ConnectionCap;
 use nostream_relay::testing::{Fixture, settings};
 use nostream_relay::transport::{self, DEFAULT_MAX_PAYLOAD};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -1046,4 +1047,41 @@ async fn a_shared_budget_refusal_closes_the_socket_without_waiting_for_a_tick() 
         (1013, transport::FRAME_BUDGET_REASON.to_owned())
     );
     assert_eq!(server.relay.frame_budget().refusals(), 1);
+}
+
+/// The cap's total is the sum of the per-address counts, not the number of addresses: three
+/// sockets over two addresses read three, a dropped slot lowers it, and a refused socket does
+/// not.
+#[test]
+fn the_total_counts_every_addresses_sockets() {
+    let cap = std::sync::Arc::new(ConnectionCap::new(2));
+    let first = cap.acquire("10.0.0.1").expect("the first slot");
+    let second = cap.acquire("10.0.0.1").expect("the second slot");
+    let third = cap
+        .acquire("10.0.0.2")
+        .expect("another address has its own slots");
+
+    assert_eq!(cap.live_total(), 3, "sockets, not addresses");
+    assert_eq!(cap.tracked_addresses(), 2);
+
+    drop(third);
+
+    assert_eq!(cap.live_total(), 2, "a released slot leaves the total");
+
+    let again = cap
+        .acquire("10.0.0.2")
+        .expect("the released slot admits again");
+    let second_of_two = cap
+        .acquire("10.0.0.2")
+        .expect("the cap allows two for one address");
+    assert!(
+        cap.acquire("10.0.0.2").is_none(),
+        "a third socket for one address is over the cap"
+    );
+    assert_eq!(cap.live_total(), 4, "a refusal is not a socket");
+    assert_eq!(cap.refusals(), 1);
+
+    drop((first, second, again, second_of_two));
+
+    assert_eq!(cap.live_total(), 0);
 }

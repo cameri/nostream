@@ -3,7 +3,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use nostream_config::Settings;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::state::{AdminState, HEARTBEAT_TTL_SECONDS, WorkerHeartbeat, heartbeat_key};
 
@@ -23,8 +23,10 @@ pub struct ConfiguredWorker {
 }
 
 /// One row of `GET /ops/workers` (`AdminOpsWorkerRow`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+///
+/// `Deserialize` is the status document's: the MCP door validates a published row rather than
+/// trusting it, and no serialized field changes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkerRow {
     #[serde(rename = "type")]
     pub worker_type: String,
