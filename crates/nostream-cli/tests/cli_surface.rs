@@ -1327,6 +1327,42 @@ fn ac21_update_is_the_stash_pull_start_sequence() {
     );
 }
 
+/// A `git stash push` killed by a signal created no stash the run can trust: it answers no exit
+/// code and prints neither `No local changes to save` nor a save line, so the old fall-through
+/// read it as "created" and went on to pull and pop a stash it had not made. The capture's
+/// `ok === false` branch fails the step, so this does too, before the pull.
+#[test]
+fn a_signalled_stash_is_a_failure() {
+    let (work, log) = compose_work();
+    write_shim(work.path(), "docker", &log);
+    let git = shims(work.path()).join("git");
+    fs::write(
+        &git,
+        format!(
+            "#!/bin/sh\necho \"git $*\" >> {log}\nif [ \"$1\" = stash ] && [ \"$2\" = push ]; then kill -9 $$; fi\nexit 0\n",
+            log = log.display()
+        ),
+    )
+    .expect("the killing git shim");
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&git, fs::Permissions::from_mode(0o755)).expect("executable");
+    }
+
+    let output = run_env(work.path(), &["update"], &[]);
+    assert_eq!(code(&output), 1, "{}", stderr(&output));
+    assert_eq!(
+        stderr(&output),
+        "Update failed while stashing local changes\n"
+    );
+
+    let logged = fs::read_to_string(&log).expect("the shim log");
+    assert!(
+        !logged.contains("git pull") && !logged.contains("git stash pop"),
+        "a failed stash stops the run: {logged}"
+    );
+}
+
 // ---------------------------------------------------------------------------------------------
 // AC22–AC27: info.
 // ---------------------------------------------------------------------------------------------

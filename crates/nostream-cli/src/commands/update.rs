@@ -65,7 +65,13 @@ pub(crate) async fn update(
 
             format!("{stdout}\n{stderr}")
         }
-        CapturedResult::Signalled { stdout, stderr, .. } => format!("{stdout}\n{stderr}"),
+        // A killed `git stash push` has no exit code and prints neither of the two lines
+        // `was_stash_created` reads, so the old fall-through answered "created" and the run went
+        // on to pop a stash it had not made. The capture's `ok === false` branch fails the step,
+        // and with no code to report it answers the capture's own `code ?? 1`.
+        CapturedResult::Signalled { .. } => {
+            return Err(failed("Update failed while stashing local changes", 1));
+        }
         CapturedResult::Failed { failure, .. } => {
             return Err(match failure {
                 SpawnFailure::NotFound { .. } => CliError::reported_line(GIT_MISSING),
