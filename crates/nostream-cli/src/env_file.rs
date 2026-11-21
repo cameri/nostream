@@ -266,10 +266,32 @@ pub fn parse_values(content: &str) -> BTreeMap<String, String> {
         {
             continue;
         }
-        values.insert(key.to_owned(), value.trim().to_owned());
+        values.insert(key.to_owned(), parse_value(value));
     }
 
     values
+}
+
+/// One value as `node --env-file` reads it — the oracle this module's header names, measured on
+/// this host over `A="hello world"`, `B=plain # trailing`, `C='single'`, `D=unquoted#nospace` and
+/// `DB_PASSWORD="p@ss#word"`: one balanced pair of surrounding quotes is removed, and an
+/// **unquoted** `#` starts a comment (no space needed before it, as `D` shows). A `#` inside the
+/// quotes is part of the value. The split on the first `=` is the caller's, so `KEY=a=b` keeps
+/// `a=b`.
+fn parse_value(raw: &str) -> String {
+    let trimmed = raw.trim();
+    let mut characters = trimmed.chars();
+    if let Some(quote @ ('\'' | '"')) = characters.next() {
+        let rest = characters.as_str();
+        if let Some(end) = rest.find(quote) {
+            return rest[..end].to_owned();
+        }
+    }
+
+    match trimmed.find('#') {
+        Some(at) => trimmed[..at].trim_end().to_owned(),
+        None => trimmed.to_owned(),
+    }
 }
 
 /// `upsertEnvValue`: replaces the key's first line, or appends `KEY=VALUE` after a blank line,
@@ -366,5 +388,27 @@ mod tests {
         assert_eq!(values.get("SECRET").map(String::as_str), Some("abc=def"));
         assert_eq!(values.get("FOO").map(String::as_str), Some("bar"));
         assert_eq!(values.len(), 2);
+    }
+
+    /// `node --env-file` is the oracle the module header names, and it strips both a surrounding
+    /// quote pair and an inline comment: measured on this host (node v24.22.1) over these five
+    /// lines, `[process.env.A, …, process.env.DB_PASSWORD]` answers
+    /// `["hello world","plain","single","unquoted","p@ss#word"]`. A `#` inside quotes therefore
+    /// stays, an unquoted one starts a comment with or without a space before it, and the split
+    /// on the first `=` is untouched (`SECRET=abc=def` above).
+    #[test]
+    fn the_parse_strips_quotes_and_comments_as_node_does() {
+        let values = parse_values(
+            "A=\"hello world\"\nB=plain # trailing\nC='single'\nD=unquoted#nospace\n\
+             DB_PASSWORD=\"p@ss#word\"\n",
+        );
+        assert_eq!(values.get("A").map(String::as_str), Some("hello world"));
+        assert_eq!(values.get("B").map(String::as_str), Some("plain"));
+        assert_eq!(values.get("C").map(String::as_str), Some("single"));
+        assert_eq!(values.get("D").map(String::as_str), Some("unquoted"));
+        assert_eq!(
+            values.get("DB_PASSWORD").map(String::as_str),
+            Some("p@ss#word")
+        );
     }
 }
