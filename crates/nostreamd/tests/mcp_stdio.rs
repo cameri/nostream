@@ -477,6 +477,7 @@ async fn the_help_text_names_the_credential() {
         "scopes",
         "write",
         "admin.enabled",
+        "relay_status",
     ] {
         assert!(help.contains(needle), "the help names `{needle}`: {help}");
     }

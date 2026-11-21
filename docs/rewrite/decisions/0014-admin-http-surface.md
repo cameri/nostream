@@ -410,8 +410,9 @@ serving calls nobody could attribute.
 **The document declares what it may do.** `{"scopes": ["write"]}`, with `scopes` optional, and the
 set closed (`deny_unknown_fields`): a document still carrying a session token under `token` is
 refused for its shape rather than read for less than it says. Reading is not a scope — every
-accepted document may call `settings_get`, `list_events` and `get_event` — and `write` is the one
-name a document may add, the right to call `settings_set`. A name the door does not know refuses
+accepted document may call the read tools — `settings_get`, `list_events`, `get_event` and, since
+job 035's slice, `relay_status` — and `write` is the one name a document may add, the right to call
+`settings_set`. A name the door does not know refuses
 the load, naming the scope and the accepted set, because a typo narrowed silently would answer
 `Forbidden` to calls the operator believed it allowed with the typo nowhere in sight. A call the
 document's scopes deny is refused **and audited**: action `mcp.denied`, `detail`
