@@ -21,7 +21,7 @@
 //! | `an_allow_leaves_a_target_another_report_still_hides` | the action is one row's flag: another actionable report keeps the target hidden |
 //! | `a_mixed_report_counts_only_the_rows_that_moved` | `changed` counts the rows that moved, and the payload lists every row of the event |
 //!
-//! Two fixtures carry the NIP-56 gate on (`nip56.enabled` and `nip56.hideActionableReports`),
+//! Three fixtures carry the NIP-56 gate on (`nip56.enabled` and `nip56.hideActionableReports`),
 //! which is the only way the setter's index work is observable: the other cases seed no report
 //! row, so the gate never fires.
 
@@ -39,7 +39,7 @@ use nostream_mcp::{
 };
 use nostream_storage::repositories::{
     ActionableTarget, EventRepository, NewReport, Report, ReportRepository, ReportType,
-    StorageFuture,
+    StorageFuture, collect_records,
 };
 use serde_json::{Value, json};
 
@@ -230,16 +230,48 @@ async fn a_read_only_document_is_refused_both_writes() {
     seed_report(&fixture, [46; 32], &record).await;
     let client = fixture.client().await;
 
-    for (tool, arguments) in [
-        (TOOL_DELETE_EVENT, json!({ "id": id })),
-        (
+    let deleted = client.call(TOOL_DELETE_EVENT, json!({ "id": id })).await;
+    let acted = client
+        .call(
             TOOL_REPORTS_ACTION,
-            json!({ "id": report_id, "action": "hide" }),
-        ),
-    ] {
-        let refused = client.call(tool, arguments).await;
+            json!({ "id": report_id, "action": "allow" }),
+        )
+        .await;
+
+    // The state is asserted before the refusals, so the subject of "nothing ran" is a row the
+    // call would have moved: `allow` at an actionable row is a write, `hide` at one is a skip
+    // the store does not perform.
+    let rows = collect_records(
+        fixture
+            .backend
+            .find_by_filters(&[Filter {
+                ids: Some(vec![id.clone()]),
+                ..Filter::default()
+            }])
+            .await
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert!(
+        rows[0].deleted_at.is_none(),
+        "the refused delete moved nothing"
+    );
+    let reports = fixture
+        .backend
+        .find_by_event_id(&EventId::from_byte_array([46; 32]))
+        .await
+        .unwrap();
+    assert_eq!(reports.len(), 1, "the report row the refused call named");
+    assert!(
+        reports[0].actionable,
+        "the refused report action moved nothing: {reports:?}"
+    );
+
+    for (tool, refused) in [(TOOL_DELETE_EVENT, &deleted), (TOOL_REPORTS_ACTION, &acted)] {
         assert_eq!(refused.is_error, Some(true), "{tool}");
-        let refusal = text(&refused);
+        let refusal = text(refused);
         assert!(refusal.contains(FORBIDDEN), "{tool}: {refusal}");
         assert!(refusal.contains(tool), "{tool}: {refusal}");
     }
@@ -258,20 +290,6 @@ async fn a_read_only_document_is_refused_both_writes() {
             "a stdio caller has no address: {entry}"
         );
     }
-
-    // Nothing of either write ran: the row is still live and the report row still actionable.
-    let read = client.call(TOOL_GET_EVENT, json!({ "id": id })).await;
-    assert!(payload(&read)["event"]["deleted_at"].is_null());
-    let reports = fixture
-        .backend
-        .find_by_event_id(&EventId::from_byte_array([46; 32]))
-        .await
-        .unwrap();
-    assert_eq!(reports.len(), 1, "the report row the refused call named");
-    assert!(
-        reports[0].actionable,
-        "the refused report action moved nothing: {reports:?}"
-    );
 }
 
 #[tokio::test]
