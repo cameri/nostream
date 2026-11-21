@@ -46,8 +46,10 @@ survives a successful write), and a `reason` on every unavailable value. The cad
 times faster than the bound, so one missed write is still fresh; 5 s is the coarsest cadence that
 makes a connection count worth reading.
 
-The payload has exactly two sources: `version` and `nip11` come from the answering process, and
-everything under `relay` comes from the published document. **Unavailable is never zero.** With
+The payload has three sources: `version` and the settings-derived keys of `nip11` come from the
+answering process; `nip11.self` and everything under `relay`'s numbers come from the published
+document; and `relay.reason` and `relay.ageSeconds` are the reader's own — the text of the read's
+failure and its arithmetic. **Unavailable is never zero.** With
 no document, an unreadable one, or one older than the bound, `relay` is
 `{reason, observedAt: null, ageSeconds: null, uptimeSeconds: null, activeConnections: null,
 workers: null}` and the reason names `relay-status.json`; a `0` in the payload can only come from
@@ -59,9 +61,9 @@ R5's formula is `(now − generated)/1000`, so a document dated ahead of the rea
 `ageSeconds: 0` and is fresh. A daemon whose clock steps back keeps publishing documents a correct
 reader treats as fresh, and a reader more than 30 s ahead of the writer reports a live daemon as
 stale; that is inherent to a wall-clock stamp, and the document says when it was written so a
-reader can see the skew.
-listener — would need D1's HTTP surface and an auth model; the file is the cross-process channel
-the tree already relies on (`admin-audit.jsonl`), with no new surface.
+reader can see the skew. The alternative — a route on the daemon's listener — would need ADR 0014
+D1's HTTP surface and an auth model; the file is the cross-process channel the tree already
+relies on (`admin-audit.jsonl`), with no new surface.
 
 **Reading it is not the second-writer hazard ADR 0014 records** (`0014-admin-http-surface.md`,
 its decision on the single writer). That decision notes that `admin-audit.jsonl` and the settings
