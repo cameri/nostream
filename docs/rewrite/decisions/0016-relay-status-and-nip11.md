@@ -55,10 +55,10 @@ unavailable after 30 s rather than as stale numbers. The alternative — a route
 listener — would need D1's HTTP surface and an auth model; the file is the cross-process channel
 the tree already relies on (`admin-audit.jsonl`), with no new surface.
 
-**Reading it is not ADR 0014 D18's second-writer hazard.** D18 records that
-`admin-audit.jsonl` and the settings write assume one writer per configuration. This file is one
-writer (the daemon) and one reader (the MCP door); the MCP mode never writes it, and D18 is
-amended to say so.
+**Reading it is not the second-writer hazard ADR 0014 records** (`0014-admin-http-surface.md`,
+its decision on the single writer). That decision notes that `admin-audit.jsonl` and the settings
+write assume one writer per configuration. This file is one writer (the daemon) and one reader (the
+MCP door); the MCP mode never writes it, and ADR 0014 is amended to say so.
 
 ### D2 — The seam is two concrete places, not a trait
 
