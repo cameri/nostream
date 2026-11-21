@@ -123,6 +123,9 @@ pub async fn publish_status(
 ) {
     let path = nostream_admin::utils::status::path(state.paths());
     let mut interval = tokio::time::interval(nostream_admin::utils::status::STATUS_INTERVAL);
+    // `interval`'s first tick is immediate; consume it, as `publish_heartbeats` does, so the
+    // loop's own write is the start's single write and the next is one cadence later.
+    interval.tick().await;
 
     loop {
         let active = u64::try_from(connections.live_total()).unwrap_or(u64::MAX);
