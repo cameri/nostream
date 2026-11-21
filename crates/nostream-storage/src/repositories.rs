@@ -650,6 +650,15 @@ pub trait EventRepository: Send + Sync {
         filter: &'a nostream_core::Filter,
     ) -> StorageFuture<'a, QueryStream<'a, ReconciliationItem>>;
 
+    /// Loads one row by exact id **without the NIP-56 gate**, deleted or not, hidden or not.
+    ///
+    /// The gate has always been a *read's*: `find_by_filters` drops a row an actionable report
+    /// names (`lmdb/events.rs`'s `reported`), which is what a REQ must not see. A delete is not a
+    /// read of that kind — it must be able to delete what a moderator just hid — so this one
+    /// exact-id lookup skips the gate, and **only the delete path may call it**. Every reader
+    /// that answers a client keeps the gated path.
+    fn find_stored<'a>(&'a self, id: &'a EventId) -> StorageFuture<'a, Option<EventRecord>>;
+
     /// Soft-deletes the given ids of one pubkey, returning the count.
     ///
     /// Two conditions are the store's own, implemented by both backends and not by a caller:

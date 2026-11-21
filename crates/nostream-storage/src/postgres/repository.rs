@@ -61,6 +61,10 @@ impl EventRepository for PostgresBackend {
         })
     }
 
+    fn find_stored<'a>(&'a self, id: &'a EventId) -> StorageFuture<'a, Option<EventRecord>> {
+        Box::pin(async move { events::find_stored(&self.master, id).await })
+    }
+
     fn delete_by_pubkey_and_ids<'a>(
         &'a self,
         pubkey: &'a Pubkey,

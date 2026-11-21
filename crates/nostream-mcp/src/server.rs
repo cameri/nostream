@@ -529,8 +529,9 @@ impl AdminMcp {
     #[tool(
         description = "Mark one stored event deleted: the same soft delete a NIP-09 request from the \
 author makes. The event leaves REQ and COUNT and keeps its row, so `get_event` and `list_events` \
-still return it with `deleted_at` set. The argument is the event's hex id; a prefix shorter than \
-64 characters names no event, so nothing is deleted. Answers `outcome` — `deleted`, \
+still return it with `deleted_at` set — unless an actionable report hides it, in which case it \
+stays hidden until the report is allowed. The argument is the event's hex id; a prefix shorter \
+than 64 characters names no event, so nothing is deleted. Answers `outcome` — `deleted`, \
 `already_deleted`, `not_deleteable` (kind 62 is never deleted), or `not_found` — and the row as \
 it stands after the call"
     )]
@@ -565,25 +566,34 @@ next refresh, up to 30 s"
         }
     }
 
-    /// The delete payload: one outcome from the store's own count and the row read before the
-    /// call, and the row as it stands after it (R3, R4).
+    /// The delete payload: one outcome from the store's own count and the row **as it stands
+    /// after** the call, and that row (R3, R4).
     ///
-    /// The first read is not a pre-judgement — the store's predicates stay authoritative — it
-    /// is how the call learns the pubkey the seam requires and how a zero count is explained.
+    /// The read is [`EventRepository::find_stored`], not `get_event`'s gated read: a delete must
+    /// reach the events a moderator has just hidden, or this slice's two tools contradict each
+    /// other. The outcome comes from the post-call row rather than the pre-read, because a
+    /// pre-read is stale the moment a second caller deletes the row first — that row answers
+    /// `already_deleted`, and only a live one answers `not_deleteable`.
     async fn deleted(&self, id: &str) -> Result<Value, McpError> {
-        let Some(row) = self.event(id).await? else {
+        let id = hex_prefix("id", id)?;
+        if id.len() != 64 {
+            return Err(McpError::Criterion(format!(
+                "id: {id:?} is not a 64-character hex id"
+            )));
+        }
+        let event_id = EventId::try_from(id.as_str())
+            .map_err(|error| McpError::Criterion(error.to_string()))?;
+        let events = &self.state.stores().events;
+        let Some(row) = events.find_stored(&event_id).await? else {
             return Ok(json!({ "outcome": OUTCOME_NOT_FOUND, "event": null }));
         };
-        let count = self
-            .state
-            .stores()
-            .events
+        let count = events
             .delete_by_pubkey_and_ids(&row.event.pubkey, &[row.event.id])
             .await?;
-        let after = self.event(id).await?;
+        let after = events.find_stored(&event_id).await?;
         let outcome = if count > 0 {
             OUTCOME_DELETED
-        } else if row.deleted_at.is_some() {
+        } else if after.as_ref().is_some_and(|row| row.deleted_at.is_some()) {
             OUTCOME_ALREADY_DELETED
         } else {
             OUTCOME_NOT_DELETEABLE

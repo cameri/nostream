@@ -593,6 +593,12 @@ impl EventRepository for VanishingRepository {
         self.inner.find_reconciliation_items(filter)
     }
 
+    /// Fully qualified rather than a method call, so the ungated read has exactly one call site
+    /// in the workspace and the criterion that counts it (AC8's fourth leg) can hold.
+    fn find_stored<'a>(&'a self, id: &'a EventId) -> StorageFuture<'a, Option<EventRecord>> {
+        EventRepository::find_stored(&*self.inner, id)
+    }
+
     fn delete_by_pubkey_and_ids<'a>(
         &'a self,
         pubkey: &'a Pubkey,

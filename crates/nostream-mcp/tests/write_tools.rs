@@ -141,13 +141,15 @@ async fn a_prefix_is_not_an_id_and_deletes_nothing() {
     let client = fixture.client().await;
 
     let prefix = &id[..4];
-    let deleted = client
+    let refused = client
         .call(TOOL_DELETE_EVENT, json!({ "id": prefix }))
         .await;
-    assert_eq!(deleted.is_error, Some(false), "{}", text(&deleted));
-    let answer = payload(&deleted);
-    assert_eq!(answer["outcome"], OUTCOME_NOT_FOUND, "{answer}");
-    assert!(answer["event"].is_null(), "a prefix names no row: {answer}");
+    assert_eq!(refused.is_error, Some(true), "{}", text(&refused));
+    assert_eq!(
+        text(&refused),
+        format!("id: {prefix:?} is not a 64-character hex id"),
+        "the length check refuses a prefix before any read"
+    );
 
     let read = client.call(TOOL_GET_EVENT, json!({ "id": id })).await;
     assert!(
@@ -665,4 +667,65 @@ async fn a_mixed_report_counts_only_the_rows_that_moved() {
     let reports = answer["reports"].as_array().unwrap();
     assert_eq!(reports.len(), 2, "both rows are listed: {answer}");
     assert!(reports.iter().all(|row| row["actionable"] == false));
+}
+
+#[tokio::test]
+async fn a_hidden_event_is_deleted_and_stays_hidden() {
+    let fixture = TestMcp::start_with(
+        Fixture::default()
+            .with("nip56.enabled", json!(true))
+            .with("nip56.hideActionableReports", json!(true)),
+    )
+    .await;
+    let record = event(34, 1, 1_699_999_973);
+    let id = id_of(&record);
+    fixture.seed(std::slice::from_ref(&record)).await;
+    seed_report(&fixture, [65; 32], &record).await;
+    let client = fixture.client().await;
+
+    assert!(
+        !listing(&client, &[1]).await.contains(&id),
+        "an actionable report hides the event to begin with"
+    );
+
+    let deleted = client.call(TOOL_DELETE_EVENT, json!({ "id": id })).await;
+    assert_eq!(deleted.is_error, Some(false), "{}", text(&deleted));
+    let answer = payload(&deleted);
+    assert_eq!(
+        answer["outcome"], OUTCOME_DELETED,
+        "a hidden row is still a stored row, so the delete reaches it: {answer}"
+    );
+    assert!(answer["event"]["deleted_at"].is_string(), "{answer}");
+
+    // The delete went through the ungated read; the read tools keep the gate.
+    assert!(
+        !listing(&client, &[1]).await.contains(&id),
+        "the list still applies the gate after the delete"
+    );
+    let read = client.call(TOOL_GET_EVENT, json!({ "id": id })).await;
+    assert!(
+        payload(&read)["event"].is_null(),
+        "and so does the exact-id read: {}",
+        payload(&read)
+    );
+
+    let report_id = EventId::from_byte_array([65; 32]).to_string();
+    let allowed = client
+        .call(
+            TOOL_REPORTS_ACTION,
+            json!({ "id": report_id, "action": "allow" }),
+        )
+        .await;
+    assert_eq!(payload(&allowed)["changed"], 1);
+    let listing = client
+        .call(
+            TOOL_LIST_EVENTS,
+            json!({ "ids": [id.clone()], "kinds": [1] }),
+        )
+        .await;
+    assert_eq!(
+        payload(&listing)["events"].as_array().unwrap().len(),
+        1,
+        "the pair coheres: the allowed event is the deleted row"
+    );
 }

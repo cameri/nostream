@@ -533,6 +533,13 @@ impl EventRepository for SlowEventRepository {
         Box::pin(async { Err(not_implemented()) })
     }
 
+    fn find_stored<'a>(
+        &'a self,
+        _id: &'a nostream_core::EventId,
+    ) -> nostream_storage::repositories::StorageFuture<'a, Option<EventRecord>> {
+        Box::pin(async { Err(not_implemented()) })
+    }
+
     fn delete_by_pubkey_and_ids<'a>(
         &'a self,
         _pubkey: &'a nostream_core::Pubkey,

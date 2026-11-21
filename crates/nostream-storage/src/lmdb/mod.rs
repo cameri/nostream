@@ -598,6 +598,14 @@ impl EventRepository for LmdbBackend {
         })
     }
 
+    fn find_stored<'a>(&'a self, id: &'a EventId) -> StorageFuture<'a, Option<EventRecord>> {
+        Box::pin(async move {
+            let id = *id;
+            self.read(move |txn, databases| events::find_stored(txn, databases, &id))
+                .await
+        })
+    }
+
     fn delete_by_pubkey_and_ids<'a>(
         &'a self,
         pubkey: &'a Pubkey,
