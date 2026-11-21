@@ -26,10 +26,20 @@
 //! (`ZQ1=` then three spaces then `ZQ2=5` → `ZQ1` is `ZQ2=5` and `ZQ2` is null). This parser, which
 //! reads line by line as the capture's own reader does, answers the first line in both cases —
 //! `M` is `"a` and the second line is skipped as not `KEY=…`; `ZQ1` is the empty value and
-//! `ZQ2` still parses. An **unterminated** quote is not a divergence at all: node answers `"unbal`
-//! for `LONE="unbal` and the following `NEXT=5` still parses, which is what this parser does. The
-//! line-by-line reading is the capture's, and the capture is this crate's reference for the file's
-//! own view.
+//! `ZQ2` still parses. The line-by-line reading is the capture's, and the capture is this crate's
+//! reference for the file's own view.
+//!
+//! **An unterminated quote matches node only while no `#` follows it.** Node answers `"unbal` for
+//! `LONE="unbal` and the following `NEXT=5` still parses, which is what this parser does. With a
+//! `#` in the tail they part: measured on node v24.22.1, `A="abc # def` is `"abc # def` there,
+//! while this parser answers `"abc` — a leading quote with no partner does not return at
+//! [`parse_value`]'s quote arm, so control falls to the comment rule and the raw text is cut at the
+//! `#`. **Both answers are the layer's**, which is what `store::open`, `import` and
+//! `RelayKeySource` read, so a credential written with a missing closing quote and a `#` behind it
+//! is *shorter* on the port than in the capture, silently — while [`parse_raw`] keeps the whole
+//! line and `config env list` shows it. The port's answer is kept deliberately: it is the safer
+//! reading of a `#`, node's is no more principled for a malformed line, and no valid `.env`
+//! contains one.
 //!
 //! Two more divergences are pre-existing and belong in the same list rather than as code changes.
 //! A **lone `\r` with no `\n`** (an old-Mac line ending, which this parser strips): the capture's
@@ -460,8 +470,10 @@ mod tests {
     /// accident. Measured with node v24.22.1, node joins a value onto the next line in two shapes:
     /// a **closed** quote pair (`M="a` then `b"` is one value `a`⏎`b`) and a value that is **only
     /// whitespace** (`ZQ1=` then spaces then `ZQ2=5` makes `ZQ1` the string `ZQ2=5`) — and this
-    /// parser answers the first line in both. An **unterminated** quote is not a divergence at all:
-    /// node answers `"unbal` and the following `NEXT=5` still parses, which is what this parser does.
+    /// parser answers the first line in both. An **unterminated** quote matches node only while no
+    /// `#` follows it: node answers `"unbal` and the following `NEXT=5` still parses, which is what
+    /// this parser does — but with a `#` in the tail the answers part, which the assertion below
+    /// pins.
     #[test]
     fn a_multi_line_value_is_the_line_it_started_on() {
         let values = parse_values("M=\"a\nb\"\nLONE=\"unbal\nNEXT=5\n");
@@ -475,6 +487,17 @@ mod tests {
         let values = parse_values("ZQ1=   \nZQ2=5\n");
         assert_eq!(values.get("ZQ1").map(String::as_str), Some(""));
         assert_eq!(values.get("ZQ2").map(String::as_str), Some("5"));
+
+        // The unterminated quote with a `#` behind it: node keeps the line whole (`"abc # def`,
+        // v24.22.1, `env -i`), and this parser cuts it at the `#` because a leading quote with no
+        // partner falls through to the comment rule. That shorter answer is the **layer** — what
+        // `store::open`, `import` and `RelayKeySource` read — while `parse_raw` keeps the whole
+        // line, so a credential line missing its closing quote is silently weaker here. Pinned as
+        // the deliberate answer (module doc), not as a shape to "fix" toward node.
+        let values = parse_values("A=\"abc # def\n");
+        assert_eq!(values.get("A").map(String::as_str), Some("\"abc"));
+        let raw = parse_raw("A=\"abc # def\n");
+        assert_eq!(raw.get("A").map(String::as_str), Some("\"abc # def"));
 
         let raw = parse_raw("M=\"a\nb\"\n");
         assert_eq!(raw.get("M").map(String::as_str), Some("\"a"));
