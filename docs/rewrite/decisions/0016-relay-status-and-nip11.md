@@ -38,7 +38,7 @@ The NIP-11 document did not exist either: `docs/rewrite/nip-parity.md` §10 D1 s
 `<config>/relay-status.json` is written by one task in the daemon
 (`nostreamd::admin_http::publish_status`, spawned in `serve`) and read per call by the tool
 (`nostream_admin::utils::status::read`). The file is `StatusDocument`: `generatedAt`,
-`uptimeSeconds`, `activeConnections`, `workers`.
+`uptimeSeconds`, `activeConnections`, `relayPubkey`, `workers`.
 
 The pricing is part of the decision: **one** writer task, a **5 s** cadence
 (`STATUS_INTERVAL`), a **30 s** staleness bound (`STATUS_TTL_SECONDS`), an **atomic replace** (a
