@@ -9,6 +9,17 @@
 //! The file is read, never written through the environment: this crate cannot call
 //! `std::env::set_var` (it is `unsafe` in edition 2024 and the workspace denies unsafe code), so
 //! the `.env` layer is a lookup every caller goes through instead of a mutation.
+//!
+//! **Known divergences from `node --env-file`, both safe.** The *line* is the capture's
+//! `ENV_LINE_REGEX` (`src/cli/utils/env-config.ts:16`) and only the *value* is node's: node also
+//! honours `export A=1` and keys like `A.B` or `A B` (measured on this host with v24.22.1), and
+//! this parser skips all three. Nothing the CLI reads is such a key — every consumer goes through
+//! [`SUPPORTED_KEYS`], which holds none of them — so the only exposure is a line node would honour
+//! and the port would not, such as `export NOSTR_CONFIG_DIR=…`; an operator writing it gets the
+//! capture's behaviour only. Node's multi-line values are likewise not reproduced: an unterminated
+//! quote swallows the rest of the file there, while this parser reads line by line, as the
+//! capture's own reader does. Both answers are wrong for malformed input, and the line-by-line one
+//! is the capture's.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -273,15 +284,16 @@ pub fn parse_values(content: &str) -> BTreeMap<String, String> {
 }
 
 /// One value as `node --env-file` reads it — the oracle this module's header names, measured on
-/// this host over `A="hello world"`, `B=plain # trailing`, `C='single'`, `D=unquoted#nospace` and
-/// `DB_PASSWORD="p@ss#word"`: one balanced pair of surrounding quotes is removed, and an
-/// **unquoted** `#` starts a comment (no space needed before it, as `D` shows). A `#` inside the
+/// this host (v24.22.1) over `A="hello world"`, `B=plain # trailing`, `C='single'`,
+/// `` D=`tick` ``, `E=unquoted#nospace` and `DB_PASSWORD="p@ss#word"`: one balanced pair of
+/// surrounding quotes — `'`, `"` **or a backtick**, which node also strips — is removed, and an
+/// **unquoted** `#` starts a comment (no space needed before it, as `E` shows). A `#` inside the
 /// quotes is part of the value. The split on the first `=` is the caller's, so `KEY=a=b` keeps
 /// `a=b`.
 fn parse_value(raw: &str) -> String {
     let trimmed = raw.trim();
     let mut characters = trimmed.chars();
-    if let Some(quote @ ('\'' | '"')) = characters.next() {
+    if let Some(quote @ ('\'' | '"' | '`')) = characters.next() {
         let rest = characters.as_str();
         if let Some(end) = rest.find(quote) {
             return rest[..end].to_owned();
@@ -390,22 +402,25 @@ mod tests {
         assert_eq!(values.len(), 2);
     }
 
-    /// `node --env-file` is the oracle the module header names, and it strips both a surrounding
-    /// quote pair and an inline comment: measured on this host (node v24.22.1) over these five
-    /// lines, `[process.env.A, …, process.env.DB_PASSWORD]` answers
-    /// `["hello world","plain","single","unquoted","p@ss#word"]`. A `#` inside quotes therefore
-    /// stays, an unquoted one starts a comment with or without a space before it, and the split
-    /// on the first `=` is untouched (`SECRET=abc=def` above).
+    /// `node --env-file` is the oracle the module header names, and it strips a surrounding quote
+    /// pair — `'`, `"` or a backtick — and an inline comment: measured on this host (node
+    /// v24.22.1) over these six lines, `node --env-file=probe.env -e …` answers
+    /// `["hello world","plain","single","tik","unquoted","p@ss#word"]`. A `#` inside quotes
+    /// therefore stays, an unquoted one starts a comment with or without a space before it, and
+    /// the split on the first `=` is untouched (`SECRET=abc=def` above). The line forms node
+    /// accepts and this parser does not (`export A=1`, `A.B`, `A B`) are the module doc's
+    /// documented divergence.
     #[test]
     fn the_parse_strips_quotes_and_comments_as_node_does() {
         let values = parse_values(
-            "A=\"hello world\"\nB=plain # trailing\nC='single'\nD=unquoted#nospace\n\
+            "A=\"hello world\"\nB=plain # trailing\nC='single'\nD=`tik`\nE=unquoted#nospace\n\
              DB_PASSWORD=\"p@ss#word\"\n",
         );
         assert_eq!(values.get("A").map(String::as_str), Some("hello world"));
         assert_eq!(values.get("B").map(String::as_str), Some("plain"));
         assert_eq!(values.get("C").map(String::as_str), Some("single"));
-        assert_eq!(values.get("D").map(String::as_str), Some("unquoted"));
+        assert_eq!(values.get("D").map(String::as_str), Some("tik"));
+        assert_eq!(values.get("E").map(String::as_str), Some("unquoted"));
         assert_eq!(
             values.get("DB_PASSWORD").map(String::as_str),
             Some("p@ss#word")
