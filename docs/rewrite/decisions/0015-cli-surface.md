@@ -185,7 +185,7 @@ exception D14 records, for the reason D14 gives.
 **Cost:** every command parses the file twice, through the context's one `Environment`, which holds
 both views (`crates/nostream-cli/src/app.rs:47`); the three `config env` readers are handed that
 same instance, and `config env set` reads the same file's text again because it writes from it
-(`config.rs:337`). Measured with `strace -f -e trace=openat`: `config env list` opens the file
+(`config.rs:342`). Measured with `strace -f -e trace=openat`: `config env list` opens the file
 **once** and `config env set` once plus that text read. Both parses of one file are deliberate; a
 value that must survive into the environment has to be quoted as node requires. Collapsing them
 instead made `set` write a line its own `get` could not read back; the alternative, making `set`
