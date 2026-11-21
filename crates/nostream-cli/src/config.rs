@@ -417,21 +417,40 @@ mod tests {
     }
 
     /// The three `config env` readers answer the `Environment` they are handed, never a fresh read
-    /// of `<cwd>/.env`: the table below names no file, so a reader that loaded its own copy would
-    /// answer `No .env entries found` instead of these lines.
+    /// of `<cwd>/.env`. Each assertion fails differently when a reader reloads:
+    ///
+    /// - `env_list` prints the empty table's `No .env entries found` instead of the two lines;
+    /// - `env_get` answers `Env key not set: SECRET`, which the `unwrap` turns into a panic;
+    /// - `env_validate` answers `Environment settings are valid` for an empty file, so the table
+    ///   carries a line only a real parse would refuse — `WORKER_COUNT=notanumber` — and a reload
+    ///   would return `Ok` where the assertion demands the `Reported` refusal.
     #[test]
     fn the_env_readers_answer_the_environment_they_are_handed() {
-        let env = env_file::Environment::from_values(std::collections::BTreeMap::from([(
-            "SECRET".to_owned(),
-            "abcdef".to_owned(),
-        )]));
+        let env = env_file::Environment::from_values(std::collections::BTreeMap::from([
+            ("SECRET".to_owned(), "abcdef".to_owned()),
+            ("WORKER_COUNT".to_owned(), "notanumber".to_owned()),
+        ]));
 
-        assert_eq!(env_list(&env, true).unwrap().lines, vec!["SECRET=abcdef"]);
-        assert_eq!(env_list(&env, false).unwrap().lines, vec!["SECRET=ab***ef"]);
-        assert_eq!(env_get(&env, "SECRET", true).unwrap().lines, vec!["abcdef"]);
         assert_eq!(
-            env_validate(&env).unwrap().lines,
-            vec!["Environment settings are valid"]
+            env_list(&env, true).unwrap().lines,
+            vec!["SECRET=abcdef", "WORKER_COUNT=notanumber"]
+        );
+        assert_eq!(
+            env_list(&env, false).unwrap().lines,
+            vec!["SECRET=ab***ef", "WORKER_COUNT=notanumber"]
+        );
+        assert_eq!(env_get(&env, "SECRET", true).unwrap().lines, vec!["abcdef"]);
+        // A refused environment is the error arm, whose lines are the finding the capture prints.
+        let CliError::Reported { lines, exit_code } = env_validate(&env).unwrap_err() else {
+            panic!("a refused environment is Reported");
+        };
+        assert_eq!(exit_code, 1);
+        assert_eq!(
+            lines,
+            vec![
+                "Environment validation failed:",
+                "- WORKER COUNT (WORKER_COUNT): WORKER_COUNT must be an integer"
+            ]
         );
     }
 }
