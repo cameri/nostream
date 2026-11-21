@@ -165,9 +165,14 @@ parses the environment it launches with (`node --env-file-if-exists=.env`, so a 
 inline `#` are syntax), while the capture's `parseEnvFile` keeps each value **raw** for
 `config env list`, `get`, `validate` and `set` (`src/cli/utils/env-config.ts:16,75-112`). The port
 keeps both over one file (`env_file::Environment`): `get` answers node's rule — the view
-`store::open`, `import` and `migrate` read — and the `config env` commands read the raw table, so
-`config env set DB_PASSWORD 'p#ss'` round-trips and `config env validate` refuses
-`WORKER_COUNT=2 # note` exactly where the capture refuses it.
+`store::open`, `import` and the other store commands read — and the `config env` commands read the
+raw table, so `config env set DB_PASSWORD 'p#ss'` round-trips and `config env validate` refuses
+`WORKER_COUNT=2 # note` exactly where the capture refuses it. The raw table keeps trailing
+whitespace, as its regex does: `A=1  ` is `1  `, and the mask shows it.
+
+`migrate` is the one command outside both: it reads `std::env::var` directly, because its source
+must come from the process or an explicit setting and never from a copied file's layer — the
+exception D14 records, for the reason D14 gives.
 
 **Cost:** two parses of one file for every command that uses both views, and a value that must
 survive into the environment has to be quoted as node requires. Collapsing them instead made
