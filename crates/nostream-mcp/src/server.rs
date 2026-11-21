@@ -1,4 +1,4 @@
-//! The MCP server: the seven tools, the credential gate and the audit sink.
+//! The MCP server: the twelve tools, the credential gate and the audit sink.
 //!
 //! Every tool is a thin handler over a seam that already exists — `AdminState` for the settings,
 //! `EventRepository` for the events — and nothing here knows what an HTTP status is (R3). The
@@ -11,11 +11,12 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use chrono::{DateTime, Utc};
 use nostream_admin::AdminState;
 use nostream_admin::controllers::admin_json_body_middleware::settings_patch;
 use nostream_admin::controllers::patch_settings::{self, SettingsWrite};
 use nostream_admin::utils::status;
-use nostream_core::{EventId, Filter, Kind};
+use nostream_core::{EventId, Filter, Kind, Pubkey};
 use nostream_relay::nip11;
 use nostream_storage::repositories::{EventRecord, collect_page, collect_records};
 use rmcp::handler::server::router::tool::ToolRouter;
@@ -47,9 +48,9 @@ pub const MCP_INSTRUCTIONS: &str = "\
 The nostream admin MCP server. Every call is decided by the scoped token document the mode was \
 started with — `--admin-token-file <path>` or `--admin-token-fd <n>`, exactly one, its shape \
 {\"scopes\": [\"write\"]}: the document's presence authorises `settings_get`, `list_events`, \
-`get_event` and `relay_status`, and the \"write\" scope authorises `settings_set`, \
-`delete_event` and `reports_action` (else the call \
-is `Forbidden`). \
+`get_event`, `relay_status`, `user_get`, `invoices_list`, `invoices_get` and `reports_list`, and \
+the \"write\" scope authorises `settings_set`, `delete_event`, `reports_action` and `user_admin` \
+(else the call is `Forbidden`). \
 `admin.enabled` must be true in the settings, or every call answers `Not Found`; a document \
 that cannot be read answers `Unauthorized`. Each executed call appends one `mcp.<tool>` line to \
 `<config>/admin-audit.jsonl`, and a call the document's scopes deny appends one `mcp.denied` \
@@ -63,6 +64,11 @@ pub const TOOL_GET_EVENT: &str = "get_event";
 pub const TOOL_RELAY_STATUS: &str = "relay_status";
 pub const TOOL_DELETE_EVENT: &str = "delete_event";
 pub const TOOL_REPORTS_ACTION: &str = "reports_action";
+pub const TOOL_REPORTS_LIST: &str = "reports_list";
+pub const TOOL_USER_ADMIN: &str = "user_admin";
+pub const TOOL_USER_GET: &str = "user_get";
+pub const TOOL_INVOICES_LIST: &str = "invoices_list";
+pub const TOOL_INVOICES_GET: &str = "invoices_get";
 
 /// What a delete call did, as the payload's `outcome` (R3, R4): this call marked the row
 /// deleted.
@@ -90,7 +96,10 @@ pub const MAX_FILTER_TERMS: usize = 64;
 /// newest rows rather than the first.
 ///
 /// It is not `nostream_storage::MAX_PAGE_ROWS`, the relay's 5,000-row clamp: this is the page a
-/// read materialises, which is the number a backend opens with.
+/// read materialises, which is the number a backend opens with. It is also the door's page
+/// bound, and for the invoice and report reads it is only a bound, because neither store's read
+/// takes a direction from `limit`., and for the invoice and report reads it is only a bound, because
+/// neither store's read takes a direction from `limit`.
 pub const MAX_ROWS_PER_PAGE: u64 = nostream_storage::DEFAULT_PAGE_ROWS;
 
 /// The refusal for a credential whose document is absent, unreadable or no longer a document this
@@ -117,10 +126,11 @@ pub fn audit_action(tool: &str) -> String {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Requires {
     /// Reading: the grant every accepted document carries, so no scope names it and none is
-    /// asked for at dispatch. The four read tools say this in the table rather than leaving
+    /// asked for at dispatch. The eight read tools say this in the table rather than leaving
     /// the column empty.
     Read,
-    /// [`SCOPE_WRITE`]: the one scope a document may add, and the right to call `settings_set`.
+    /// [`SCOPE_WRITE`]: the one scope a document may add, and the right to call the four tools
+    /// that write.
     Write,
 }
 
@@ -214,6 +224,31 @@ pub const TOOLS: &[Tool] = &[
         parses: reports_action_parses,
         needs: Requires::Write,
     },
+    Tool {
+        name: TOOL_REPORTS_LIST,
+        parses: reports_list_parses,
+        needs: Requires::Read,
+    },
+    Tool {
+        name: TOOL_USER_ADMIN,
+        parses: user_admin_parses,
+        needs: Requires::Write,
+    },
+    Tool {
+        name: TOOL_USER_GET,
+        parses: user_get_parses,
+        needs: Requires::Read,
+    },
+    Tool {
+        name: TOOL_INVOICES_LIST,
+        parses: invoices_list_parses,
+        needs: Requires::Read,
+    },
+    Tool {
+        name: TOOL_INVOICES_GET,
+        parses: invoices_get_parses,
+        needs: Requires::Read,
+    },
 ];
 
 /// `tool`'s row; `None` when the table does not name it.
@@ -264,6 +299,26 @@ fn delete_event_parses(arguments: Option<&Map<String, Value>>) -> bool {
 
 fn reports_action_parses(arguments: Option<&Map<String, Value>>) -> bool {
     serde_json::from_value::<ReportsActionArgs>(arguments_value(arguments)).is_ok()
+}
+
+fn reports_list_parses(arguments: Option<&Map<String, Value>>) -> bool {
+    serde_json::from_value::<ReportsListArgs>(arguments_value(arguments)).is_ok()
+}
+
+fn user_admin_parses(arguments: Option<&Map<String, Value>>) -> bool {
+    serde_json::from_value::<UserAdminArgs>(arguments_value(arguments)).is_ok()
+}
+
+fn user_get_parses(arguments: Option<&Map<String, Value>>) -> bool {
+    serde_json::from_value::<UserGetArgs>(arguments_value(arguments)).is_ok()
+}
+
+fn invoices_list_parses(arguments: Option<&Map<String, Value>>) -> bool {
+    serde_json::from_value::<InvoicesListArgs>(arguments_value(arguments)).is_ok()
+}
+
+fn invoices_get_parses(arguments: Option<&Map<String, Value>>) -> bool {
+    serde_json::from_value::<InvoicesGetArgs>(arguments_value(arguments)).is_ok()
 }
 
 fn arguments_value(arguments: Option<&Map<String, Value>>) -> Value {
@@ -349,6 +404,96 @@ impl JsonSchema for ReportAction {
     fn inline_schema() -> bool {
         true
     }
+}
+
+/// The user write's arguments: one pubkey and one of the four decisions (R2).
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UserAdminArgs {
+    /// The pubkey's 64-character hex key, in either case
+    pub pubkey: String,
+    /// `admit`, `revoke`, `vanish` or `unvanish`
+    pub action: UserAction,
+}
+
+/// The four things an operator may decide about one pubkey.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UserAction {
+    /// `admit`: sets `is_admitted` and stamps `tos_accepted_at` from the server clock.
+    Admit,
+    /// `revoke`: clears `is_admitted`; a pubkey with no row is left with none.
+    Revoke,
+    /// `vanish`: sets the stored vanished flag, writing a minimal row when the pubkey has none.
+    Vanish,
+    /// `unvanish`: clears the stored vanished flag, writing a minimal row (not admitted, balance
+    /// 0) when the pubkey has none. The relay's gate reads this cache, so a cleared flag lets the
+    /// pubkey publish again — the events the kind-62 request deleted are not restored.
+    Unvanish,
+}
+
+impl UserAction {
+    /// The action's own name: the schema's `enum` member and the payload's `action` (R4).
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Admit => "admit",
+            Self::Revoke => "revoke",
+            Self::Vanish => "vanish",
+            Self::Unvanish => "unvanish",
+        }
+    }
+}
+
+impl JsonSchema for UserAction {
+    fn schema_name() -> Cow<'static, str> {
+        "UserAction".into()
+    }
+
+    /// The four literals as the schema's `enum`, for the reason `ReportAction`'s schema states:
+    /// the derive would spell a described unit enum as a `oneOf` of `const` variants.
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({ "type": "string", "enum": ["admit", "revoke", "vanish", "unvanish"] })
+    }
+
+    fn inline_schema() -> bool {
+        true
+    }
+}
+
+/// The `user_get` arguments: the one pubkey whose row is read (R7).
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UserGetArgs {
+    /// The pubkey's 64-character hex key, in either case
+    pub pubkey: String,
+}
+
+/// The `invoices_list` page: the store's own pending walk, paged (R11).
+#[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct InvoicesListArgs {
+    /// Rows to skip, oldest first; absent skips none.
+    pub offset: Option<u64>,
+    /// Page size: 1 to 500 rows, oldest first; absent uses 500.
+    #[schemars(range(min = 1, max = 500))]
+    pub limit: Option<u64>,
+}
+
+/// The `invoices_get` arguments: one invoice's own id (R11).
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct InvoicesGetArgs {
+    /// The invoice's own identifier, taken verbatim — not a hex id
+    pub id: String,
+}
+
+/// The `reports_list` page: the review queue takes a bound and no offset (R16).
+#[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReportsListArgs {
+    /// Page size: 1 to 500 reports, newest first; absent uses 500.
+    #[schemars(range(min = 1, max = 500))]
+    pub limit: Option<u64>,
 }
 
 /// The `settings_set` arguments: the same JSON object the console's HTTP body carries (R12).
@@ -566,6 +711,92 @@ next refresh, up to 30 s"
         }
     }
 
+    /// The review queue: the reports still actionable, newest first, at most `limit` (R16, D4).
+    #[tool(
+        description = "The review queue: the reports still actionable, newest first, at most \
+`limit` — 1 to 500, absent 500. This is not every report: a report an operator allowed has left \
+the queue, and the queue has no offset, so there is nothing to page. `reports_action` takes an \
+id this list shows"
+    )]
+    async fn reports_list(
+        &self,
+        Parameters(arguments): Parameters<ReportsListArgs>,
+    ) -> CallToolResult {
+        match self.review_queue(&arguments).await {
+            Ok(payload) => tool_ok(payload),
+            Err(error) => tool_error(&error),
+        }
+    }
+
+    /// One pubkey's four decisions: the same row writes the relay's own strategies make, with
+    /// the one difference each that the description names (R1–R5).
+    #[tool(
+        description = "Administer one pubkey's user row: `admit` sets `is_admitted` and stamps \
+`tos_accepted_at` from the server clock, `revoke` clears `is_admitted` and writes no row for a \
+pubkey that has none, and `vanish`/`unvanish` set and clear the stored vanished flag, writing a \
+minimal row (not admitted, balance 0) when the pubkey has none. These are the same writes the \
+relay's own strategies make, with one difference each: `vanish` publishes no kind-62 request and \
+deletes no event, `unvanish` is the only path in the tree that clears the flag, and an admitted \
+pubkey is still held to `limits.event.pubkey.minBalance` by the relay's gate. Answers `action` \
+and the row as it stands after the call — `user` null when no row exists, `balance` 0 for that \
+same pubkey — so `revoke` and an unknown key answer the same shape as `admit`"
+    )]
+    async fn user_admin(&self, Parameters(arguments): Parameters<UserAdminArgs>) -> CallToolResult {
+        match self.administer(&arguments).await {
+            Ok(payload) => tool_ok(payload),
+            Err(error) => tool_error(&error),
+        }
+    }
+
+    /// The read half: the stored row and its balance, and nothing written (R6–R10, D2).
+    #[tool(
+        description = "Read one pubkey's stored user row — `is_admitted`, `is_vanished`, \
+`balance` in msats and the two timestamps — and its balance on its own, so a missing row and an \
+empty balance are different answers: `user` is null and `balance` is 0 for a pubkey with no row. \
+`is_vanished` is the stored flag, never hydrated from a kind-62 request by this tool, so a pubkey \
+the relay has not cached and the door has never written reads as absent. Changes nothing"
+    )]
+    async fn user_get(&self, Parameters(arguments): Parameters<UserGetArgs>) -> CallToolResult {
+        match self.read_user(&arguments).await {
+            Ok(payload) => tool_ok(payload),
+            Err(error) => tool_error(&error),
+        }
+    }
+
+    /// The pending invoices, oldest first, paged by the store's own `(offset, limit)` (R12, D5).
+    #[tool(
+        description = "List the pending invoices, oldest first, paged by `offset` and `limit` — \
+the store's own pending walk, so a completed or expired invoice is not here and `invoices_get` \
+is how to read one whatever its status. `limit` is 1 to 500 rows, absent 500; `offset` skips \
+that many. A confirmed invoice stays in this list while its status reads `pending`"
+    )]
+    async fn invoices_list(
+        &self,
+        Parameters(arguments): Parameters<InvoicesListArgs>,
+    ) -> CallToolResult {
+        match self.pending_invoices(&arguments).await {
+            Ok(payload) => tool_ok(payload),
+            Err(error) => tool_error(&error),
+        }
+    }
+
+    /// One invoice by its own id, whatever its status; a miss is a result (R13, D5).
+    #[tool(
+        description = "Read one invoice by id, whatever its status; `invoice` is null when no \
+row carries the id. The id is the invoice's own opaque identifier — not a 64-character hex id — \
+and is taken verbatim. A confirmed invoice can still read `status: \"pending\"`: confirmation \
+sets `amount_paid` and `confirmed_at`, and only a status update moves the status"
+    )]
+    async fn invoices_get(
+        &self,
+        Parameters(arguments): Parameters<InvoicesGetArgs>,
+    ) -> CallToolResult {
+        match self.invoice(&arguments).await {
+            Ok(payload) => tool_ok(payload),
+            Err(error) => tool_error(&error),
+        }
+    }
+
     /// The delete payload: one outcome from the store's own count and the row **as it stands
     /// after** the call, and that row (R3, R4).
     ///
@@ -625,6 +856,86 @@ next refresh, up to 30 s"
         let mut rows = reports.find_by_event_id(&event_id).await?;
         rows.sort_by_key(|report| report.id);
         Ok(json!({ "reports": rows, "changed": changed }))
+    }
+
+    /// The four decisions in one call: the store's own write, chosen by the closed enum, then
+    /// one read-back through `find_by_pubkey` (R3). Never `is_vanished`: that read hydrates and
+    /// stores (D2).
+    async fn administer(&self, arguments: &UserAdminArgs) -> Result<Value, McpError> {
+        let pubkey = pubkey_argument(&arguments.pubkey)?;
+        let users = &self.state.stores().users;
+        match arguments.action {
+            UserAction::Admit => users.admit_user(&pubkey, self.admitted_at()).await?,
+            UserAction::Revoke => {
+                users.revoke_admission(&pubkey).await?;
+            }
+            UserAction::Vanish => {
+                users.set_vanished(&pubkey, true).await?;
+            }
+            UserAction::Unvanish => {
+                users.set_vanished(&pubkey, false).await?;
+            }
+        }
+        let mut payload = self.user_row(&pubkey).await?;
+        payload["action"] = json!(arguments.action.as_str());
+        Ok(payload)
+    }
+
+    /// The instant an admission stamps, from the door's own clock: no module outside
+    /// `nostream-core` reads the system clock (R3).
+    fn admitted_at(&self) -> DateTime<Utc> {
+        DateTime::from_timestamp_millis(
+            i64::try_from(self.state.clock().now_ms()).unwrap_or(i64::MAX),
+        )
+        .unwrap_or(DateTime::UNIX_EPOCH)
+    }
+
+    /// The read half's payload: the two reads the pair needs, in one place (R8, R9).
+    async fn read_user(&self, arguments: &UserGetArgs) -> Result<Value, McpError> {
+        let pubkey = pubkey_argument(&arguments.pubkey)?;
+        self.user_row(&pubkey).await
+    }
+
+    /// The pair both user tools answer: the row as the store holds it, and the balance on its
+    /// own — `balance` is `0` for a pubkey with no row and for a row nothing has credited, so
+    /// `user` is the field that says which.
+    async fn user_row(&self, pubkey: &Pubkey) -> Result<Value, McpError> {
+        let users = &self.state.stores().users;
+        let user = users.find_by_pubkey(pubkey).await?;
+        let balance = users.get_balance_by_pubkey(pubkey).await?;
+        Ok(json!({ "user": user, "balance": balance }))
+    }
+
+    /// The store's own pending walk, paged: no re-sort and no marker, because the store cannot
+    /// decide either (R12).
+    async fn pending_invoices(&self, arguments: &InvoicesListArgs) -> Result<Value, McpError> {
+        let limit = page_bound(arguments.limit)?;
+        let invoices = self
+            .state
+            .stores()
+            .invoices
+            .find_pending_invoices(arguments.offset.unwrap_or(0), limit)
+            .await?;
+        Ok(json!({ "invoices": invoices }))
+    }
+
+    /// One invoice by the caller's own id, verbatim: `invoice.id` is opaque text, so no hex
+    /// criterion applies to it (R13).
+    async fn invoice(&self, arguments: &InvoicesGetArgs) -> Result<Value, McpError> {
+        let invoice = self
+            .state
+            .stores()
+            .invoices
+            .find_by_id(&arguments.id)
+            .await?;
+        Ok(json!({ "invoice": invoice }))
+    }
+
+    /// `find_actionable`'s rows in the store's own order: the queue, never a re-sort (R17).
+    async fn review_queue(&self, arguments: &ReportsListArgs) -> Result<Value, McpError> {
+        let limit = page_bound(arguments.limit)?;
+        let reports = self.state.stores().reports.find_actionable(limit).await?;
+        Ok(json!({ "reports": reports }))
     }
 
     fn settings_document(&self) -> Result<Value, McpError> {
@@ -776,17 +1087,26 @@ next refresh, up to 30 s"
     }
 }
 
-/// The page a call asks for, checked against the bounds its `inputSchema` states.
+/// The page a call asks for, checked against the bounds its `inputSchema` states (R14, D6).
+///
+/// One bound and one refusal for the events and the two list tools, all of which name their
+/// argument `limit` — which is why this takes no field name.
+fn page_bound(limit: Option<u64>) -> Result<u64, McpError> {
+    let limit = limit.unwrap_or(MAX_ROWS_PER_PAGE);
+    (1..=MAX_ROWS_PER_PAGE)
+        .contains(&limit)
+        .then_some(limit)
+        .ok_or_else(|| {
+            McpError::Criterion(format!(
+                "limit: a page holds between 1 and {MAX_ROWS_PER_PAGE} rows, {limit} was given"
+            ))
+        })
+}
+
+/// The events' page size, from the one bound.
 fn page_size(criteria: &ListEventsArgs) -> Result<usize, McpError> {
-    let limit = criteria.limit.unwrap_or(MAX_ROWS_PER_PAGE);
-    let page = usize::try_from(limit).ok().filter(|page| {
-        (1..=usize::try_from(MAX_ROWS_PER_PAGE).unwrap_or(usize::MAX)).contains(page)
-    });
-    page.ok_or_else(|| {
-        McpError::Criterion(format!(
-            "limit: a page holds between 1 and {MAX_ROWS_PER_PAGE} rows, {limit} was given"
-        ))
-    })
+    // The bound caps the page at `MAX_ROWS_PER_PAGE`, so this conversion cannot narrow.
+    Ok(usize::try_from(page_bound(criteria.limit)?).unwrap_or(usize::MAX))
 }
 
 /// One criterion list, normalised to lowercase hex: the wire's own floor, and at most
@@ -825,6 +1145,21 @@ fn hex_prefix(field: &str, value: &str) -> Result<String, McpError> {
         )));
     }
     Ok(value.to_ascii_lowercase())
+}
+
+/// A pubkey argument: the wire's own floor, then exactly 64 characters (R3, R8).
+///
+/// The length is checked before any store call, so a four-character prefix cannot widen to
+/// whatever the store's range matches, and the lowercase form the first check produces is what
+/// `TryFrom` reads.
+fn pubkey_argument(value: &str) -> Result<Pubkey, McpError> {
+    let pubkey = hex_prefix("pubkey", value)?;
+    if pubkey.len() != 64 {
+        return Err(McpError::Criterion(format!(
+            "pubkey: {pubkey:?} is not a 64-character hex pubkey"
+        )));
+    }
+    Pubkey::try_from(pubkey.as_str()).map_err(|error| McpError::Criterion(error.to_string()))
 }
 
 #[tool_handler(router = self.tool_router)]

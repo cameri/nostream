@@ -12,6 +12,7 @@
 //! | `the_process_exits_zero_on_stdin_eof` | closing stdin ends the process with `0` |
 //! | `the_store_backed_tools_report_the_unwired_store` | `list_events` answers the store's own `NotImplemented` message, not an empty list |
 //! | `the_write_tools_report_the_unwired_store` | both write tools reach the unwired store and answer its message, rather than a protocol error |
+//! | `the_store_family_tools_report_the_unwired_store` | the five store-family tools reach the unwired store and answer its message |
 //! | `the_help_text_names_the_credential` | `--help` names the two flags, the document's shape and scopes, the file rule and the retired variable |
 //! | `a_console_session_token_in_the_environment_refuses_to_start` | the retired variable is named rather than ignored, even when it carries a token the console would accept |
 //! | `a_group_readable_token_file_refuses_to_start` | mode 0644 fails the start, and the message names both modes |
@@ -489,7 +490,7 @@ async fn the_mode_binds_no_socket() {
 
     assert_eq!(
         listed["result"]["tools"].as_array().map(Vec::len),
-        Some(7),
+        Some(12),
         "{listed}"
     );
     assert!(outcome.status.success(), "{}", outcome.stderr);
@@ -543,6 +544,43 @@ async fn the_write_tools_report_the_unwired_store() {
     let outcome = daemon.finish().await;
 
     for (tool, response) in [("delete_event", &deleted), ("reports_action", &acted)] {
+        assert_eq!(response["result"]["isError"], true, "{tool}: {response}");
+        let text = response["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap_or_default();
+        assert!(
+            text.contains("not implemented in Phase 1 (job 005): storage::backend::wiring"),
+            "{tool}: {text}"
+        );
+    }
+    assert!(outcome.status.success(), "{}", outcome.stderr);
+}
+
+/// The five store-family tools exist in the real binary and reach the daemon's unwired bundle:
+/// their answer is the store's own message, not the router's `tool not found` that was true
+/// before this slice.
+#[tokio::test]
+async fn the_store_family_tools_report_the_unwired_store() {
+    let prepared = Prepared::new();
+    let mut daemon = Daemon::start(&prepared, &[]);
+    daemon.initialize().await;
+    let pubkey = "ab".repeat(32);
+    let admitted = daemon
+        .call("user_admin", json!({ "pubkey": pubkey, "action": "admit" }))
+        .await;
+    let read = daemon.call("user_get", json!({ "pubkey": pubkey })).await;
+    let listed = daemon.call("invoices_list", json!({})).await;
+    let invoice = daemon.call("invoices_get", json!({ "id": "inv-1" })).await;
+    let queue = daemon.call("reports_list", json!({})).await;
+    let outcome = daemon.finish().await;
+
+    for (tool, response) in [
+        ("user_admin", &admitted),
+        ("user_get", &read),
+        ("invoices_list", &listed),
+        ("invoices_get", &invoice),
+        ("reports_list", &queue),
+    ] {
         assert_eq!(response["result"]["isError"], true, "{tool}: {response}");
         let text = response["result"]["content"][0]["text"]
             .as_str()
@@ -752,7 +790,7 @@ async fn an_inherited_descriptor_authenticates() {
 
     assert_eq!(
         listed["result"]["tools"].as_array().map(Vec::len),
-        Some(7),
+        Some(12),
         "{listed}"
     );
     assert_eq!(read["result"]["isError"], false, "{read}");
