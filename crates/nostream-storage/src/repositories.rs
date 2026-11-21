@@ -695,9 +695,9 @@ pub trait EventRepository: Send + Sync {
     ///
     /// A **read**, so a backend with a replica may answer it from the pool reads use: nothing is
     /// written from this answer, and a lagging "no" is no staler than the reads that would act on
-    /// it. `PostgresRepository` does exactly that (`&self.reader`); no production caller asks it
-    /// today, and [`is_vanished`](Self::is_vanished) is the predicate that must not lag, because it
-    /// caches what it finds.
+    /// it. `PostgresBackend` does exactly that (`&self.reader`); no production caller asks it
+    /// today, and [`is_vanished`](UserRepository::is_vanished) is the predicate that must not lag,
+    /// because it caches what it finds.
     fn has_active_request_to_vanish<'a>(&'a self, pubkey: &'a Pubkey) -> StorageFuture<'a, bool>;
 
     /// Hard-deletes one batch of expired, deleted and over-retention rows.
@@ -816,7 +816,7 @@ pub trait UserRepository: Send + Sync {
     /// is stored, and the store short-circuits every later call, so a lagging "no" would be
     /// permanent rather than merely stale once. A backend that caches this must follow the same
     /// rule; the one that reads a live kind-62 per request
-    /// ([`has_active_request_to_vanish`](Self::has_active_request_to_vanish)) does not.
+    /// ([`has_active_request_to_vanish`](EventRepository::has_active_request_to_vanish)) does not.
     fn is_vanished<'a>(&'a self, pubkey: &'a Pubkey) -> StorageFuture<'a, bool>;
 
     /// Writes the vanished flag, returning the row count.
