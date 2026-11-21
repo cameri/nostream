@@ -872,7 +872,7 @@ is a defect, and §10 is the same record in table form.
     the four untested keys are `min_prefix`, `supported_nip_extensions`, `supported_mips`
     and `max_event_tags` (§1). NIP-78's two kinds have no test either, and item 7
     carries that pair.
-    - **Status:** deferred — **D1** defers the HTTP surface and the document itself, and the field set is decided with the document; the four untested keys stay untested until then.
+   - **Status:** done in this job — **ADR 0016 D4** decides the set. Kept: `name`, `description`, `banner`/`icon`/`terms_of_service` (when set), `pubkey` (hex; an `npub` decoded), `self` (configured when it parses, else the signing key), `supported_nips`, `software`, `version`, `limitation.max_message_length`, the five client limits and `max_content_length` (each omitted when unset or, for the client limits, `0`), `min_pow_difficulty` (when non-zero), `auth_required` (literal `false`), `payment_required`, `created_at_lower_limit`/`created_at_upper_limit`, `default_limit`, `restricted_writes`, `search_supported`, and `fees.admission`/`fees.publication`. Dropped: `supported_nip_extensions` and `supported_mips` (no Rust source at all), `limitation.max_event_tags` (no constant and no admission check, so it would advertise a limit the relay does not keep), `limitation.min_prefix` (follows item 8's "not advertised"; the wire's floor is the fixed 4), `payments_url` and `fees.subscription` (the invoice route they describe does not exist), and `peering` (no Rust code serves peer feeds). The builder is `nostream_relay::nip11`, with one case per verdict.
 12. **NIP-09 `a`-tag deletion.** `DeleteEventStrategy` accepts only `e` tags
     (`src/handlers/event-strategies/delete-event-strategy.ts:22-31`); a kind-5 event
     whose tags are `a`-only deletes nothing. The rewrite either implements
@@ -961,10 +961,11 @@ capture's wording.
 **The decisions, by id.**
 
 - **D1 — NIP-11's HTTP surface is not the advertisement's job.** `SUPPORTED_NIPS` is
-  fixed and the wire gap recorded; nothing listens on HTTP and no NIP-11 document is
-  built. The surface is a dependency decision (no HTTP server crate anywhere in the
-  workspace), a second bind in `nostreamd`, and a document assembled from `info`,
-  `limits`, `payments` and `peering`. §9 item 11 carries it.
+  fixed and the wire gap recorded; nothing listens on HTTP. The document itself **is**
+  built — `nostream_relay::nip11` assembles it from `info`, `limits` and `payments` for
+  the MCP door, and no client is served it (ADR 0016 D4). The surface remains a
+  dependency decision (no HTTP server crate anywhere in the workspace) and a second bind
+  in `nostreamd`. §9 item 11 carries it.
 - **D2 — the advertised set is the audit's 33 `must-have` rows plus NIP-67: 34 ids.**
   04, 14 and 28 stay as behaviour the generic path satisfies, which costs nothing and
   avoids a silent parity change; the tombstones 12/16/20/33 stay because nostream

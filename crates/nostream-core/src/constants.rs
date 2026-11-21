@@ -11,9 +11,9 @@ pub const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 /// (`docs/rewrite/nip-parity.md` §2, 33 rows) plus NIP-67, whose hint this tree implements
 /// (§10, decision D2). Ascending, no duplicates.
 ///
-/// Nothing serves this yet — the workspace has no HTTP listener and no NIP-11 document — so
-/// the list is a decision record rather than an answer on the wire (D1). The array length is
-/// the second guard: an id added without the type changing does not compile.
+/// The list is built into the NIP-11 document by `nostream_relay::nip11` (ADR 0016 D4/D5) and
+/// served to no client — the workspace has no HTTP listener (D1). The array length is the second
+/// guard: an id added without the type changing does not compile.
 pub const SUPPORTED_NIPS: [u16; 34] = [
     1, 2, 3, 4, 5, 9, 11, 12, 13, 14, 16, 17, 20, 22, 25, 28, 33, 40, 42, 43, 44, 45, 50, 56, 59,
     62, 65, 66, 67, 70, 77, 89, 90, 98,

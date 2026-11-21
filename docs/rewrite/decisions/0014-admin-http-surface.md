@@ -325,6 +325,15 @@ directory is outside ADR 0012 D9 — `admin-audit.jsonl` (whose compaction is a 
 rename on a shared staging path, `crates/nostream-admin/src/state.rs:715-733`) and the settings
 write both assume one writer per configuration.
 
+**The one artifact the two modes do share, and why it is not the hazard.** The MCP mode's
+`relay_status` reads `<config>/relay-status.json`, which the daemon rewrites every 5 s
+(`nostream_admin::utils::status`, `crates/nostreamd/src/admin_http.rs`'s `publish_status`; ADR
+0016 D1). That is **one writer and one reader**: the daemon's task is the file's only writer, and
+the MCP process only reads it, so neither `admin-audit.jsonl`'s read-write-rename compaction nor
+the settings write gains a second writer, and this slice does not widen what ADR 0012 D9
+supports. A document that is absent, unreadable or older than its 30 s bound is reported as
+unavailable with a reason, never as zero.
+
 **The table is total, and it carries both dispatch-time facts.** Every tool the router registers
 has one row in `crates/nostream-mcp`'s `TOOLS` table: its name, the check that says whether the
 router can deserialise a call's arguments (R9), and the scope the call needs (R28). The dispatch
