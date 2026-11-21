@@ -6,7 +6,7 @@
 //! |---|---|
 //! | `a_first_delete_marks_the_row_and_says_so` | a live row is marked deleted, the payload carries the store's own `deleted_at`, and both event tools still return it |
 //! | `a_second_delete_says_already_deleted` | the store skips the second call and the timestamp does not move |
-//! | `a_prefix_is_not_an_id_and_deletes_nothing` | a four-character prefix names no event and deletes nothing |
+//! | `a_prefix_is_not_an_id_and_deletes_nothing` | a four-character prefix is refused by the length check before any read, and the row it named is still live |
 //! | `an_unknown_id_is_not_found_not_an_error` | an id nothing carries is a result, not an error |
 //! | `a_request_to_vanish_is_never_deleted` | kind 62 is the store's own skip, and the payload says which row it was |
 //! | `a_deleted_event_leaves_the_counts` | a soft delete leaves COUNT, through the door's own call |
@@ -20,9 +20,12 @@
 //! | `an_unknown_action_never_reaches_the_handler` | the closed set is the arguments type, so nothing is written |
 //! | `an_allow_leaves_a_target_another_report_still_hides` | the action is one row's flag: another actionable report keeps the target hidden |
 //! | `a_mixed_report_counts_only_the_rows_that_moved` | `changed` counts the rows that moved, and the payload lists every row of the event |
+//! | `a_hidden_event_is_deleted_and_stays_hidden` | an event an actionable report hides is deleted through the ungated read, and the read tools still hide it afterwards |
+//! | `a_delete_the_store_underreports_reads_the_row_as_deleted` | the outcome is the post-call row: a zero count beside a deleted row is `already_deleted`, not `not_deleteable` |
 //!
-//! Three fixtures carry the NIP-56 gate on (`nip56.enabled` and `nip56.hideActionableReports`),
-//! which is the only way the setter's index work is observable. Cases that seed a report row
+//! Four fixtures carry the NIP-56 gate on (`nip56.enabled` and `nip56.hideActionableReports`) —
+//! the three report cases and the hidden-event case — which is the only way the setter's index work
+//! and the hidden delete are observable. Cases that seed a report row
 //! without the gate still exercise the write and the row's flag; what they cannot see is the
 //! NIP-56 filter, because their settings leave `nip56.enabled` off and the gate never fires.
 
@@ -32,12 +35,13 @@ mod common;
 
 use std::sync::Arc;
 
-use common::{Fixture, Grant, TestMcp, event, id_of, payload, text};
+use common::{Fixture, Grant, TestMcp, ZeroCountDeleter, event, id_of, payload, text};
 use nostream_core::{EventId, Filter, Pubkey};
 use nostream_mcp::{
     AUDIT_DENIED, FORBIDDEN, OUTCOME_ALREADY_DELETED, OUTCOME_DELETED, OUTCOME_NOT_DELETEABLE,
     OUTCOME_NOT_FOUND, TOOL_DELETE_EVENT, TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_REPORTS_ACTION,
 };
+use nostream_storage::lmdb::LmdbBackend;
 use nostream_storage::repositories::{
     ActionableTarget, EventRepository, NewReport, Report, ReportRepository, ReportType,
     StorageFuture, collect_records,
@@ -728,4 +732,32 @@ async fn a_hidden_event_is_deleted_and_stays_hidden() {
         1,
         "the pair coheres: the allowed event is the deleted row"
     );
+}
+
+/// A store whose delete under-reports: it performs the soft delete and answers `0`, which is the
+/// state two concurrent deletes leave behind. The row the first read saw live is deleted by the
+/// time the read-back runs, so the payload has to call it `already_deleted`; a handler judging the
+/// pre-read would answer `not_deleteable` about a row it had just deleted.
+#[tokio::test]
+async fn a_delete_the_store_underreports_reads_the_row_as_deleted() {
+    let fixture = TestMcp::start_with_events(
+        Fixture::default(),
+        Some(Arc::new(|backend: Arc<LmdbBackend>| {
+            Arc::new(ZeroCountDeleter::new(backend)) as Arc<dyn EventRepository>
+        })),
+    )
+    .await;
+    let record = event(1, 1, 1_699_999_974);
+    let id = id_of(&record);
+    fixture.seed(std::slice::from_ref(&record)).await;
+    let client = fixture.client().await;
+
+    let deleted = client.call(TOOL_DELETE_EVENT, json!({ "id": id })).await;
+    assert_eq!(deleted.is_error, Some(false), "{}", text(&deleted));
+    let answer = payload(&deleted);
+    assert_eq!(
+        answer["outcome"], OUTCOME_ALREADY_DELETED,
+        "a zero count beside a deleted row is a delete that lost its race: {answer}"
+    );
+    assert!(answer["event"]["deleted_at"].is_string(), "{answer}");
 }

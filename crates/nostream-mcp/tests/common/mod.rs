@@ -662,3 +662,144 @@ impl EventRepository for VanishingRepository {
         self.inner.delete_all_events()
     }
 }
+
+/// The real backend, whose delete reports that it changed nothing even though it did.
+///
+/// The tool takes its outcome from the row as it stands **after** the call, and neither real
+/// backend can disagree with itself: each answers the count of rows it changed, so a zero beside a
+/// deleted row needs a row that changed between the two reads. That is the race two concurrent
+/// deletes make — this call reads the row live, another deletes it, and this one's own delete finds
+/// it already marked — and no single-writer run reaches it. This double performs the real soft
+/// delete and answers `0`, which leaves the read-back to say what happened.
+pub struct ZeroCountDeleter {
+    inner: Arc<LmdbBackend>,
+}
+
+impl ZeroCountDeleter {
+    /// The backend, with a delete that under-reports its count.
+    pub fn new(inner: Arc<LmdbBackend>) -> Self {
+        Self { inner }
+    }
+}
+
+impl EventRepository for ZeroCountDeleter {
+    fn create<'a>(&'a self, record: &'a EventRecord) -> StorageFuture<'a, u64> {
+        self.inner.create(record)
+    }
+
+    fn create_many<'a>(&'a self, records: &'a [EventRecord]) -> StorageFuture<'a, u64> {
+        self.inner.create_many(records)
+    }
+
+    fn upsert<'a>(&'a self, record: &'a EventRecord) -> StorageFuture<'a, u64> {
+        self.inner.upsert(record)
+    }
+
+    fn upsert_many<'a>(&'a self, records: &'a [EventRecord]) -> StorageFuture<'a, u64> {
+        self.inner.upsert_many(records)
+    }
+
+    fn find_by_filters<'a>(
+        &'a self,
+        filters: &'a [Filter],
+    ) -> StorageFuture<'a, QueryStream<'a, StreamedEvent>> {
+        self.inner.find_by_filters(filters)
+    }
+
+    fn count_by_filters<'a>(&'a self, filters: &'a [Filter]) -> StorageFuture<'a, u64> {
+        self.inner.count_by_filters(filters)
+    }
+
+    fn page_bound(&self) -> u64 {
+        self.inner.page_bound()
+    }
+
+    fn search_rule(&self) -> nostream_storage::repositories::SearchRule {
+        self.inner.search_rule()
+    }
+
+    fn empty_tag_rule(&self) -> nostream_storage::repositories::EmptyTagRule {
+        self.inner.empty_tag_rule()
+    }
+
+    fn find_reconciliation_items<'a>(
+        &'a self,
+        filter: &'a Filter,
+    ) -> StorageFuture<'a, QueryStream<'a, nostream_storage::repositories::ReconciliationItem>>
+    {
+        self.inner.find_reconciliation_items(filter)
+    }
+
+    /// Fully qualified rather than a method call, so the ungated read has exactly one call site
+    /// in the workspace and the criterion that counts it (AC8's fourth leg) can hold.
+    fn find_stored<'a>(&'a self, id: &'a EventId) -> StorageFuture<'a, Option<EventRecord>> {
+        EventRepository::find_stored(&*self.inner, id)
+    }
+
+    /// The real soft delete, and a count that says nothing happened.
+    fn delete_by_pubkey_and_ids<'a>(
+        &'a self,
+        pubkey: &'a Pubkey,
+        ids: &'a [EventId],
+    ) -> StorageFuture<'a, u64> {
+        Box::pin(async move {
+            self.inner.delete_by_pubkey_and_ids(pubkey, ids).await?;
+            Ok(0)
+        })
+    }
+
+    fn delete_by_addresses<'a>(
+        &'a self,
+        pubkey: &'a Pubkey,
+        addresses: &'a [(Kind, String)],
+        not_after: i64,
+    ) -> StorageFuture<'a, u64> {
+        self.inner.delete_by_addresses(pubkey, addresses, not_after)
+    }
+
+    fn delete_by_pubkey_except_kinds<'a>(
+        &'a self,
+        pubkey: &'a Pubkey,
+        excluded_kinds: &'a [Kind],
+    ) -> StorageFuture<'a, u64> {
+        self.inner
+            .delete_by_pubkey_except_kinds(pubkey, excluded_kinds)
+    }
+
+    fn has_active_request_to_vanish<'a>(&'a self, pubkey: &'a Pubkey) -> StorageFuture<'a, bool> {
+        self.inner.has_active_request_to_vanish(pubkey)
+    }
+
+    fn delete_expired_and_retained<'a>(
+        &'a self,
+        options: &'a nostream_storage::repositories::EventRetentionOptions,
+    ) -> StorageFuture<'a, nostream_storage::repositories::EventPurgeCounts> {
+        self.inner.delete_expired_and_retained(options)
+    }
+
+    fn scan_live<'a>(
+        &'a self,
+        after: Option<nostream_storage::repositories::ScanCursor>,
+        limit: u64,
+    ) -> StorageFuture<'a, QueryStream<'a, nostream_storage::repositories::EventRecord>> {
+        self.inner.scan_live(after, limit)
+    }
+
+    fn count_by_criteria<'a>(
+        &'a self,
+        criteria: &'a nostream_storage::repositories::EventCleanCriteria,
+    ) -> StorageFuture<'a, u64> {
+        self.inner.count_by_criteria(criteria)
+    }
+
+    fn delete_by_criteria<'a>(
+        &'a self,
+        criteria: &'a nostream_storage::repositories::EventCleanCriteria,
+    ) -> StorageFuture<'a, u64> {
+        self.inner.delete_by_criteria(criteria)
+    }
+
+    fn delete_all_events(&self) -> StorageFuture<'_, ()> {
+        self.inner.delete_all_events()
+    }
+}

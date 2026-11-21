@@ -737,7 +737,6 @@ impl EventRepository for InMemoryEventRepository {
         )
     }
 
-    /// `UPDATE … SET deleted_at = now()` for the given ids of one author, skipping kind 62.
     /// The recorded rows, by exact id, ungated: this double applies no NIP-56 rule at all.
     fn find_stored<'a>(&'a self, id: &'a EventId) -> StorageFuture<'a, Option<EventRecord>> {
         Box::pin(async move {
@@ -751,6 +750,7 @@ impl EventRepository for InMemoryEventRepository {
         })
     }
 
+    /// `UPDATE … SET deleted_at = now()` for the given ids of one author, skipping kind 62.
     fn delete_by_pubkey_and_ids<'a>(
         &'a self,
         pubkey: &'a Pubkey,

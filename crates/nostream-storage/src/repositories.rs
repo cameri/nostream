@@ -662,7 +662,7 @@ pub trait EventRepository: Send + Sync {
     /// Soft-deletes the given ids of one pubkey, returning the count.
     ///
     /// Two conditions are the store's own, implemented by both backends and not by a caller:
-    /// kind 62 is never touched (`lmdb/events.rs:379-381`, `postgres/events.rs:372-374`), and a
+    /// kind 62 is never touched (`lmdb/events.rs:391-393`, `postgres/events.rs:393-394`), and a
     /// row already carrying `deleted_at` is not deleted again. A row either skip answers is not
     /// counted.
     fn delete_by_pubkey_and_ids<'a>(
