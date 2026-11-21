@@ -98,8 +98,7 @@ pub const MAX_FILTER_TERMS: usize = 64;
 /// It is not `nostream_storage::MAX_PAGE_ROWS`, the relay's 5,000-row clamp: this is the page a
 /// read materialises, which is the number a backend opens with. It is also the door's page
 /// bound, and for the invoice and report reads it is only a bound, because neither store's read
-/// takes a direction from `limit`., and for the invoice and report reads it is only a bound, because
-/// neither store's read takes a direction from `limit`.
+/// takes a direction from `limit`.
 pub const MAX_ROWS_PER_PAGE: u64 = nostream_storage::DEFAULT_PAGE_ROWS;
 
 /// The refusal for a credential whose document is absent, unreadable or no longer a document this
