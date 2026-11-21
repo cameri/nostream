@@ -38,12 +38,16 @@ The tool resolves the row through **one new `EventRepository` method**, `find_st
 an exact-id read that returns the row whether or not it is deleted and **whether or not an
 actionable report hides it**. LMDB answers it with one `get` on the events table, Postgres with one
 `SELECT ... WHERE event_id = $1`; five other implementors carry it, two of them the test commons.
-It exists because the gate has always been a read's (`lmdb/events.rs:412`): resolving the row
+It exists because the gate has always been a read's (`lmdb/events.rs:1968-1978`'s `reported`, one
+predicate of a filter's row walk, and `postgres/sql.rs`'s equivalent): resolving the row
 through `get_event`'s gated read made `reports_action hide` followed by `delete_event` answer
 `not_found` and delete nothing, which made the two tools this slice ships incoherent with each
 other. The method is `pub` on a trait every consumer holds, so "only the delete path may call it"
 is not left as a comment: `.find_stored(` is an acceptance leg that reads exactly two lines across
-`crates/` — the declaration and the handler — and fails on a third caller.
+`crates/`, both the handler's, so a third caller using the method-call form fails the criterion. The
+leg is a deterrent, not a proof — a fully qualified `EventRepository::find_stored` spells past it,
+and the parity cases themselves use that form — which is why the doc comment states the rule as
+well; the commit that adds a parity caller is the place to see the leg is a spelling's.
 
 The argument is the event's hex id, and a prefix shorter than 64 characters is refused with the
 same `Criterion` error `reports_action` gives rather than widened to whatever the store's range
