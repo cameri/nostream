@@ -132,7 +132,7 @@ pub async fn publish_status(
     loop {
         let active = u64::try_from(connections.live_total()).unwrap_or(u64::MAX);
 
-        match nostream_admin::utils::status::collect(&state, active, relay_pubkey) {
+        match nostream_admin::utils::status::collect(&state, relay_pubkey, active) {
             Ok(document) => {
                 if let Err(error) = nostream_admin::utils::status::write(&path, &document) {
                     tracing::warn!(

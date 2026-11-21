@@ -33,7 +33,7 @@ async fn the_document_carries_the_daemons_four_facts() {
     let server = TestServer::start().await;
     server.clock.advance(60_000);
 
-    let document = status::collect(&server.state, 7, Some(relay_pubkey())).expect("a document");
+    let document = status::collect(&server.state, Some(relay_pubkey()), 7).expect("a document");
     let settings = server.state.settings().expect("the fixture settings");
 
     assert_eq!(document.uptime_seconds, 60, "the state's own age");
@@ -56,7 +56,7 @@ async fn the_document_carries_the_daemons_four_facts() {
 #[tokio::test]
 async fn a_daemon_without_a_key_publishes_no_identity() {
     let server = TestServer::start().await;
-    let document = status::collect(&server.state, 0, None).expect("a document");
+    let document = status::collect(&server.state, None, 0).expect("a document");
 
     assert_eq!(document.relay_pubkey, None);
     let value = serde_json::to_value(&document).expect("a document");
@@ -66,7 +66,7 @@ async fn a_daemon_without_a_key_publishes_no_identity() {
 #[tokio::test]
 async fn a_written_document_reads_back() {
     let server = TestServer::start().await;
-    let document = status::collect(&server.state, 3, Some(relay_pubkey())).expect("a document");
+    let document = status::collect(&server.state, Some(relay_pubkey()), 3).expect("a document");
     let path = status::path(server.state.paths());
 
     status::write(&path, &document).expect("a write");
@@ -94,7 +94,7 @@ async fn a_written_document_reads_back() {
 #[tokio::test]
 async fn a_document_at_the_bound_is_fresh_and_one_past_it_is_not() {
     let server = TestServer::start().await;
-    let document = status::collect(&server.state, 0, None).expect("a document");
+    let document = status::collect(&server.state, None, 0).expect("a document");
     status::write(&status::path(server.state.paths()), &document).expect("a write");
 
     let at_the_bound = NOW_MS + STATUS_TTL_SECONDS * 1_000;

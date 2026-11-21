@@ -69,8 +69,8 @@ pub fn path(paths: &SettingsPaths) -> PathBuf {
 /// state's own uptime, its clock, the console's worker rows and the identity the caller resolved.
 pub fn collect(
     state: &AdminState,
-    active_connections: u64,
     relay_pubkey: Option<Pubkey>,
+    active_connections: u64,
 ) -> Result<StatusDocument, AdminError> {
     let settings = state.settings()?;
 

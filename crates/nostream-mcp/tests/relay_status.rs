@@ -217,7 +217,8 @@ async fn a_stale_document_is_not_a_current_one() {
         Some(RELAY_PUBKEY),
         maintenance_row(),
     );
-    fixture.clock.advance(31_000);
+    // 40 s: past the bound, and the document names an identity — which a stale one may not.
+    fixture.clock.advance(40_000);
     let client = fixture.client().await;
 
     let result = client.call(TOOL_RELAY_STATUS, json!({})).await;
@@ -231,6 +232,10 @@ async fn a_stale_document_is_not_a_current_one() {
         .as_str()
         .expect("the payload says why");
     assert!(reason.contains("relay-status.json"), "{reason}");
+    assert!(
+        payload["nip11"].get("self").is_none(),
+        "a stale document's key is not an identity either: {payload}"
+    );
 }
 
 #[tokio::test]
