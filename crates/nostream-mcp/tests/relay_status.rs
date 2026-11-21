@@ -5,7 +5,7 @@
 //! |---|---|
 //! | `a_published_document_is_reported` | a fresh document's four facts arrive, with `reason: null` |
 //! | `no_document_reports_nothing_but_the_version_and_the_document` | no file: five nulls and a reason naming it, never a `0` |
-//! | `a_stale_document_is_not_a_current_one` | 31 s old is not a fact about the relay |
+//! | `a_stale_document_is_not_a_current_one` | a document past the 30 s bound is not a fact about the relay, and its key is no identity either |
 //! | `a_corrupt_document_is_reported_not_guessed` | a wrong-typed key is a reason, not a panic or an error result |
 //! | `a_zero_from_the_document_is_a_number` | a document that says `0` is reported as `0` |
 //! | `the_document_is_read_at_call_time` | nothing is cached at start |

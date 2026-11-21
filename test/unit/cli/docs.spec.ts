@@ -36,7 +36,7 @@ describe('cli documentation alignment', () => {
     const configurationDoc = fs.readFileSync(path.join(projectRoot, 'CONFIGURATION.md'), 'utf-8')
 
     expect(cliDoc).to.include('relay.signingPubkey')
-    expect(cliDoc).to.include("Leave `info.self` unset")
+    expect(cliDoc).to.include('takes it from the daemon\'s status document')
     expect(configurationDoc).to.include('nostream info')
   })
 

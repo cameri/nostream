@@ -235,7 +235,7 @@ async fn a_login_verification_does_not_stall_the_listener() {
     );
 }
 
-/// The status document's four keys, and whether its `maintenance` row carries a heartbeat the
+/// The status document's keys, and whether its `maintenance` row carries a heartbeat the
 /// daemon published.
 fn published_document(raw: &str) -> Option<Value> {
     let document: Value = serde_json::from_str(raw).ok()?;
