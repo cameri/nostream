@@ -19,8 +19,9 @@ only from the MCP process would therefore report the *MCP process's* age as the 
 every monitored worker row as stale, no connection total at all, and a NIP-11 `self` derived
 from that process's environment rather than the relay's — four wrong facts wearing the relay's
 name, which is worse than a stub. The document carries the relay's own key for the same reason it
-carries the rest: the daemon resolves it where the environment is read, and the door reports what
-the document says.
+carries the rest: the daemon resolves it where the environment is read, the door reports what the
+document says, and with no fresh document there is no `self` at all — a missing identity is
+weighable, a wrong one is not.
 
 **No connection total existed anywhere.** `ConnectionCap` exposed `max_per_ip`, `live(ip)`,
 `tracked_addresses()` and `refusals()`, and its map is private: the sum was not reachable from
@@ -119,8 +120,9 @@ enforces**.
 
 Kept, with their sources: `name`, `description`, `contact` (`Info`); `banner`, `icon`,
 `terms_of_service` when set; `pubkey` as hex (an `npub1…` decoded, as the capture does); `self`
-when resolved (`info.self` when it parses, else the published document's `relayPubkey`, absent
-when neither names one); `supported_nips`; `software` (the workspace repository,
+when the published document names one (its `relayPubkey`, and nothing else — a settings value or
+the answering process's environment would be a key the relay may not sign with, so with no fresh
+document `self` is absent); `supported_nips`; `software` (the workspace repository,
 `env!("CARGO_PKG_REPOSITORY")`); `version` (the caller's);
 `limitation.max_message_length` (the transport's own `max_payload_size`); the five client limits
 and `max_content_length` when set and, for the client limits, non-zero (`0` means "no cap" to the
