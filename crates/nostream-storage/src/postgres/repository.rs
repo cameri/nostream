@@ -207,12 +207,16 @@ impl UserRepository for PostgresBackend {
         Box::pin(async move { users::get_balance_by_pubkey(&self.master, pubkey).await })
     }
 
+    // Both the hydration and the cache write go to the **master**, because the answer is durable:
+    // `upsert_vanish_state` short-circuits every later call, so a replica that had not yet seen a
+    // NIP-09 request would make its "no" permanent. The transactional twin resolves the same
+    // question inside one master transaction, and the two now agree about the pool.
     fn is_vanished<'a>(&'a self, pubkey: &'a Pubkey) -> StorageFuture<'a, bool> {
         Box::pin(async move {
             if let Some(user) = users::find_by_pubkey(&self.master, pubkey).await? {
                 return Ok(user.is_vanished);
             }
-            let vanished = events::has_active_request_to_vanish(&self.reader, pubkey).await?;
+            let vanished = events::has_active_request_to_vanish(&self.master, pubkey).await?;
             users::upsert_vanish_state(&self.master, pubkey, vanished).await?;
             Ok(vanished)
         })
