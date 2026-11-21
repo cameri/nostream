@@ -8,6 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::config::resolve_paths;
+use crate::env_file::Environment;
 use crate::error::CliError;
 
 /// The working directory's path to `parts` (`getProjectPath`).
@@ -46,8 +47,8 @@ pub async fn ensure_not_root() -> Result<(), CliError> {
 /// (`nostream_config::load_user_settings`), every override in the legacy file is silently
 /// replaced by a default on the next start. Testing both files keeps that deployment effective
 /// and leaves the migration of `settings.json` to `settings.yaml` to the operator.
-pub fn ensure_config_bootstrap(cwd: &Path) -> Result<(), CliError> {
-    let paths = resolve_paths(cwd, None);
+pub fn ensure_config_bootstrap(cwd: &Path, env: &Environment) -> Result<(), CliError> {
+    let paths = resolve_paths(cwd, None, env);
 
     std::fs::create_dir_all(&paths.config_base_dir).map_err(|error| {
         CliError::command(format!(

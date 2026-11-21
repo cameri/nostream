@@ -16,7 +16,6 @@ use std::io::IsTerminal;
 use std::path::PathBuf;
 
 use chrono::Utc;
-use nostream_config::SettingsPaths;
 use nostream_core::Kind;
 use nostream_storage::repositories::EventCleanCriteria;
 
@@ -255,8 +254,12 @@ pub fn run(context: &Context, args: &[String]) -> Result<CommandOutput, CliError
 
 /// `runCleanDb`'s body over the configured store.
 async fn clean(context: &Context, options: &CleanDbOptions) -> Result<CommandOutput, CliError> {
-    let settings = crate::config::effective_settings(&SettingsPaths::resolve(&context.cwd))
-        .map_err(|error| CliError::command(error.to_string()))?;
+    let settings = crate::config::effective_settings(&crate::config::resolve_paths(
+        &context.cwd,
+        None,
+        &context.env,
+    ))
+    .map_err(|error| CliError::command(error.to_string()))?;
     let criteria = options.criteria(Utc::now().timestamp());
     let opened = store::open(&settings, options.data_dir.as_deref(), &context.env)
         .await

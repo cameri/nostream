@@ -11,7 +11,6 @@
 
 use std::path::PathBuf;
 
-use nostream_config::SettingsPaths;
 use nostream_core::crypto::sign_event;
 use nostream_core::{Event, EventId, Kind, Pubkey, Signature};
 use nostream_storage::repositories::EventRecord;
@@ -64,8 +63,12 @@ async fn seed(
     options: &SeedOptions,
     count: Option<usize>,
 ) -> Result<CommandOutput, CliError> {
-    let settings = crate::config::effective_settings(&SettingsPaths::resolve(&context.cwd))
-        .map_err(|error| CliError::command(error.to_string()))?;
+    let settings = crate::config::effective_settings(&crate::config::resolve_paths(
+        &context.cwd,
+        None,
+        &context.env,
+    ))
+    .map_err(|error| CliError::command(error.to_string()))?;
     let fixture = read_fixture(&context.cwd)?;
     let events = match count {
         Some(count) => expand(&fixture, count)?,

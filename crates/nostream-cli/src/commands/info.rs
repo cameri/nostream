@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use nostream_config::{Settings, SettingsPaths};
+use nostream_config::Settings;
 use nostream_core::Filter;
 use nostream_relay::relay_key::RelayKeySource;
 use nostream_services::process;
@@ -195,7 +195,7 @@ async fn payload(context: &Context, settings: &Settings, data_dir: Option<&Path>
 /// The settings the daemon would read, with the document's failures thrown like the capture's
 /// `loadMergedSettings`.
 fn settings(context: &Context) -> Result<Settings, CliError> {
-    let paths = SettingsPaths::resolve(&context.cwd);
+    let paths = crate::config::resolve_paths(&context.cwd, None, &context.env);
     crate::config::effective_settings(&paths).map_err(|error| CliError::command(error.to_string()))
 }
 

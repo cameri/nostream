@@ -6,6 +6,7 @@ use crate::app::Context;
 use crate::commands::start::StartOptions;
 use crate::commands::stop::StopOptions;
 use crate::config::{CommandOutput, ValueType, resolve_paths};
+use crate::env_file::Environment;
 use crate::error::CliError;
 
 /// Runs `config validate`.
@@ -13,16 +14,22 @@ pub fn validate(
     cwd: &Path,
     config_dir: Option<&Path>,
     config_file: Option<&Path>,
+    env: &Environment,
 ) -> Result<CommandOutput, CliError> {
-    crate::config::validate(&resolve_paths(cwd, config_dir), config_file)
+    crate::config::validate(&resolve_paths(cwd, config_dir, env), config_file)
 }
 
 /// Runs `config list`.
 ///
 /// A failure from a command that accepted `--json` is the envelope, the code its class carries
 /// (`src/cli/index.ts:116-135`); without the flag it keeps the class's own shape.
-pub fn list(cwd: &Path, config_dir: Option<&Path>, json: bool) -> Result<CommandOutput, CliError> {
-    crate::config::list(&resolve_paths(cwd, config_dir), json)
+pub fn list(
+    cwd: &Path,
+    config_dir: Option<&Path>,
+    json: bool,
+    env: &Environment,
+) -> Result<CommandOutput, CliError> {
+    crate::config::list(&resolve_paths(cwd, config_dir, env), json)
         .map_err(|error| error.enveloped(json))
 }
 
@@ -32,8 +39,9 @@ pub fn get(
     config_dir: Option<&Path>,
     path: &str,
     json: bool,
+    env: &Environment,
 ) -> Result<CommandOutput, CliError> {
-    crate::config::get(&resolve_paths(cwd, config_dir), path, json)
+    crate::config::get(&resolve_paths(cwd, config_dir, env), path, json)
         .map_err(|error| error.enveloped(json))
 }
 
@@ -69,7 +77,7 @@ pub fn set(
         .unwrap_or(ValueType::Inferred);
 
     let output = crate::config::set(
-        &resolve_paths(&context.cwd, config_dir),
+        &resolve_paths(&context.cwd, config_dir, &context.env),
         request.path,
         request.value,
         value_type,

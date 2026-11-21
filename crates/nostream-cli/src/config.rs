@@ -20,11 +20,19 @@ use nostream_config::{
 use serde_yaml::Value;
 
 use crate::env_file;
+use crate::env_file::Environment;
 use crate::error::CliError;
 
-/// Resolves the paths, honouring `--config-dir` over the environment.
-pub fn resolve_paths(cwd: &Path, config_dir: Option<&Path>) -> SettingsPaths {
-    match config_dir {
+/// Resolves the paths, honouring `--config-dir` over the CLI's environment.
+///
+/// The environment is the `.env`-layered one ([`env_file::Environment`]), not the process's
+/// alone: the capture runs under `node --env-file-if-exists=.env`, so a `NOSTR_CONFIG_DIR` that
+/// lives only in that file **is** in its process environment and is honoured there. Every
+/// command therefore reaches settings through here rather than `SettingsPaths::resolve`, which
+/// stays process-only because the daemon reads it too and must not gain a second environment.
+pub fn resolve_paths(cwd: &Path, config_dir: Option<&Path>, env: &Environment) -> SettingsPaths {
+    let from_env = env.get("NOSTR_CONFIG_DIR");
+    match config_dir.or_else(|| from_env.as_deref().map(Path::new)) {
         Some(dir) => SettingsPaths::from_config_dir(cwd, dir),
         None => SettingsPaths::resolve(cwd),
     }

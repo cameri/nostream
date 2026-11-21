@@ -224,16 +224,25 @@ fn dispatch(command: Command, context: &Context) -> Result<CommandOutput, CliErr
         Command::Clean => commands::clean::run(context),
         Command::CleanDb { args } => commands::clean_db::run(context, &args),
         Command::Config { command } => match command {
-            ConfigCommand::Validate { config_dir, config } => {
-                commands::config::validate(&context.cwd, config_dir.as_deref(), config.as_deref())
-            }
+            ConfigCommand::Validate { config_dir, config } => commands::config::validate(
+                &context.cwd,
+                config_dir.as_deref(),
+                config.as_deref(),
+                &context.env,
+            ),
             ConfigCommand::Get {
                 path,
                 config_dir,
                 json,
-            } => commands::config::get(&context.cwd, config_dir.as_deref(), &path, json),
+            } => commands::config::get(
+                &context.cwd,
+                config_dir.as_deref(),
+                &path,
+                json,
+                &context.env,
+            ),
             ConfigCommand::List { config_dir, json } => {
-                commands::config::list(&context.cwd, config_dir.as_deref(), json)
+                commands::config::list(&context.cwd, config_dir.as_deref(), json, &context.env)
             }
             ConfigCommand::Set {
                 path,

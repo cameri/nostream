@@ -54,7 +54,7 @@ pub(crate) async fn start(
         None => None,
     };
 
-    ensure_config_bootstrap(&context.cwd)?;
+    ensure_config_bootstrap(&context.cwd, &context.env)?;
 
     let mut files: Vec<String> = vec!["docker-compose.yml".to_owned()];
 

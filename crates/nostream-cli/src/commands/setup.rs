@@ -47,7 +47,7 @@ pub(crate) async fn setup(
 ) -> Result<CommandOutput, CliError> {
     let mut lines = vec!["Nostream setup".to_owned()];
 
-    ensure_config_bootstrap(&context.cwd)?;
+    ensure_config_bootstrap(&context.cwd, &context.env)?;
 
     match ensure_env_file(context, options.yes)? {
         EnvOutcome::Written => {}

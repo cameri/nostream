@@ -17,7 +17,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Instant;
 
-use nostream_config::SettingsPaths;
 use nostream_storage::repositories::{
     EventRecord, EventRepository, ScanCursor, StorageFuture, collect_scan,
 };
@@ -123,8 +122,12 @@ pub(crate) async fn export(
 ) -> Result<CommandOutput, CliError> {
     let (shape, output_path) = resolve(&context.cwd, options)?;
 
-    let settings = crate::config::effective_settings(&SettingsPaths::resolve(&context.cwd))
-        .map_err(|error| CliError::command(error.to_string()))?;
+    let settings = crate::config::effective_settings(&crate::config::resolve_paths(
+        &context.cwd,
+        None,
+        &context.env,
+    ))
+    .map_err(|error| CliError::command(error.to_string()))?;
     let opened = store::open(&settings, options.data_dir.as_deref(), &context.env).await?;
     let source: &dyn EventRepository = opened.events();
 

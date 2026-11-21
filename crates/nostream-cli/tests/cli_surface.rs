@@ -632,6 +632,68 @@ fn config_set_accepts_the_captures_validate_spellings() {
     assert_eq!(code(&output), 0, "{}", stderr(&output));
 }
 
+/// `NOSTR_CONFIG_DIR` may live in `.env` alone. The capture runs under
+/// `node --env-file-if-exists=.env`, so a file-only value **is** in its process environment; the
+/// port's store commands each resolved through `SettingsPaths::resolve`, which reads the process
+/// only — so on `clean-db` the settings were the cwd's and the store was the wrong one. Asserted
+/// on `clean-db` because it is the destructive command, and `--config-dir` must still win over
+/// both layers.
+#[test]
+fn the_config_dir_is_read_from_the_env_file() {
+    let work = Work::new();
+    let config = work.with_lmdb_settings("eventStore:\n  backend: lmdb\ninfo:\n  name: from-env\n");
+    fs::write(
+        work.path().join(".env"),
+        format!("NOSTR_CONFIG_DIR={}\n", config.display()),
+    )
+    .expect("the env file");
+    block_on_store(write_events(
+        &work.data(),
+        vec![
+            note(1, 1, 1_700_000_000),
+            note(2, 1, 1_700_000_100),
+            note(3, 1, 1_700_000_200),
+        ],
+    ));
+    let data = work.data();
+
+    let output = run_env(
+        work.path(),
+        &[
+            "clean-db",
+            "--older-than=1",
+            "--dry-run",
+            "--data-dir",
+            data.to_str().expect("a utf-8 path"),
+        ],
+        &[],
+    );
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    assert_eq!(
+        stdout(&output).trim(),
+        "Dry run: 3 events would be deleted."
+    );
+
+    // `--config-dir` beats the file layer, which beats the cwd.
+    let explicit = work.path().join("explicit");
+    fs::create_dir_all(&explicit).expect("the explicit config directory");
+    fs::write(explicit.join("settings.yaml"), "info:\n  name: explicit\n")
+        .expect("the settings write");
+    let output = run_env(
+        work.path(),
+        &[
+            "config",
+            "get",
+            "info.name",
+            "--config-dir",
+            explicit.to_str().expect("a utf-8 path"),
+        ],
+        &[],
+    );
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    assert_eq!(stdout(&output).trim(), "explicit");
+}
+
 #[test]
 fn a_failed_restart_keeps_the_written_line() {
     let (work, log) = compose_work();

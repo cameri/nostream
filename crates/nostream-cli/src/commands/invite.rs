@@ -12,7 +12,6 @@
 use std::path::PathBuf;
 
 use chrono::{DateTime, SecondsFormat, Utc};
-use nostream_config::SettingsPaths;
 use nostream_core::EventStoreBackend;
 use nostream_core::nip19;
 use nostream_core::nip43::{generate_invite_code, resolve_invite_limits};
@@ -143,8 +142,12 @@ async fn create(
     uses: Option<u64>,
     expires_in: Option<u64>,
 ) -> Result<CommandOutput, CliError> {
-    let settings = crate::config::effective_settings(&SettingsPaths::resolve(&context.cwd))
-        .map_err(|error| CliError::command(error.to_string()))?;
+    let settings = crate::config::effective_settings(&crate::config::resolve_paths(
+        &context.cwd,
+        None,
+        &context.env,
+    ))
+    .map_err(|error| CliError::command(error.to_string()))?;
 
     let created_by = relay_pubkey(settings.info.self_.as_deref())?;
     let now = Utc::now();
