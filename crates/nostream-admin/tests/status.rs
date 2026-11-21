@@ -8,6 +8,7 @@
 //! | `a_document_at_the_bound_is_fresh_and_one_past_it_is_not` | 30 s is fresh, 31 s is not |
 //! | `a_missing_document_is_a_reason` | absent: a reason naming the file |
 //! | `an_unreadable_document_is_a_reason` | a wrong-typed key: a reason naming the file, not a guess |
+//! | `a_malformed_generated_at_names_the_field` | a complete document with a bad stamp: a reason naming `generatedAt` |
 //! | `a_missing_config_directory_is_created` | the write creates `<config>`, as the audit log's does |
 //! | `a_racing_reader_never_sees_a_partial_document` | every completed read is one whole document while a writer replaces it |
 
@@ -153,6 +154,38 @@ async fn an_unreadable_document_is_a_reason() {
     assert!(
         error.reason.contains("could not be read"),
         "{}",
+        error.reason
+    );
+}
+
+/// A complete document whose `generatedAt` is not a stamp: the reason names the field and the
+/// value, so an operator who hand-edited the file knows where to look. Reported as
+/// `premature end of input` (chrono's text), it would read like a truncated file instead.
+#[tokio::test]
+async fn a_malformed_generated_at_names_the_field() {
+    let server = TestServer::start().await;
+    std::fs::write(
+        status::path(server.state.paths()),
+        r#"{"generatedAt":"not-a-timestamp","uptimeSeconds":1,"activeConnections":2,"workers":[]}"#,
+    )
+    .expect("a written file");
+
+    let error = status::read(server.state.paths(), NOW_MS).expect_err("the stamp does not parse");
+
+    assert!(
+        error.reason.contains("relay-status.json"),
+        "{}",
+        error.reason
+    );
+    assert!(error.reason.contains("generatedAt"), "{}", error.reason);
+    assert!(
+        error.reason.contains("not-a-timestamp"),
+        "the value an operator typed is quoted back: {}",
+        error.reason
+    );
+    assert!(
+        !error.reason.contains("premature end of input"),
+        "a complete document must not read like a truncated one: {}",
         error.reason
     );
 }

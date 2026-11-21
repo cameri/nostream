@@ -125,8 +125,15 @@ pub fn read(paths: &SettingsPaths, now_ms: u64) -> Result<Published, StatusError
 
     let document: StatusDocument =
         serde_json::from_str(&raw).map_err(|error| unreadable(&error))?;
-    let generated = chrono::DateTime::parse_from_rfc3339(&document.generated_at)
-        .map_err(|error| unreadable(&error))?;
+    // The stamp is the reader's clock source, so its failure names the field and the value: a
+    // complete document with a bad stamp reported as `premature end of input` reads like a
+    // truncated file and sends an operator looking for the wrong thing.
+    let generated = chrono::DateTime::parse_from_rfc3339(&document.generated_at).map_err(|_| {
+        unreadable(&format_args!(
+            "generatedAt {:?} is not a timestamp",
+            document.generated_at
+        ))
+    })?;
     let generated_ms = u64::try_from(generated.timestamp_millis()).unwrap_or(0);
     let age_seconds = now_ms.saturating_sub(generated_ms) / 1000;
 
