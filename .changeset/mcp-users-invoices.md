@@ -7,8 +7,9 @@ feat(mcp): five store-family tools — `user_admin`, `user_get`, the invoice rea
 `vanish` and `unvanish` — as one closed action enum, and `user_get` reads the same row and its
 balance under a document that grants nothing: the scope is a property of the `TOOLS` row, so one
 tool would have made a balance read cost a `write` document or an admission reachable with a
-read-only one. The read path is `find_by_pubkey` plus `get_balance_by_pubkey`, never
-`is_vanished`, which hydrates a live kind-62 and stores a row — so `user_get` never writes.
+read-only one. The read path is one `find_by_pubkey` with the balance taken from the row it
+answers, never `is_vanished`, which hydrates a live kind-62 and stores a row — so `user_get` never
+writes.
 
 `invoices_list` is the store's pending walk, oldest first, paged by `offset` and `limit`;
 `invoices_get` takes the invoice's own opaque id verbatim and answers a miss as
