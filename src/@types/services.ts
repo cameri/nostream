@@ -30,7 +30,10 @@ export interface IWotGraphService {
 }
 
 export interface IPaymentsService {
-  getInvoiceFromPaymentsProcessor(invoice: string | Invoice): Promise<Partial<Invoice>>
+  getInvoiceFromPaymentsProcessor(
+    invoice: string | Invoice,
+    direction?: 'incoming' | 'outgoing',
+  ): Promise<Partial<Invoice>>
   createInvoice(pubkey: Pubkey, amount: bigint, description: string, planId?: string): Promise<Invoice>
   updateInvoice(invoice: Partial<Invoice>): Promise<void>
   updateInvoiceStatus(invoice: Pick<Invoice, 'id' | 'status'>): Promise<Invoice>

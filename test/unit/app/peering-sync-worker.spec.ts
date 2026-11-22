@@ -25,6 +25,25 @@ const makeEvent = async (content: string, createdAt: number): Promise<Event> => 
   return signEvent(privateKey)(unsigned)
 }
 
+
+const makePaidInvoiceEvent = async (): Promise<Event> =>
+  signEvent('b'.repeat(64))(
+    await identifyEvent({
+      pubkey: peerPubkey,
+      created_at: Math.floor(Date.now() / 1000),
+      kind: 402,
+      tags: [
+        ['p', pubkey],
+        ['t', 'peering'],
+        [
+          'bolt11',
+          'lnbc2500u1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu9qrsgquk0rl77nj30yxdy8j9vdx85fkpmdla2087ne0xh8nhedh8w27kyke0lp53ut353s06fv3qfegext0eh0ymjpf39tuven09sam30g4vgpfna3rh',
+        ],
+      ],
+      content: '',
+    }),
+  )
+
 const waitFor = async (predicate: () => boolean, timeoutMs = 5_000): Promise<void> => {
   const startedAt = Date.now()
   while (!predicate()) {
@@ -538,6 +557,26 @@ describe('PeeringSyncWorker', () => {
 
     expect(calls[0][0].pubkey).to.equal(peerPubkey)
     expect(calls[0][1].terms).to.deep.equal(terms)
+    expect(calls[0][2].id).to.equal(invoiceEvent.id)
+  })
+
+  it('keeps processing invoices after a malformed event', async () => {
+    const calls: any[][] = []
+    const terms = [{ amount: 250_000_000, unit: 'msats', period: 2592000 }]
+    const buyerService = {
+      handleInvoice: async (...args: any[]) => {
+        calls.push(args)
+      },
+    }
+    const invoiceEvent = await makePaidInvoiceEvent()
+
+    startWorker([], { terms, buyerService })
+    await waitFor(() => typeof connection.invoiceOnEvent === 'function')
+    connection.invoiceOnEvent?.({} as any)
+    connection.invoiceOnEvent?.(invoiceEvent)
+    await waitFor(() => calls.length > 0)
+
+    expect(calls).to.have.length(1)
     expect(calls[0][2].id).to.equal(invoiceEvent.id)
   })
 })

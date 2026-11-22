@@ -57,7 +57,10 @@ export class PaymentsProcessorOutcomeUnknownError extends Error {
 
 export interface IPaymentsProcessor {
   createInvoice(request: CreateInvoiceRequest): Promise<CreateInvoiceResponse>
-  getInvoice(invoice: string | Invoice): Promise<GetInvoiceResponse>
+  getInvoice(
+    invoice: string | Invoice,
+    direction?: 'incoming' | 'outgoing',
+  ): Promise<GetInvoiceResponse>
   /** Pays a BOLT11 invoice from the processor wallet. Absent on receive-only adapters. */
   payInvoice?(request: PayInvoiceRequest): Promise<PayInvoiceResponse>
 }

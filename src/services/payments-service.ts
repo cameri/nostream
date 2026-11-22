@@ -85,11 +85,16 @@ export class PaymentsService implements IPaymentsService {
     return this.paymentsProcessor.payInvoice({ bolt11 })
   }
 
-  public async getInvoiceFromPaymentsProcessor(invoice: Invoice | string): Promise<Partial<Invoice>> {
+  public async getInvoiceFromPaymentsProcessor(
+    invoice: Invoice | string,
+    direction?: 'incoming' | 'outgoing',
+  ): Promise<Partial<Invoice>> {
     try {
-      return await this.paymentsProcessor.getInvoice(
-        typeof invoice === 'string' || invoice?.verifyURL ? invoice : invoice.id,
-      )
+      const invoiceId = typeof invoice === 'string' || invoice?.verifyURL ? invoice : invoice.id
+
+      return direction
+        ? await this.paymentsProcessor.getInvoice(invoiceId, direction)
+        : await this.paymentsProcessor.getInvoice(invoiceId)
     } catch (error) {
       logger.error('Unable to get invoice from payments processor. Reason:', error)
 

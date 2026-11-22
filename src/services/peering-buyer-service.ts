@@ -230,12 +230,16 @@ export class PeeringBuyerService implements IPeeringBuyerService {
 
   private async recoverInvoice(invoice: PeeringInvoice, now: Date): Promise<PeeringInvoice> {
     try {
-      const result = await this.paymentsService.getInvoiceFromPaymentsProcessor(invoice.paymentHash)
+      const result = await this.paymentsService.getInvoiceFromPaymentsProcessor(
+        invoice.paymentHash,
+        'outgoing',
+      )
       if (result.status === InvoiceStatus.COMPLETED) {
         const paid = invoice.paymentAttemptId
           ? await this.invoiceRepository.transitionAttempt(
               invoice.paymentHash,
               invoice.paymentAttemptId,
+              [PeeringInvoiceStatus.PAYING],
               PeeringInvoiceStatus.PAID,
               { reason: null, autoPaid: invoice.autoPaid, paidAt: now },
             )
@@ -279,6 +283,7 @@ export class PeeringBuyerService implements IPeeringBuyerService {
           ? await this.invoiceRepository.transitionAttempt(
               invoice.paymentHash,
               invoice.paymentAttemptId,
+              [PeeringInvoiceStatus.PAYING],
               PeeringInvoiceStatus.HELD,
               { reason: PeeringInvoiceReason.PAYMENT_FAILED, autoPaid: false },
               transaction.transaction,
@@ -599,7 +604,13 @@ export class PeeringBuyerService implements IPeeringBuyerService {
     changes: Partial<PeeringInvoice>,
   ): Promise<PeeringInvoice | undefined> {
     if (attemptId) {
-      return this.invoiceRepository.transitionAttempt(invoice.paymentHash, attemptId, to, changes)
+      return this.invoiceRepository.transitionAttempt(
+        invoice.paymentHash,
+        attemptId,
+        [PeeringInvoiceStatus.PAYING],
+        to,
+        changes,
+      )
     }
 
     return this.invoiceRepository.update(invoice.paymentHash, { status: to, ...changes })
@@ -623,6 +634,7 @@ export class PeeringBuyerService implements IPeeringBuyerService {
         ? await this.invoiceRepository.transitionAttempt(
             invoice.paymentHash,
             attemptId,
+            [PeeringInvoiceStatus.PAYING],
             PeeringInvoiceStatus.HELD,
             { reason, autoPaid: false, termPeriodSeconds },
             transaction.transaction,
@@ -757,24 +769,30 @@ export class PeeringBuyerService implements IPeeringBuyerService {
         }
       }
 
+      // Persist the windows in the same transaction that reserves them so a
+      // committed reservation can always be released by recovery.
+      const windows = {
+        autoPaid: auto,
+        budgetPeriodStart: peerWindow?.start ?? null,
+        budgetPeriodEnd: peerWindow?.end ?? null,
+        globalBudgetPeriodStart: globalWindow?.start ?? null,
+        globalBudgetPeriodEnd: globalWindow?.end ?? null,
+      }
       if (attemptId) {
         const updated = await this.invoiceRepository.transitionAttempt(
           invoice.paymentHash,
           attemptId,
+          [PeeringInvoiceStatus.PAYING],
           PeeringInvoiceStatus.PAYING,
-          {
-            autoPaid: auto,
-            budgetPeriodStart: peerWindow?.start ?? null,
-            budgetPeriodEnd: peerWindow?.end ?? null,
-            globalBudgetPeriodStart: globalWindow?.start ?? null,
-            globalBudgetPeriodEnd: globalWindow?.end ?? null,
-          },
+          windows,
           transaction.transaction,
         )
         if (!updated) {
           await transaction.rollback()
           return { reserved: false, peerBudget, peerWindow, globalBudget, globalWindow }
         }
+      } else {
+        await this.invoiceRepository.update(invoice.paymentHash, windows, transaction.transaction)
       }
 
       await transaction.commit()

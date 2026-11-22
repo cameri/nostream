@@ -141,10 +141,11 @@ export interface IPeeringInvoiceRepository {
     changes?: Partial<PeeringInvoice>,
     client?: DatabaseClient,
   ): Promise<PeeringInvoice | undefined>
-  /** Transitions only the invoice still owned by `attemptId`. */
+  /** Transitions only the invoice still owned by `attemptId` in one of `from`. */
   transitionAttempt(
     paymentHash: string,
     attemptId: string,
+    from: PeeringInvoiceStatus[],
     to: PeeringInvoiceStatus,
     changes?: Partial<PeeringInvoice>,
     client?: DatabaseClient,

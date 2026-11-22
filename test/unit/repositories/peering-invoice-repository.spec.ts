@@ -150,13 +150,19 @@ describe('PeeringInvoiceRepository', () => {
     const repository = new PeeringInvoiceRepository(recording.db)
     recording.respondWith([{ ...row, status: 'paid', payment_attempt_id: 'attempt-1', paid_at: now }])
 
-    const result = await repository.transitionAttempt('hash-1', 'attempt-1', PeeringInvoiceStatus.PAID, {
-      paidAt: now,
-    })
+    const result = await repository.transitionAttempt(
+      'hash-1',
+      'attempt-1',
+      [PeeringInvoiceStatus.PAYING],
+      PeeringInvoiceStatus.PAID,
+      { paidAt: now },
+    )
 
     expect(result?.status).to.equal(PeeringInvoiceStatus.PAID)
     expect(recording.queries[0].sql).to.include('"payment_attempt_id"')
-    // A pending attempt must be able to persist its own PAYING row.
+    // A pending attempt must be able to persist its own PAYING row, but only
+    // while the invoice is still PAYING.
+    expect(recording.queries[0].sql).to.include('"status" in')
     expect(recording.queries[0].sql).not.to.include('"status" not in')
     expect(recording.queries[0].bindings).to.include('attempt-1')
   })
@@ -167,7 +173,12 @@ describe('PeeringInvoiceRepository', () => {
     recording.respondWith([])
 
     expect(
-      await repository.transitionAttempt('hash-1', 'attempt-1', PeeringInvoiceStatus.PAID),
+      await repository.transitionAttempt(
+        'hash-1',
+        'attempt-1',
+        [PeeringInvoiceStatus.PAYING],
+        PeeringInvoiceStatus.PAID,
+      ),
     ).to.equal(undefined)
     expect(recording.queries[0].bindings).to.include('attempt-1')
   })

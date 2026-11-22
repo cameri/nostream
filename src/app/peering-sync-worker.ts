@@ -336,7 +336,12 @@ class PeeringPeerSession {
     }
 
     await connection.subscribe([filter], (event) => {
-      this.invoiceHandling = this.invoiceHandling.then(() => this.handleInvoiceEvent(event))
+      // Keep the queue alive after a malformed event or a rejected handler.
+      this.invoiceHandling = this.invoiceHandling
+        .then(() => this.handleInvoiceEvent(event))
+        .catch((error) => {
+          logger.error('unable to queue a peering invoice from %s: %o', this.peer.relayUrl, error)
+        })
     })
 
     // Let the invoice reach the buyer service before opening a paid feed.
@@ -345,6 +350,10 @@ class PeeringPeerSession {
 
   private async handleInvoiceEvent(event: Event): Promise<void> {
     const advertisement = this.advertisement
+    if (!event || typeof event !== 'object' || typeof event.pubkey !== 'string') {
+      logger.warn('peer %s sent a malformed peering invoice event', this.peer.relayUrl)
+      return
+    }
     if (!advertisement || event.pubkey.toLowerCase() !== this.peer.pubkey.toLowerCase()) {
       return
     }

@@ -204,12 +204,14 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
   public async transitionAttempt(
     paymentHash: string,
     attemptId: string,
+    from: PeeringInvoiceStatus[],
     to: PeeringInvoiceStatus,
     changes: Partial<PeeringInvoice> = {},
     client: DatabaseClient = this.dbClient,
   ): Promise<PeeringInvoice | undefined> {
     const rows = await client<DBPeeringInvoice>('peering_invoices')
       .where({ payment_hash: paymentHash, payment_attempt_id: attemptId })
+      .whereIn('status', from)
       .update(this.attemptPatch(attemptId, to, changes))
       .returning('*')
 
