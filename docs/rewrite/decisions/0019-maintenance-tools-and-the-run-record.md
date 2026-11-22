@@ -87,8 +87,11 @@ guard makes a real distinction. The record is not a `WorkerHeartbeat` field, not
 
 The alternatives cost more than the fact is worth here: a file needs a writer inside
 `MaintenanceWorker` (which has no clock and no path), a TTL policy and a second writer rule
-beside the audit file's; a sixth key in the published document is an amendment to ADR 0016 for a
-value the daemon did not produce when this record was written.
+beside the audit file's; a sixth key in the published document costs an amendment to ADR 0016's
+five-key shape plus a writer at the loop, which already holds what the key would report —
+`MaintenanceWorker`'s tick calls `run_pass` and discards its `PassOutcome`
+(`crates/nostream-services/src/workers/maintenance.rs:178`), so the counts are produced and
+dropped rather than absent.
 
 **Cost:** the record is **this process's own**. A door run beside a daemon is a supported
 deployment, not an excluded one: the stdio mode is its own process over the same config
