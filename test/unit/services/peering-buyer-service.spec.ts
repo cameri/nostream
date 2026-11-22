@@ -3,6 +3,7 @@ import chaiAsPromised from 'chai-as-promised'
 import Sinon from 'sinon'
 import sinonChai from 'sinon-chai'
 
+import { PaymentsProcessorOutcomeUnknownError } from '../../../src/@types/clients'
 import { Event } from '../../../src/@types/event'
 import {
   PeeringInvoice,
@@ -82,7 +83,7 @@ describe('PeeringBuyerService', () => {
     }
 
     paymentsService = {
-      payInvoice: sandbox.stub().resolves(PAYMENT_HASH),
+      payInvoice: sandbox.stub().resolves({ paymentHash: PAYMENT_HASH, settled: true }),
     }
 
     notificationOutboxRepository = { enqueue: sandbox.stub().resolves() }
@@ -288,7 +289,7 @@ describe('PeeringBuyerService', () => {
   })
 
   it('holds when the processor reports a different payment hash', async () => {
-    paymentsService.payInvoice.resolves('f'.repeat(64))
+    paymentsService.payInvoice.resolves({ paymentHash: 'f'.repeat(64), settled: true })
 
     const result = await service.handleInvoice(peer, advertisement, event, now)
 
@@ -501,6 +502,25 @@ describe('PeeringBuyerService', () => {
     const result = await service.handleInvoice(peer, advertisement, event, now)
 
     expect(result.status).to.equal(PeeringInvoiceStatus.HELD)
+    expect(invoiceRepository.releaseBudget).not.to.have.been.called
+  })
+
+
+  it('keeps a pending wallet payment reserved for recovery', async () => {
+    paymentsService.payInvoice.resolves({ paymentHash: PAYMENT_HASH, settled: false })
+
+    const result = await service.handleInvoice(peer, advertisement, event, now)
+
+    expect(result.status).to.equal(PeeringInvoiceStatus.PAYING)
+    expect(invoiceRepository.releaseBudget).not.to.have.been.called
+  })
+
+  it('keeps an unknown wallet outcome reserved for recovery', async () => {
+    paymentsService.payInvoice.rejects(new PaymentsProcessorOutcomeUnknownError())
+
+    const result = await service.handleInvoice(peer, advertisement, event, now)
+
+    expect(result.status).to.equal(PeeringInvoiceStatus.PAYING)
     expect(invoiceRepository.releaseBudget).not.to.have.been.called
   })
 

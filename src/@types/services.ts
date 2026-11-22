@@ -1,6 +1,7 @@
 import { DatabaseTransaction, Pubkey } from './base'
 import { Event } from './event'
 import { Invoice } from './invoice'
+import { PayInvoiceResponse } from './clients'
 import { NotificationOutboxPayload } from './notification-outbox'
 import { PeeringAccess, PeeringAdvertisement, PeeringBudgetSummary, PeeringInvoice, PeeringInvoiceStatus } from './peering'
 import { PeeringPeer } from './settings'
@@ -55,8 +56,8 @@ export interface IPaymentsService {
   getPendingInvoices(offset?: number): Promise<Invoice[]>
   /** Completed peering invoices whose settlement did not commit, for retry. */
   getUnconfirmedPeeringInvoices(limit?: number, offset?: number): Promise<Invoice[]>
-  /** Pays a BOLT11 invoice from the configured wallet and returns its payment hash. */
-  payInvoice(bolt11: string): Promise<string>
+  /** Pays a BOLT11 invoice from the configured wallet and reports its outcome. */
+  payInvoice(bolt11: string): Promise<PayInvoiceResponse>
 }
 
 export interface IPeeringBillingService {

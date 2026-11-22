@@ -37,6 +37,7 @@ const waitFor = async (predicate: () => boolean, timeoutMs = 5_000): Promise<voi
 
 class FakeConnection {
   public liveOnEvent?: (event: Event) => void
+  public invoiceOnEvent?: (event: Event) => void
   public closeCalls = 0
   private readonly closed: Promise<void>
   private resolveClosed: (() => void) | undefined
@@ -67,8 +68,15 @@ class FakeConnection {
     return this.remoteEvents.filter((event) => wanted.has(event.id))
   }
 
-  public async subscribe(_filters: unknown[], onEvent: (event: Event) => void): Promise<void> {
-    this.liveOnEvent = onEvent
+  public async subscribe(filters: unknown[], onEvent: (event: Event) => void): Promise<void> {
+    const isInvoice = (filters as any[]).some(
+      (filter) => Array.isArray(filter?.kinds) && filter.kinds.length === 1 && filter.kinds[0] === 402,
+    )
+    if (isInvoice) {
+      this.invoiceOnEvent = onEvent
+    } else {
+      this.liveOnEvent = onEvent
+    }
   }
 
   public waitForClose(): Promise<void> {
@@ -524,8 +532,8 @@ describe('PeeringSyncWorker', () => {
     )
 
     startWorker([], { terms, buyerService })
-    await waitFor(() => typeof connection.liveOnEvent === 'function')
-    connection.liveOnEvent?.(invoiceEvent)
+    await waitFor(() => typeof connection.invoiceOnEvent === 'function')
+    connection.invoiceOnEvent?.(invoiceEvent)
     await waitFor(() => calls.length > 0)
 
     expect(calls[0][0].pubkey).to.equal(peerPubkey)

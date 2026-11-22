@@ -1,7 +1,10 @@
 import { createHash } from 'crypto'
 
 import { DatabaseClient, Pubkey } from '../@types/base'
-import { PaymentsProcessorCannotPayError } from '../@types/clients'
+import {
+  PaymentsProcessorCannotPayError,
+  PaymentsProcessorOutcomeUnknownError,
+} from '../@types/clients'
 import { Event } from '../@types/event'
 import { InvoiceStatus } from '../@types/invoice'
 import { OperatorNotificationEventType } from '../@types/operator-notifications'
@@ -483,11 +486,23 @@ export class PeeringBuyerService implements IPeeringBuyerService {
       }
     }
 
-    let paidHash: string
+    let payment
     try {
-      paidHash = await this.paymentsService.payInvoice(invoice.bolt11)
+      payment = await this.paymentsService.payInvoice(invoice.bolt11)
     } catch (error) {
       logger('unable to pay peering invoice %s: %o', invoice.paymentHash, error)
+      if (error instanceof PaymentsProcessorOutcomeUnknownError) {
+        // The wallet may still settle. Keep the reservation and PAYING row so
+        // recovery can reconcile the outcome instead of refunding twice.
+        await this.invoiceRepository.update(invoice.paymentHash, {
+          status: PeeringInvoiceStatus.PAYING,
+          reason: PeeringInvoiceReason.PAYMENT_FAILED,
+          autoPaid: false,
+          termPeriodSeconds,
+        })
+        return { ...invoice, status: PeeringInvoiceStatus.PAYING, reason: PeeringInvoiceReason.PAYMENT_FAILED }
+      }
+
       const reason =
         error instanceof PaymentsProcessorCannotPayError
           ? PeeringInvoiceReason.UNSUPPORTED_PROCESSOR
@@ -504,6 +519,17 @@ export class PeeringBuyerService implements IPeeringBuyerService {
       return held
     }
 
+    if (payment.settled === false) {
+      await this.invoiceRepository.update(invoice.paymentHash, {
+        status: PeeringInvoiceStatus.PAYING,
+        reason: null,
+        autoPaid: auto,
+        termPeriodSeconds,
+      })
+      return { ...invoice, status: PeeringInvoiceStatus.PAYING, reason: null, autoPaid: auto }
+    }
+
+    const paidHash = payment.paymentHash
     if (paidHash.toLowerCase() !== invoice.paymentHash.toLowerCase()) {
       logger(
         'processor reported payment hash %s for peering invoice %s; keeping the charge for recovery',

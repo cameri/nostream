@@ -58,7 +58,7 @@ const setup = (world: World<Record<string, any>>) => {
   const payInvoice = Sinon.stub().callsFake(async (bolt11: string) => {
     const invoice = world.parameters.adminPayHash as string
     void bolt11
-    return invoice
+    return { paymentHash: invoice, settled: true }
   })
   const service = new PeeringBuyerService(
     db,

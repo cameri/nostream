@@ -30,6 +30,7 @@ import { FetchPeeringAdvertisementOptions, fetchPeeringAdvertisement } from '../
 import {
   AuthenticatedPeerConnection,
   authenticateToPeeringRelay,
+  findConfiguredPeeringPeer,
   listEnabledPeeringPeers,
   parsePeeringPeerPubkey,
 } from '../utils/peering-auth'
@@ -132,6 +133,7 @@ class PeeringPeerSession {
   private readonly persistEvents: (events: Event[]) => Promise<number>
   private stateHeartbeatTimer: NodeJS.Timeout | undefined
   private advertisement: PeeringAdvertisement | undefined
+  private invoiceHandling: Promise<void> = Promise.resolve()
 
   public constructor(
     private readonly peer: PeeringPeer,
@@ -273,15 +275,22 @@ class PeeringPeerSession {
     this.scopes = advertisement.scopes
     this.advertisement = advertisement
 
-    // Start the live feed first: a long history reconciliation can outlast the
+    // Request and pay the invoice first: a paid peer rejects the live feed with
+    // CLOSED until payment lands, and a CLOSED live subscription tears down the
+    // connection before the invoice request can run.
+    await this.subscribeToInvoices(connection)
+
+    if (this.stopped) {
+      return
+    }
+
+    // Start the live feed before history reconciliation: it can outlast the
     // overlap window, and events published after its snapshot must still be
     // delivered. Reconciliation and live writes are both duplicate-safe.
     this.liveFilters = peeringScopesToLiveFilters(advertisement.scopes, Math.floor(Date.now() / 1000))
     if (this.liveFilters.length) {
       await connection.subscribe(this.liveFilters, (event) => this.queueEvent(event))
     }
-
-    await this.subscribeToInvoices(connection)
 
     if (this.stopped) {
       return
@@ -327,8 +336,11 @@ class PeeringPeerSession {
     }
 
     await connection.subscribe([filter], (event) => {
-      void this.handleInvoiceEvent(event)
+      this.invoiceHandling = this.invoiceHandling.then(() => this.handleInvoiceEvent(event))
     })
+
+    // Let the invoice reach the buyer service before opening a paid feed.
+    await this.invoiceHandling
   }
 
   private async handleInvoiceEvent(event: Event): Promise<void> {
@@ -342,8 +354,15 @@ class PeeringPeerSession {
       return
     }
 
+    // Settings can change while this session stays open. Use the current peer
+    // row so a lowered budget applies to the next invoice.
+    const currentPeer = findConfiguredPeeringPeer(this.settings(), this.peer.pubkey)
+    if (!currentPeer) {
+      return
+    }
+
     try {
-      await this.options.buyerService?.handleInvoice(this.peer, advertisement, event)
+      await this.options.buyerService?.handleInvoice(currentPeer, advertisement, event)
     } catch (error) {
       logger.error('unable to process a peering invoice from %s: %o', this.peer.relayUrl, error)
     }

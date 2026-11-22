@@ -63,7 +63,7 @@ const setupBuyer = (
       peers: [peer],
     },
   } as Settings
-  const payInvoice = Sinon.stub().resolves(PAYMENT_HASH)
+  const payInvoice = Sinon.stub().resolves({ paymentHash: PAYMENT_HASH, settled: true })
   const notificationOutboxRepository = { enqueue: Sinon.stub().resolves() }
   const repository = new PeeringInvoiceRepository(db)
   const service = new PeeringBuyerService(

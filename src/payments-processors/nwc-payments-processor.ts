@@ -8,6 +8,7 @@ import {
   IPaymentsProcessor,
   PayInvoiceRequest,
   PayInvoiceResponse,
+  PaymentsProcessorOutcomeUnknownError,
 } from '../@types/clients'
 import { Factory } from '../@types/base'
 import { Invoice, InvoiceStatus, InvoiceUnit } from '../@types/invoice'
@@ -216,11 +217,16 @@ export class NwcPaymentsProcessor implements IPaymentsProcessor {
 
         return {
           paymentHash: bolt11PaymentHash(request.bolt11),
+          settled: Boolean(result.preimage),
           ...(result.preimage ? { preimage: result.preimage } : {}),
         }
       })
     } catch (error) {
-      if (error instanceof nwc.Nip47WalletError || error instanceof nwc.Nip47ReplyTimeoutError) {
+      if (error instanceof nwc.Nip47ReplyTimeoutError) {
+        logger('Unable to confirm the NWC payment outcome. Reason: %s', error.message)
+        throw new PaymentsProcessorOutcomeUnknownError(error.message)
+      }
+      if (error instanceof nwc.Nip47WalletError) {
         logger('Unable to pay invoice. Reason: %s', error.message)
       } else {
         logger('Unable to pay invoice. Reason: %o', error)

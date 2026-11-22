@@ -110,8 +110,18 @@ export class LNbitsPaymentsProcessor implements IPaymentsProcessor {
         typeof response.data?.payment_hash === 'string' && response.data.payment_hash
           ? response.data.payment_hash
           : bolt11PaymentHash(request.bolt11)
+      let settled = response.data?.paid === true
 
-      return { paymentHash }
+      if (!settled && typeof response.data?.paid !== 'boolean') {
+        try {
+          const check = await this.httpClient.get(`/api/v1/payments/${encodeURIComponent(paymentHash)}`)
+          settled = check.data?.paid === true
+        } catch {
+          // Accepted but unconfirmed; recovery will check again.
+        }
+      }
+
+      return { paymentHash, settled }
     } catch (error) {
       logger.error('Unable to pay invoice. Reason:', error)
       throw error
