@@ -726,8 +726,8 @@ next refresh, up to 30 s"
     #[tool(
         description = "The review queue: the reports still actionable, newest first, at most \
 `limit` — 1 to 500, absent 500. This is not every report: a report an operator allowed has left \
-the queue, and the queue has no offset, so there is nothing to page. `reports_action` takes an \
-id this list shows"
+the queue, and the queue has no offset, so there is nothing to page. `reports_action` takes the \
+`event_id` this list shows, not the row's own `id`"
     )]
     async fn reports_list(
         &self,
