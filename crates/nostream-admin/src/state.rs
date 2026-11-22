@@ -19,6 +19,7 @@ use nostream_core::nip05::Nip05Fetch;
 use nostream_core::random::{RandomSource, SystemRandom};
 use nostream_relay::limits::{RateLimitConfig, RateLimiter, strategy_from_settings};
 use nostream_services::{HttpClient, ServiceStores};
+use nostream_storage::repositories::EventPurgeCounts;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -96,10 +97,23 @@ struct ProbeState {
     runs: VecDeque<ProbeRun>,
 }
 
+/// The last retention purge a process ran (D3): stamped by the clock, and the counts the store
+/// answered.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MaintenanceRun {
+    pub ran_at: String,
+    pub deleted: u64,
+    pub expired: u64,
+    pub retained: u64,
+}
+
 /// What one `AdminState` keeps in process, replacing the capture's Redis keys (D2).
 #[derive(Debug)]
 pub struct AdminRuntime {
     heartbeats: Mutex<HashMap<String, WorkerHeartbeat>>,
+    /// The last purge this process ran, beside the heartbeats and the probe ring (D3).
+    maintenance: Mutex<Option<MaintenanceRun>>,
     probe: Mutex<ProbeState>,
     /// Appends since the last compaction.
     audit: Mutex<usize>,
@@ -119,6 +133,7 @@ impl Default for AdminRuntime {
     fn default() -> Self {
         Self {
             heartbeats: Mutex::new(HashMap::new()),
+            maintenance: Mutex::new(None),
             probe: Mutex::new(ProbeState::default()),
             audit: Mutex::new(0),
             login_verifications: Arc::new(tokio::sync::Semaphore::new(
@@ -412,6 +427,37 @@ impl AdminState {
             .values()
             .cloned()
             .collect()
+    }
+
+    /// Records the retention purge this process just ran, stamping it with the clock and
+    /// replacing the previous record — never summing it into one — and answers the record it
+    /// stored, so the caller reads back exactly what a later read will.
+    ///
+    /// The counts arrive as the store's own value rather than three positional numbers: a
+    /// transposed `deleted`/`expired` pair is a call the compiler can refuse, one it cannot.
+    pub fn record_maintenance_run(&self, counts: EventPurgeCounts) -> MaintenanceRun {
+        let run = MaintenanceRun {
+            ran_at: iso8601(self.clock.now_ms()),
+            deleted: counts.deleted,
+            expired: counts.expired,
+            retained: counts.retained,
+        };
+        *self
+            .runtime
+            .maintenance
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(run.clone());
+        run
+    }
+
+    /// The last purge this process ran; `None` until one records it, which is how "never ran"
+    /// stays distinct from "ran and purged nothing".
+    pub fn latest_maintenance_run(&self) -> Option<MaintenanceRun> {
+        self.runtime
+            .maintenance
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
     }
 
     /// The latest probe snapshot, if a run recorded one.

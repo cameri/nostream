@@ -329,6 +329,7 @@ pub struct InMemoryEventRepository {
     address_deletes: Mutex<Vec<AddressDelete>>,
     reads: Mutex<u64>,
     purge_calls: Mutex<Vec<EventRetentionOptions>>,
+    purge_answer: Mutex<EventPurgeCounts>,
     read_gate: Mutex<Option<Arc<tokio::sync::Semaphore>>>,
 }
 
@@ -418,6 +419,15 @@ impl InMemoryEventRepository {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
+    }
+
+    /// Makes the next retention calls answer `counts`. Defaults to
+    /// [`EventPurgeCounts::default`], so a case that does not ask reads zeros.
+    pub fn answers_purge_counts(&self, counts: EventPurgeCounts) {
+        *self
+            .purge_answer
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = counts;
     }
 
     /// Makes every `find_by_filters` wait for one permit. Releases with
@@ -654,7 +664,10 @@ impl EventRepository for InMemoryEventRepository {
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .push(options.clone());
 
-            Ok(EventPurgeCounts::default())
+            Ok(*self
+                .purge_answer
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()))
         })
     }
 

@@ -19,8 +19,9 @@ mod common;
 use common::TestMcp;
 use nostream_mcp::{
     MAX_ROWS_PER_PAGE, TOOL_DELETE_EVENT, TOOL_GET_EVENT, TOOL_INVOICES_GET, TOOL_INVOICES_LIST,
-    TOOL_LIST_EVENTS, TOOL_RELAY_STATUS, TOOL_REPORTS_ACTION, TOOL_REPORTS_LIST, TOOL_SETTINGS_GET,
-    TOOL_SETTINGS_SET, TOOL_USER_ADMIN, TOOL_USER_GET,
+    TOOL_LIST_EVENTS, TOOL_MAINTENANCE_LAST_RUN, TOOL_MAINTENANCE_RUN, TOOL_RELAY_STATUS,
+    TOOL_REPORTS_ACTION, TOOL_REPORTS_LIST, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET, TOOL_USER_ADMIN,
+    TOOL_USER_GET,
 };
 use serde_json::{Value, json};
 
@@ -179,6 +180,8 @@ async fn the_required_parameters_are_typed() {
             TOOL_INVOICES_GET,
             TOOL_INVOICES_LIST,
             TOOL_LIST_EVENTS,
+            TOOL_MAINTENANCE_LAST_RUN,
+            TOOL_MAINTENANCE_RUN,
             TOOL_RELAY_STATUS,
             TOOL_REPORTS_ACTION,
             TOOL_REPORTS_LIST,
@@ -187,7 +190,7 @@ async fn the_required_parameters_are_typed() {
             TOOL_USER_ADMIN,
             TOOL_USER_GET
         ],
-        "the twelve tools, name-sorted"
+        "the fourteen tools, name-sorted"
     );
 }
 
@@ -230,6 +233,8 @@ async fn initialize_publishes_the_prerequisites() {
         TOOL_USER_GET,
         TOOL_INVOICES_LIST,
         TOOL_INVOICES_GET,
+        TOOL_MAINTENANCE_RUN,
+        TOOL_MAINTENANCE_LAST_RUN,
     ] {
         assert!(
             instructions.contains(needle),

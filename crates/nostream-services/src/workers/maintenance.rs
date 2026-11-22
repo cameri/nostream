@@ -18,7 +18,7 @@ use nostream_config::settings::Nip05Mode;
 use nostream_core::clock::Clock;
 use nostream_core::lifecycle::ShutdownState;
 use nostream_core::nip05::{Nip05Fetch, VerificationOutcome, verify};
-use nostream_storage::repositories::Nip05Verification;
+use nostream_storage::repositories::{EventPurgeCounts, Nip05Verification};
 
 use crate::context::ServiceContext;
 use crate::error::ServicesError;
@@ -52,17 +52,20 @@ pub const DEFAULT_NIP05_MAX_CONSECUTIVE_FAILURES: i32 = 20;
 /// The delivery-log retention when settings omit it (`src/app/maintenance-worker.ts:288`).
 pub const DEFAULT_DELIVERY_LOG_RETENTION_DAYS: i64 = 30;
 
-/// What one pass did, for the loop's log line and for the tests that pin the steps.
+/// What one pass did, for the loop's log line and for the tests that pin the steps: whether the
+/// purge outlived its cap, and the counts the store answered when it completed. A failed or
+/// timed-out purge has no counts — zeros there would read as a pass that found nothing to do.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PassOutcome {
     pub purge_timed_out: bool,
+    pub counts: Option<EventPurgeCounts>,
 }
 
 /// The four steps, so a test can instrument their order without a store or a network.
 pub trait MaintenanceTasks: Send + Sync {
     fn clear_old_events(
         &self,
-    ) -> Pin<Box<dyn Future<Output = Result<(), ServicesError>> + Send + '_>>;
+    ) -> Pin<Box<dyn Future<Output = Result<EventPurgeCounts, ServicesError>> + Send + '_>>;
     fn reverify_nip05(
         &self,
     ) -> Pin<Box<dyn Future<Output = Result<(), ServicesError>> + Send + '_>>;
@@ -122,26 +125,30 @@ impl MaintenanceWorker {
             tracing::error!(error = %error, "Unable to walk pending invoices");
         }
 
-        let purge_timed_out = match tokio::time::timeout(self.purge_timeout, purge).await {
-            Ok(Ok(Ok(()))) => false,
+        let (purge_timed_out, counts) = match tokio::time::timeout(self.purge_timeout, purge).await
+        {
+            Ok(Ok(Ok(counts))) => (false, Some(counts)),
             Ok(Ok(Err(error))) => {
                 tracing::error!(error = %error, "unable to clear old events");
-                false
+                (false, None)
             }
             Ok(Err(error)) => {
                 tracing::error!(error = %error, "the retention task ended abnormally");
-                false
+                (false, None)
             }
             Err(_) => {
                 tracing::error!(
                     timeout_ms = self.purge_timeout.as_millis(),
                     "unable to clear old events: clearOldEvents timed out"
                 );
-                true
+                (true, None)
             }
         };
 
-        PassOutcome { purge_timed_out }
+        PassOutcome {
+            purge_timed_out,
+            counts,
+        }
     }
 
     fn payments_enabled(&self) -> bool {
@@ -217,7 +224,7 @@ impl MaintenanceRunner {
 impl MaintenanceTasks for MaintenanceRunner {
     fn clear_old_events(
         &self,
-    ) -> Pin<Box<dyn Future<Output = Result<(), ServicesError>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<EventPurgeCounts, ServicesError>> + Send + '_>> {
         Box::pin(async move {
             MaintenanceService::new(Arc::clone(&self.stores.events), Arc::clone(&self.settings))
                 .clear_old_events()

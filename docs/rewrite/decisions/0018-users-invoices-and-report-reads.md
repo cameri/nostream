@@ -155,6 +155,9 @@ and no `remoteAddress` for a stdio caller. ADR 0014's table is extended with all
 rather than a compile error. Paid for: three sites that keep testing what their sentences claim,
 and a denial record that names the tool whose scope was missing.
 
+ADR 0019 moved the example on as this paragraph expected, to `no_such_tool`, once slice 5
+registered every name #1183 planned.
+
 ## Consequences
 
 The surface is twelve tools, eight of them reads. `tools_list.json` is regenerated from the live

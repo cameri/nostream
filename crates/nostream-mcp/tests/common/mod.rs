@@ -70,7 +70,7 @@ pub fn base_settings() -> serde_yaml::Value {
 /// The scopes the fixture's token document names.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Grant {
-    /// `{"scopes": ["write"]}`: the eight read tools and the four writes.
+    /// `{"scopes": ["write"]}`: the nine read tools and the five writes.
     #[default]
     Write,
     /// `{"scopes": []}`: the read tools only — the door's default (R28).

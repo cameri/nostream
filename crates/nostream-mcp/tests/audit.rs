@@ -2,11 +2,11 @@
 //!
 //! | case | what it proves |
 //! |---|---|
-//! | `each_call_appends_one_line` | twelve calls append thirteen lines in call order — the twelve `mcp.*` lines, then `settings_set`'s own `settings.updated` |
+//! | `each_call_appends_one_line` | fourteen calls append fifteen lines in call order — the fourteen `mcp.*` lines, then `settings_set`'s own `settings.updated` |
 //! | `a_refused_call_appends_nothing` | a call with bad arguments and a call with no credential each leave the file untouched |
 //! | `every_registered_tool_has_a_table_row` | the table is total over the router's own list, so no tool can execute unaudited or ungated |
 //! | `the_audit_check_is_no_stricter_than_the_router` | the table's rule is the router's deserialiser, not the schema: a stricter check would fail open |
-//! | `the_write_tools_detail_carries_only_the_tool` | the two write tools' lines carry `{"tool": …}` and nothing else: no id, no action, no address |
+//! | `the_write_tools_detail_carries_only_the_tool` | the three write tools' lines carry `{"tool": …}` and nothing else: no id, no action, no count, no address |
 //! | `the_store_tools_detail_carries_only_the_tool` | the five store tools' lines carry `{"tool": …}` and nothing else: no pubkey, no action, no invoice id |
 //! R9 appends the `mcp.*` line at dispatch, before the handler's work, so the order in the file
 //! is the order of the calls and a domain line always follows its own dispatch line. The one
@@ -22,8 +22,9 @@ use std::collections::BTreeSet;
 use common::{TestMcp, event, id_of, object, text};
 use nostream_mcp::{
     TOOL_DELETE_EVENT, TOOL_GET_EVENT, TOOL_INVOICES_GET, TOOL_INVOICES_LIST, TOOL_LIST_EVENTS,
-    TOOL_RELAY_STATUS, TOOL_REPORTS_ACTION, TOOL_REPORTS_LIST, TOOL_SETTINGS_GET,
-    TOOL_SETTINGS_SET, TOOL_USER_ADMIN, TOOL_USER_GET, TOOLS, audit_action,
+    TOOL_MAINTENANCE_LAST_RUN, TOOL_MAINTENANCE_RUN, TOOL_RELAY_STATUS, TOOL_REPORTS_ACTION,
+    TOOL_REPORTS_LIST, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET, TOOL_USER_ADMIN, TOOL_USER_GET, TOOLS,
+    audit_action,
 };
 use serde_json::json;
 
@@ -62,6 +63,8 @@ async fn each_call_appends_one_line() {
         .call(TOOL_INVOICES_GET, json!({ "id": "inv-1" }))
         .await;
     client.call(TOOL_RELAY_STATUS, json!({})).await;
+    client.call(TOOL_MAINTENANCE_LAST_RUN, json!({})).await;
+    client.call(TOOL_MAINTENANCE_RUN, json!({})).await;
     let written = client
         .call(
             TOOL_SETTINGS_SET,
@@ -89,6 +92,8 @@ async fn each_call_appends_one_line() {
             "mcp.invoices_list",
             "mcp.invoices_get",
             "mcp.relay_status",
+            "mcp.maintenance_last_run",
+            "mcp.maintenance_run",
             "mcp.settings_set",
             "settings.updated",
         ],
@@ -107,6 +112,8 @@ async fn each_call_appends_one_line() {
         TOOL_INVOICES_LIST,
         TOOL_INVOICES_GET,
         TOOL_RELAY_STATUS,
+        TOOL_MAINTENANCE_LAST_RUN,
+        TOOL_MAINTENANCE_RUN,
         TOOL_SETTINGS_SET,
     ]) {
         assert_eq!(entry["action"], audit_action(tool));
@@ -125,20 +132,20 @@ async fn each_call_appends_one_line() {
         "the eleventh line is the status call's own: {entries:?}"
     );
     assert_eq!(
-        entries[11]["detail"]["paths"],
+        entries[13]["detail"]["paths"],
         json!(["wot.enabled"]),
         "the settings write names the paths it asked for, never the values"
     );
     assert!(
-        entries[11]["detail"].get("value").is_none(),
+        entries[13]["detail"].get("value").is_none(),
         "no value is recorded: {}",
-        entries[11]
+        entries[13]
     );
 }
 
-/// R24: both write tools' lines carry the tool and nothing else. A `detail` carrying the id or
-/// the action would let a caller's own text shape a record, which the `settings_set` arm
-/// deliberately does not do — it passes the requested paths, which are its request.
+/// R24: the three write tools' lines carry the tool and nothing else. A `detail` carrying the id,
+/// the action or a count would let a caller's own text shape a record, which the `settings_set`
+/// arm deliberately does not do — it passes the requested paths, which are its request.
 #[tokio::test]
 async fn the_write_tools_detail_carries_only_the_tool() {
     let fixture = TestMcp::start().await;
@@ -157,7 +164,10 @@ async fn the_write_tools_detail_carries_only_the_tool() {
         )
         .await;
     assert_eq!(acted.is_error, Some(false), "{}", text(&acted));
-
+    // The purge over a fixture with no retention configured is the guard's three zeros, so this
+    // is a write whose answer carries numbers and whose line must not.
+    let purged = client.call(TOOL_MAINTENANCE_RUN, json!({})).await;
+    assert_eq!(purged.is_error, Some(false), "{}", text(&purged));
     let entries = fixture.audit_entries();
     let actions: Vec<String> = entries
         .iter()
@@ -167,11 +177,16 @@ async fn the_write_tools_detail_carries_only_the_tool() {
         actions,
         vec![
             audit_action(TOOL_DELETE_EVENT),
-            audit_action(TOOL_REPORTS_ACTION)
+            audit_action(TOOL_REPORTS_ACTION),
+            audit_action(TOOL_MAINTENANCE_RUN)
         ],
         "{entries:?}"
     );
-    for (entry, tool) in entries.iter().zip([TOOL_DELETE_EVENT, TOOL_REPORTS_ACTION]) {
+    for (entry, tool) in
+        entries
+            .iter()
+            .zip([TOOL_DELETE_EVENT, TOOL_REPORTS_ACTION, TOOL_MAINTENANCE_RUN])
+    {
         assert_eq!(
             entry["detail"],
             json!({ "tool": tool }),

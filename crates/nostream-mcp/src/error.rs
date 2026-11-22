@@ -21,6 +21,11 @@ pub enum McpError {
     #[error(transparent)]
     Storage(#[from] StorageError),
 
+    /// A service call failed, such as the retention purge. Its message is the service's own —
+    /// the store's, for a store the mode never wired (R8).
+    #[error(transparent)]
+    Services(#[from] nostream_services::ServicesError),
+
     /// A tool's arguments are not the shape its `inputSchema` states.
     #[error("the tool's arguments could not be read: {0}")]
     Arguments(String),

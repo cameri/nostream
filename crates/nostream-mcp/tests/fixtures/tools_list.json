@@ -154,6 +154,22 @@
       "name": "list_events"
     },
     {
+      "description": "Read the last retention purge this process ran: `run` is null until a `maintenance_run` call in this process records one, and otherwise carries `ranAt` and the `deleted`, `expired` and `retained` counts. It reports this door's own runs — the daemon's maintenance worker runs in another process and its passes are not visible here",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "maintenance_last_run"
+    },
+    {
+      "description": "Run the retention purge now — the purge step of the maintenance worker's pass, over this process's store. When `limits.event.retention.maxDays` is absent or not positive the purge is skipped: the store is not called and the answer is three zeros. Answers `run` — `ranAt`, and `deleted`, `expired` and `retained` as the store counted them; the same object is what `maintenance_last_run` reports",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "maintenance_run"
+    },
+    {
       "description": "Read the relay's status: the software version, the relay process's uptime, its live connection count and its worker rows, and the NIP-11 document it advertises. Facts only the relay process can know come from the status document it publishes; when that document is absent, unreadable or older than its freshness bound they are null, and `relay.reason` says which",
       "inputSchema": {
         "properties": {},
