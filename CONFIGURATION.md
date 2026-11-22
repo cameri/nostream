@@ -244,11 +244,11 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | nip77.maxEventsPerSession                   | Most events one session may cover. A `NEG-OPEN` whose filter matches more is rejected with `NEG-ERR blocked:` (clients should split the sync into `since`/`until` windows). The filter's `limit` is ignored, since reconciliation needs the whole set. Defaults to 100000. |
 | nip77.maxSessionsPerConnection              | Concurrent negentropy sessions one websocket connection may hold; opening an id that is already open replaces it. Further `NEG-OPEN`s are rejected with `NEG-ERR blocked:`. Defaults to 3. |
 | nip77.sessionIdleTimeoutMs                  | A session that receives no `NEG-MSG` for this many milliseconds is closed with `NEG-ERR closed:`. Defaults to 60000. |
-| paymentProcessors.lnbits.baseURL            | Base URL of your Lnbits instance. |
-| paymentProcessors.lnbits.callbackBaseURL    | Public-facing Nostream's Lnbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
+| paymentProcessors.lnbits.baseURL            | Base URL of your LNbits instance. |
+| paymentProcessors.lnbits.callbackBaseURL    | Public-facing nostream's LNbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
 | paymentProcessors.lnurl.invoiceURL          | [LUD-06 Pay Request](https://github.com/lnurl/luds/blob/luds/06.md) provider URL. (e.g. https://getalby.com/lnurlp/your-username) |
 | paymentProcessors.zebedee.baseURL           | Zebedee's API base URL. |
-| paymentProcessors.zebedee.callbackBaseURL   | Public-facing Nostream's Zebedee Callback URL (e.g. https://relay.your-domain.com/callbacks/zebedee) |
+| paymentProcessors.zebedee.callbackBaseURL   | Public-facing nostream's Zebedee Callback URL (e.g. https://relay.your-domain.com/callbacks/zebedee) |
 | paymentProcessors.zebedee.ipWhitelist       | List with Zebedee's API Production IPs. See [ZBD API Documentation](https://api-reference.zebedee.io/#c7e18276-6935-4cca-89ae-ad949efe9a6a) for more info. |
 | payments.enabled                            | Enabled payments. Defaults to false. |
 | payments.feeSchedules.admission[].amount    | Admission fee amount in msats. |
@@ -280,11 +280,11 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | nip05.mode                                  | NIP-05 verification mode: `enabled` requires verification, `passive` verifies without blocking, `disabled` does nothing. Defaults to `disabled`. |
 | nip05.verifyExpiration                      | Time in milliseconds before a successful NIP-05 verification expires and needs re-checking. Defaults to 604800000 (1 week). |
 | nip05.verifyUpdateFrequency                 | Minimum interval in milliseconds between re-verification attempts for a given author. Defaults to 86400000 (24 hours). |
-| paymentProcessors.lnbits.baseURL            | Base URL of your Lnbits instance. |
-| paymentProcessors.lnbits.callbackBaseURL    | Public-facing Nostream's Lnbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
+| paymentProcessors.lnbits.baseURL            | Base URL of your LNbits instance. |
+| paymentProcessors.lnbits.callbackBaseURL    | Public-facing nostream's LNbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
 | paymentProcessors.lnurl.invoiceURL          | [LUD-06 Pay Request](https://github.com/lnurl/luds/blob/luds/06.md) provider URL. (e.g. https://getalby.com/lnurlp/your-username) |
 | paymentProcessors.zebedee.baseURL           | Zebedee's API base URL. |
-| paymentProcessors.zebedee.callbackBaseURL   | Public-facing Nostream's Zebedee Callback URL (e.g. https://relay.your-domain.com/callbacks/zebedee) |
+| paymentProcessors.zebedee.callbackBaseURL   | Public-facing nostream's Zebedee Callback URL (e.g. https://relay.your-domain.com/callbacks/zebedee) |
 | paymentProcessors.zebedee.ipWhitelist       | List with Zebedee's API Production IPs. See [ZBD API Documentation](https://api-reference.zebedee.io/#c7e18276-6935-4cca-89ae-ad949efe9a6a) for more info. |
 | payments.enabled                            | Enabled payments. Defaults to false. |
 | payments.feeSchedules.admission[].amount    | Admission fee amount in msats. |
