@@ -3,12 +3,15 @@ contact_links:
   - name: Report a security vulnerability
     url: https://github.com/cameri/nostream/security/advisories/new
     about: Please do not open a public issue for a vulnerability. Report it privately; SECURITY.md lists the supported versions.
+  - name: Read the contributing guide before opening a pull request
+    url: https://github.com/cameri/nostream/blob/main/CONTRIBUTING.md
+    about: Setup, tests, the changeset rule, and how a pull request from outside the project is merged.
   - name: Ask in the development chat
     url: https://t.me/nostream_dev
     about: Questions about running or deploying nostream, and talk with other operators and contributors.
   - name: Discuss the Nostr protocol
-    url: https://t.me/nostr_protocol
+    url: https://github.com/nostr-protocol/nostr
     about: Questions about the protocol and the NIPs themselves, rather than about nostream.
   - name: Visit the website
-    url: https://ema.tnsor.network
+    url: https://nostream.dev
     about: The nostream website, with an overview of the project.
