@@ -76,7 +76,8 @@ The following environment variables can be set:
 
 `nostreamd --mcp-stdio` serves the admin MCP server (`settings_get`, `settings_set`,
 `list_events`, `get_event`, `relay_status`, `delete_event`, `reports_action`, `reports_list`,
-`user_admin`, `user_get`, `invoices_list` and `invoices_get`) on stdin/stdout and exits when stdin
+`user_admin`, `user_get`, `invoices_list`, `invoices_get`, `maintenance_run` and
+`maintenance_last_run`) on stdin/stdout and exits when stdin
 closes. It binds no socket,
 opens no store of its own, and writes its log lines to **stderr** so nothing but JSON-RPC crosses
 stdout.
@@ -97,8 +98,8 @@ The document is JSON, and `scopes` is optional:
 
 | Document | What it may call |
 |---|---|
-| `{}` or `{ "scopes": [] }` | The read tools: `settings_get`, `list_events`, `get_event`, `relay_status`, `user_get`, `invoices_list`, `invoices_get` and `reports_list`. |
-| `{ "scopes": ["write"] }` | The read tools, and the four that change something: `settings_set`, `delete_event` (soft-deletes **any author's** stored event by id — there is no per-author restriction, the holder of the token is the operator), `reports_action` (sets the relay-wide NIP-56 filter for the target an actionable report names) and `user_admin` (admits, revokes, vanishes and unvanishes one pubkey). |
+| `{}` or `{ "scopes": [] }` | The read tools: `settings_get`, `list_events`, `get_event`, `relay_status`, `user_get`, `invoices_list`, `invoices_get`, `reports_list` and `maintenance_last_run`. |
+| `{ "scopes": ["write"] }` | The read tools, and the five that change something: `settings_set`, `delete_event` (soft-deletes **any author's** stored event by id — there is no per-author restriction, the holder of the token is the operator), `reports_action` (sets the relay-wide NIP-56 filter for the target an actionable report names), `user_admin` (admits, revokes, vanishes and unvanishes one pubkey) and `maintenance_run` (runs the retention purge in the calling process and records it). |
 
 `write` is the only accepted scope, and an unknown name — a typo, or a document from another tool
 — refuses to start rather than being narrowed silently. A call the document's scopes deny is
