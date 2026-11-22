@@ -1,6 +1,8 @@
 import { expect } from 'chai'
 
 import {
+  changedWriteProtectedSettingsPaths,
+  collectWriteProtectedSettings,
   isSensitiveSettingsPath,
   isWriteProtectedSettingsPath,
   redactSettingsSecrets,
@@ -78,5 +80,68 @@ describe('settings-redaction', () => {
     }
 
     expect(redactSettingsSecrets(input).admin.notifications.targets[0].url).to.equal('***')
+  })
+
+  describe('collectWriteProtectedSettings', () => {
+    it('finds the protected values in a document, by path', () => {
+      const settings = { admin: { enabled: true, passwordHash: 'abc' }, payments: {} }
+
+      expect(collectWriteProtectedSettings(settings)).to.deep.equal({ 'admin.passwordHash': 'abc' })
+    })
+
+    it('finds a protected value nested in objects and arrays', () => {
+      const settings = { other: [{ passwordHash: 'x' }, { name: 'y' }], deep: { er: { passwordHash: 'z' } } }
+
+      expect(collectWriteProtectedSettings(settings)).to.deep.equal({
+        'other[0].passwordHash': 'x',
+        'deep.er.passwordHash': 'z',
+      })
+    })
+
+    it('finds nothing in a document without one, or in something that is not a document', () => {
+      expect(collectWriteProtectedSettings({ admin: { enabled: true } })).to.deep.equal({})
+      expect(collectWriteProtectedSettings(undefined)).to.deep.equal({})
+      expect(collectWriteProtectedSettings('admin.passwordHash')).to.deep.equal({})
+    })
+  })
+
+  describe('changedWriteProtectedSettingsPaths', () => {
+    it('is empty when no protected value changed, whatever else did', () => {
+      const before = { admin: { passwordHash: 'abc', sessionTtlSeconds: 1 }, payments: { enabled: false } }
+      const after = { admin: { passwordHash: 'abc', sessionTtlSeconds: 2 }, payments: { enabled: true } }
+
+      expect(changedWriteProtectedSettingsPaths(before, after)).to.deep.equal([])
+    })
+
+    it('reports a protected value that was replaced', () => {
+      expect(
+        changedWriteProtectedSettingsPaths({ admin: { passwordHash: 'abc' } }, { admin: { passwordHash: 'new' } }),
+      ).to.deep.equal(['admin.passwordHash'])
+    })
+
+    it('reports a protected value that was removed', () => {
+      expect(changedWriteProtectedSettingsPaths({ admin: { passwordHash: 'abc' } }, { admin: {} })).to.deep.equal([
+        'admin.passwordHash',
+      ])
+      expect(changedWriteProtectedSettingsPaths({ admin: { passwordHash: 'abc' } }, {})).to.deep.equal([
+        'admin.passwordHash',
+      ])
+    })
+
+    it('reports a protected value that was added', () => {
+      expect(changedWriteProtectedSettingsPaths({ admin: {} }, { admin: { passwordHash: 'new' } })).to.deep.equal([
+        'admin.passwordHash',
+      ])
+    })
+
+    it('reports each changed protected path once, in order', () => {
+      const before = { admin: { passwordHash: 'a' }, other: { passwordHash: 'b' } }
+      const after = { admin: { passwordHash: 'x' }, other: { passwordHash: 'y' } }
+
+      expect(changedWriteProtectedSettingsPaths(before, after)).to.deep.equal([
+        'admin.passwordHash',
+        'other.passwordHash',
+      ])
+    })
   })
 })
