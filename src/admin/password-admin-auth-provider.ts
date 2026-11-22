@@ -79,9 +79,12 @@ export class PasswordAdminAuthProvider implements IAdminAuthProvider {
           .send({ error: 'Internal Server Error' })
         return
       }
-    }
 
-    void this.auditHook?.('logout', request)
+      // Recorded only for a request that presents a valid session. The endpoint is public (it has to clear a cookie
+      // whoever sends the request), so an entry written for any request would let an anonymous caller fill the shared,
+      // size-limited audit history with logouts that never happened and push real administrator records out of it.
+      void this.auditHook?.('logout', request)
+    }
 
     response
       .status(200)

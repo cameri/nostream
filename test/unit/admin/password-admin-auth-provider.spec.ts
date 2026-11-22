@@ -181,6 +181,68 @@ describe('PasswordAdminAuthProvider sessions', () => {
     expect(revocations.revoked.size).to.equal(0)
   })
 
+  describe('the audit record of a logout', () => {
+    it('is written for a request that presents a valid session, with that request', async () => {
+      const token = await login()
+      audit.resetHistory()
+      const request = requestWithToken(token)
+
+      await provider.handleLogout(request, mockResponse() as unknown as Response)
+
+      expect(audit).to.have.been.calledOnceWithExactly('logout', request)
+    })
+
+    it('is also written when the session is presented as a Bearer token', async () => {
+      const token = await login()
+      audit.resetHistory()
+
+      await logout(token, 'bearer')
+
+      expect(audit).to.have.been.calledOnceWith('logout')
+    })
+
+    it('is not written for a request without a token', async () => {
+      const response = mockResponse()
+
+      await provider.handleLogout({ headers: {}, socket: {} } as any, response as any)
+
+      expect(response.statusCode).to.equal(200)
+      expect(response.headers['Set-Cookie']).to.match(/admin_session=;.*Max-Age=0/)
+      expect(audit).not.to.have.been.calledWith('logout')
+    })
+
+    it('is not written for a token that was not signed by the relay', async () => {
+      const response = await logout(`${Math.floor(Date.now() / 1000) + 600}.${'0'.repeat(32)}.${'0'.repeat(64)}`)
+
+      expect(response.statusCode).to.equal(200)
+      expect(response.headers['Set-Cookie']).to.match(/admin_session=;.*Max-Age=0/)
+      expect(audit).not.to.have.been.calledWith('logout')
+    })
+
+    it('is not written for a malformed token', async () => {
+      const response = await logout('abc.def')
+
+      expect(response.statusCode).to.equal(200)
+      expect(audit).not.to.have.been.calledWith('logout')
+    })
+
+    it('is not written for a token that has expired', async () => {
+      const response = await logout(createAdminSessionToken(Math.floor(Date.now() / 1000) - 10))
+
+      expect(response.statusCode).to.equal(200)
+      expect(response.headers['Set-Cookie']).to.match(/admin_session=;.*Max-Age=0/)
+      expect(audit).not.to.have.been.calledWith('logout')
+    })
+
+    it('is not written once for every anonymous request, however many there are', async () => {
+      for (let i = 0; i < 20; i++) {
+        await provider.handleLogout({ headers: {}, socket: {} } as any, mockResponse() as any)
+      }
+
+      expect(audit).not.to.have.been.calledWith('logout')
+    })
+  })
+
   it('reports the logout to the audit hook only once the session is revoked', async () => {
     const token = await login()
 
