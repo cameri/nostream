@@ -359,7 +359,15 @@ describe('PeeringBuyerService', () => {
       }),
     ])
     paymentsService.getInvoiceFromPaymentsProcessor = sandbox.stub().resolves({ status: 'expired' })
-    invoiceRepository.claim.resolves(invoice({ status: PeeringInvoiceStatus.HELD }))
+    invoiceRepository.claim.resolves(
+      invoice({
+        status: PeeringInvoiceStatus.HELD,
+        budgetPeriodStart: now,
+        budgetPeriodEnd: new Date(now.getTime() + 60_000),
+        globalBudgetPeriodStart: now,
+        globalBudgetPeriodEnd: new Date(now.getTime() + 60_000),
+      }),
+    )
 
     expect(await service.recover(now)).to.equal(1)
     expect(invoiceRepository.claim).to.have.been.calledWith(
@@ -401,6 +409,23 @@ describe('PeeringBuyerService', () => {
     expect(invoiceRepository.claim).not.to.have.been.called
   })
 
+  it('releases the windows returned by the claim, not the stale snapshot', async () => {
+    invoiceRepository.list.resolves([
+      invoice({ status: PeeringInvoiceStatus.PAYING, paymentAttemptId: 'attempt-1' }),
+    ])
+    paymentsService.getInvoiceFromPaymentsProcessor = sandbox.stub().resolves({ status: 'expired' })
+    invoiceRepository.transitionAttempt.resolves(
+      invoice({
+        status: PeeringInvoiceStatus.HELD,
+        budgetPeriodStart: now,
+        budgetPeriodEnd: new Date(now.getTime() + 60_000),
+      }),
+    )
+
+    expect(await service.recover(now)).to.equal(1)
+    expect(invoiceRepository.releaseBudget).to.have.been.calledWith(`peer:${PEER}`, now, 250_000_000n)
+  })
+
   it('does not release a reservation twice for retained recovery snapshots', async () => {
     const snapshot = invoice({
       status: PeeringInvoiceStatus.PAYING,
@@ -410,7 +435,13 @@ describe('PeeringBuyerService', () => {
     })
     invoiceRepository.list.resolves([snapshot])
     paymentsService.getInvoiceFromPaymentsProcessor = sandbox.stub().resolves({ status: 'expired' })
-    invoiceRepository.transitionAttempt.onFirstCall().resolves(invoice({ status: PeeringInvoiceStatus.HELD }))
+    invoiceRepository.transitionAttempt.onFirstCall().resolves(
+      invoice({
+        status: PeeringInvoiceStatus.HELD,
+        budgetPeriodStart: now,
+        budgetPeriodEnd: new Date(now.getTime() + 60_000),
+      }),
+    )
     invoiceRepository.transitionAttempt.onSecondCall().resolves(undefined)
 
     expect(await service.recover(now)).to.equal(1)
@@ -597,6 +628,13 @@ describe('PeeringBuyerService', () => {
 
     expect(result.status).to.equal(PeeringInvoiceStatus.PAYING)
     expect(invoiceRepository.releaseBudget).not.to.have.been.called
+    expect(invoiceRepository.transitionAttempt).to.have.been.calledWith(
+      PAYMENT_HASH,
+      Sinon.match.any,
+      [PeeringInvoiceStatus.PAYING],
+      PeeringInvoiceStatus.PAYING,
+      Sinon.match({ autoPaid: true }),
+    )
   })
 
   it('summarizes per-peer and global budget spend', async () => {

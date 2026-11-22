@@ -274,15 +274,6 @@ export class PeeringBuyerService implements IPeeringBuyerService {
         return invoice
       }
 
-      const reservation = {
-        reserved: true,
-        ...(invoice.budgetPeriodStart && invoice.budgetPeriodEnd
-          ? { peerWindow: { start: invoice.budgetPeriodStart, end: invoice.budgetPeriodEnd } }
-          : {}),
-        ...(invoice.globalBudgetPeriodStart && invoice.globalBudgetPeriodEnd
-          ? { globalWindow: { start: invoice.globalBudgetPeriodStart, end: invoice.globalBudgetPeriodEnd } }
-          : {}),
-      }
       const transaction = new Transaction(this.dbClient)
       let started = false
       try {
@@ -307,18 +298,20 @@ export class PeeringBuyerService implements IPeeringBuyerService {
           await transaction.rollback()
           return invoice
         }
-        if (reservation.peerWindow) {
+        // Use the windows stored on the row we just claimed: reserve may have
+        // committed them after this recovery read its snapshot.
+        if (claimed.budgetPeriodStart && claimed.budgetPeriodEnd) {
           await this.invoiceRepository.releaseBudget(
             `peer:${invoice.peerPubkey.toLowerCase()}`,
-            reservation.peerWindow.start,
+            claimed.budgetPeriodStart,
             invoice.amountMsats,
             transaction.transaction,
           )
         }
-        if (reservation.globalWindow) {
+        if (claimed.globalBudgetPeriodStart && claimed.globalBudgetPeriodEnd) {
           await this.invoiceRepository.releaseBudget(
             'global',
-            reservation.globalWindow.start,
+            claimed.globalBudgetPeriodStart,
             invoice.amountMsats,
             transaction.transaction,
           )
@@ -544,7 +537,7 @@ export class PeeringBuyerService implements IPeeringBuyerService {
         // recovery can reconcile the outcome instead of refunding twice.
         await this.transition(invoice, attemptId, PeeringInvoiceStatus.PAYING, {
           reason: PeeringInvoiceReason.PAYMENT_FAILED,
-          autoPaid: false,
+          autoPaid: auto,
           termPeriodSeconds,
         })
         return { ...invoice, status: PeeringInvoiceStatus.PAYING, reason: PeeringInvoiceReason.PAYMENT_FAILED }

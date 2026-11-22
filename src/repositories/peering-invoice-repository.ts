@@ -195,7 +195,17 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
       .where({ payment_hash: paymentHash })
       .whereIn('status', from)
       .whereNot('status', to)
-      .update(this.attemptPatch(attemptId, to, changes))
+      .update(
+        this.attemptPatch(attemptId, to, {
+          ...changes,
+          // Windows belong to the attempt that reserved them; a fresh attempt
+          // must never inherit a stale release scope.
+          budgetPeriodStart: null,
+          budgetPeriodEnd: null,
+          globalBudgetPeriodStart: null,
+          globalBudgetPeriodEnd: null,
+        }),
+      )
       .returning('*')
 
     return rows.length > 0 ? fromRow(rows[0]) : undefined

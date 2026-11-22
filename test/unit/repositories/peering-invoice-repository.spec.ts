@@ -142,6 +142,14 @@ describe('PeeringInvoiceRepository', () => {
 
     expect(result?.paymentAttemptId).to.equal('attempt-1')
     expect(recording.queries[0].sql).to.include('"payment_attempt_id"')
+    for (const column of [
+      'budget_period_start',
+      'budget_period_end',
+      'global_budget_period_start',
+      'global_budget_period_end',
+    ]) {
+      expect(recording.queries[0].sql).to.include(`"${column}"`)
+    }
     expect(recording.queries[0].bindings).to.include('attempt-1')
   })
 
