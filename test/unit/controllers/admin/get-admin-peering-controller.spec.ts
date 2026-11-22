@@ -123,6 +123,7 @@ describe('GetAdminPeeringController', () => {
       status: 'held',
       reason: 'amount_mismatch',
     })
+    expect(peeringBuyerService.list).to.have.been.calledWith(['held', 'failed'], 500)
     expect(payload.budgets[0]).to.deep.include({
       scope: 'peer',
       limitMsats: '10000000',

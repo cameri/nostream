@@ -236,18 +236,20 @@
                   <tr>
                     <th scope="col">Peer</th>
                     <th scope="col">Relay</th>
-                    <th scope="col">Billing</th>
+                    <th scope="col">Terms</th>
+                    <th scope="col">State</th>
                     <th scope="col">Access until</th>
                     <th scope="col">Last reconciliation</th>
                     <th scope="col">Lag</th>
+                    <th scope="col" title="Events stored during the latest reconciliation">Reconciled</th>
                     <th scope="col">Missing</th>
-                    <th scope="col">Requests</th>
-                    <th scope="col">Events served</th>
+                    <th scope="col" title="All outgoing events sent to this peer, including the standing feed">Events served</th>
+                    <th scope="col" title="REQ, NEG-OPEN and COUNT requests from this peer">Peer requests</th>
                     <th scope="col">Signal</th>
                   </tr>
                 </thead>
                 <tbody id="peering-body">
-                  <tr><td colspan="10" class="admin-muted small">No peering peers configured.</td></tr>
+                  <tr><td colspan="12" class="admin-muted small">No peering peers configured.</td></tr>
                 </tbody>
               </table>
             </div>

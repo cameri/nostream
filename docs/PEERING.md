@@ -123,8 +123,12 @@ reconciliation from being reported as stale.
 
 Each reconciliation writes the peer's state to Redis and exposes it at
 `GET /admin/peering`: status, last reconciliation, latest event age ("lag"),
-and the number of events the last reconciliation found missing. The admin
-console shows the same rows under Operations → Peering.
+the number of events the last reconciliation found missing, and how many events
+it stored. The admin console shows the same rows under Operations → Peering,
+with the peer's current terms and an explicit relationship state (`active`,
+`suspended`, `lapsed`, `unpaid`, `free` or `removed`). It also shows reconciled
+events, peer requests and all events served, plus the per-peer and global
+budget counters and held invoices with Approve/Reject actions.
 
 NIP-77 must be enabled on the source relay (`nip77.enabled` and the PostgreSQL
 event store). `peering.peers` on the receiving relay is the only trust material

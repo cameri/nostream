@@ -1,6 +1,7 @@
-import { PeeringPayment, PeeringPeerSyncState } from '../@types/peering'
+import { PeeringPayment, PeeringPaymentStatus, PeeringPeerSyncState } from '../@types/peering'
 import { Settings } from '../@types/settings'
 import { parsePeeringPeerPubkey } from './peering-auth'
+import { isPeeringAccessActive, resolvePaidPeeringTerm } from './peering-billing'
 import { PeeringRequestStats } from './peering-request-stats'
 import { isPeeringSyncStateStale, PEERING_SYNC_STATE_STALE_AFTER_SECONDS } from './peering-sync-state'
 
@@ -17,12 +18,21 @@ export interface AdminPeeringBilling {
   lastError?: string | null
 }
 
+export type AdminPeeringRelationship = 'active' | 'suspended' | 'lapsed' | 'unpaid' | 'free' | 'removed'
+
+export interface AdminPeeringTerms {
+  amountMsats: string
+  periodSeconds: number
+}
+
 export interface AdminPeeringRow {
   pubkey: string
   relayUrl: string
   configured: boolean
   enabled: boolean
   stale: boolean
+  relationship: AdminPeeringRelationship
+  terms?: AdminPeeringTerms
   state?: PeeringPeerSyncState
   requests?: PeeringRequestStats
   billing?: AdminPeeringBilling
@@ -41,16 +51,59 @@ const toAdminBilling = (payment: PeeringPayment): AdminPeeringBilling => ({
   lastError: payment.lastError,
 })
 
+const relationshipFor = (
+  configured: boolean,
+  enabled: boolean,
+  billing: AdminPeeringBilling | undefined,
+  now: Date,
+): AdminPeeringRelationship => {
+  if (billing?.status === PeeringPaymentStatus.LAPSED) {
+    return 'lapsed'
+  }
+  if (!configured) {
+    return 'removed'
+  }
+  if (!enabled) {
+    return 'suspended'
+  }
+  if (
+    billing?.status === PeeringPaymentStatus.ACTIVE ||
+    billing?.status === PeeringPaymentStatus.RENEWAL_PENDING
+  ) {
+    // The billing sweep can lag the access check. Do not call a peer active
+    // once its saved period has already ended.
+    return isPeeringAccessActive(billing.status, billing.periodEnd, now) ? 'active' : 'lapsed'
+  }
+  if (
+    billing?.status === PeeringPaymentStatus.UNPAID ||
+    billing?.status === PeeringPaymentStatus.INVOICED
+  ) {
+    return 'unpaid'
+  }
+
+  return 'free'
+}
+
+const termsFor = (billing: AdminPeeringBilling | undefined): AdminPeeringTerms | undefined =>
+  billing?.termAmountMsats && billing.termPeriodSeconds
+    ? { amountMsats: billing.termAmountMsats, periodSeconds: billing.termPeriodSeconds }
+    : undefined
+
 export const mergePeeringRows = (
   settings: Settings,
   states: PeeringPeerSyncState[],
   staleAfterSeconds = PEERING_SYNC_STATE_STALE_AFTER_SECONDS,
   requestStats: PeeringRequestStats[] = [],
   billing: PeeringPayment[] = [],
+  now = new Date(),
 ): AdminPeeringRow[] => {
   const statesByPubkey = new Map(states.map((state) => [state.pubkey.toLowerCase(), state]))
   const requestsByPubkey = new Map(requestStats.map((stats) => [stats.pubkey.toLowerCase(), stats]))
   const billingByPubkey = new Map(billing.map((payment) => [payment.peerPubkey.toLowerCase(), payment]))
+  const paidTerm = resolvePaidPeeringTerm(settings)
+  const configuredTerms: AdminPeeringTerms | undefined = paidTerm
+    ? { amountMsats: paidTerm.amountMsats.toString(), periodSeconds: paidTerm.periodSeconds }
+    : undefined
   const rows: AdminPeeringRow[] = []
   const matched = new Set<string>()
 
@@ -62,15 +115,28 @@ export const mergePeeringRows = (
     const enabled = peer.enabled !== false
 
     matched.add(normalized)
+    const billing = billingByPubkey.get(normalized)
+      ? toAdminBilling(billingByPubkey.get(normalized)!)
+      : undefined
+    const paidConfiguration = configuredTerms !== undefined
+    const relationship = !paidConfiguration
+      ? enabled
+        ? 'free'
+        : 'suspended'
+      : enabled && !billing
+        ? 'unpaid'
+        : relationshipFor(true, enabled, billing, now)
     rows.push({
       pubkey,
       relayUrl: peer.relayUrl,
       configured: true,
       enabled,
       stale: enabled && (!state || isPeeringSyncStateStale(state.updatedAt, staleAfterSeconds)),
+      relationship,
+      terms: paidConfiguration ? (termsFor(billing) ?? configuredTerms) : undefined,
       state,
       requests: requestsByPubkey.get(normalized),
-      billing: billingByPubkey.get(normalized) ? toAdminBilling(billingByPubkey.get(normalized)!) : undefined,
+      billing,
     })
   }
 
@@ -81,17 +147,20 @@ export const mergePeeringRows = (
       continue
     }
 
+    const billing = billingByPubkey.get(state.pubkey.toLowerCase())
+      ? toAdminBilling(billingByPubkey.get(state.pubkey.toLowerCase())!)
+      : undefined
     rows.push({
       pubkey: state.pubkey,
       relayUrl: state.relayUrl,
       configured: false,
       enabled: false,
       stale: isPeeringSyncStateStale(state.updatedAt, staleAfterSeconds),
+      relationship: relationshipFor(false, false, billing, now),
+      terms: termsFor(billing),
       state,
       requests: requestsByPubkey.get(state.pubkey.toLowerCase()),
-      billing: billingByPubkey.get(state.pubkey.toLowerCase())
-        ? toAdminBilling(billingByPubkey.get(state.pubkey.toLowerCase())!)
-        : undefined,
+      billing,
     })
   }
 
@@ -105,13 +174,16 @@ export const mergePeeringRows = (
       continue
     }
 
+    const billing = toAdminBilling(payment)
     rows.push({
       pubkey: payment.peerPubkey,
       relayUrl: '',
       configured: false,
       enabled: false,
       stale: true,
-      billing: toAdminBilling(payment),
+      relationship: relationshipFor(false, false, billing, now),
+      terms: termsFor(billing),
+      billing,
     })
   }
 
