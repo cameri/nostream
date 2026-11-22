@@ -75,8 +75,8 @@ The following environment variables can be set:
 ## The admin MCP mode (`--mcp-stdio`)
 
 `nostreamd --mcp-stdio` serves the admin MCP server (`settings_get`, `settings_set`,
-`list_events`, `get_event`, `delete_event`, `reports_action`, `reports_list`, `user_admin`,
-`user_get`, `invoices_list` and `invoices_get`) on stdin/stdout and exits when stdin
+`list_events`, `get_event`, `relay_status`, `delete_event`, `reports_action`, `reports_list`,
+`user_admin`, `user_get`, `invoices_list` and `invoices_get`) on stdin/stdout and exits when stdin
 closes. It binds no socket,
 opens no store of its own, and writes its log lines to **stderr** so nothing but JSON-RPC crosses
 stdout.
