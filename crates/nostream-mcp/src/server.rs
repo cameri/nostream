@@ -432,7 +432,10 @@ pub enum UserAction {
 }
 
 impl UserAction {
-    /// The action's own name: the schema's `enum` member and the payload's `action` (R4).
+    /// The four actions, in the order the schema publishes them (R4).
+    const ALL: [Self; 4] = [Self::Admit, Self::Revoke, Self::Vanish, Self::Unvanish];
+
+    /// The action's own name: the payload's `action` (R4).
     fn as_str(self) -> &'static str {
         match self {
             Self::Admit => "admit",
@@ -448,10 +451,19 @@ impl JsonSchema for UserAction {
         "UserAction".into()
     }
 
-    /// The four literals as the schema's `enum`, for the reason `ReportAction`'s schema states:
-    /// the derive would spell a described unit enum as a `oneOf` of `const` variants.
+    /// The four names as the schema's `enum`, read from [`UserAction::as_str`] so a published
+    /// member and the payload's `action` are one spelling rather than two hand-kept copies — for
+    /// the reason `ReportAction`'s schema states: the derive would spell a described unit enum as
+    /// a `oneOf` of `const` variants.
     fn json_schema(_: &mut SchemaGenerator) -> Schema {
-        json_schema!({ "type": "string", "enum": ["admit", "revoke", "vanish", "unvanish"] })
+        let members = json!(
+            UserAction::ALL
+                .iter()
+                .copied()
+                .map(UserAction::as_str)
+                .collect::<Vec<_>>()
+        );
+        json_schema!({ "type": "string", "enum": members })
     }
 
     fn inline_schema() -> bool {
@@ -889,19 +901,19 @@ sets `amount_paid` and `confirmed_at`, and only a status update moves the status
         .unwrap_or(DateTime::UNIX_EPOCH)
     }
 
-    /// The read half's payload: the two reads the pair needs, in one place (R8, R9).
+    /// The read half's payload: the row and the balance it carries, in one place (R8, R9).
     async fn read_user(&self, arguments: &UserGetArgs) -> Result<Value, McpError> {
         let pubkey = pubkey_argument(&arguments.pubkey)?;
         self.user_row(&pubkey).await
     }
 
-    /// The pair both user tools answer: the row as the store holds it, and the balance on its
-    /// own — `balance` is `0` for a pubkey with no row and for a row nothing has credited, so
-    /// `user` is the field that says which.
+    /// The payload both user tools answer: the row as the store holds it, and the balance that
+    /// row carries — `balance` is `0` for a pubkey with no row and for a row nothing has
+    /// credited, so `user` is the field that says which. One read: the row already holds the
+    /// balance, and a second read would put two snapshots in one answer.
     async fn user_row(&self, pubkey: &Pubkey) -> Result<Value, McpError> {
-        let users = &self.state.stores().users;
-        let user = users.find_by_pubkey(pubkey).await?;
-        let balance = users.get_balance_by_pubkey(pubkey).await?;
+        let user = self.state.stores().users.find_by_pubkey(pubkey).await?;
+        let balance = user.as_ref().map_or(0, |row| row.balance);
         Ok(json!({ "user": user, "balance": balance }))
     }
 

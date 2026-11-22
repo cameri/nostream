@@ -42,8 +42,8 @@ one.
 `user_admin` is one write tool whose arguments carry a pubkey and a closed `action` enum over
 `admit`, `revoke`, `vanish` and `unvanish` — the shape `reports_action` established for a closed
 set, with a hand-written `JsonSchema` stating the four literals as the schema's `enum`.
-`user_get` is the read row: two reads, `find_by_pubkey` and `get_balance_by_pubkey`, in one
-payload.
+`user_get` is the read row: the row `find_by_pubkey` answers, and the balance that row carries,
+in one payload.
 
 The name is `user_get` because it is the same noun as `user_admin`, so the two rows sort next to
 each other in `tools/list`; because the door already spells a single-document read
@@ -57,13 +57,16 @@ operator's four decisions about one pubkey.
 — so an operator correlates the two by time. Paid for: one schema, one handler and one name for
 four writes, and a read that is reachable with a document that grants nothing.
 
-### D2 — The read path is `find_by_pubkey` plus `get_balance_by_pubkey`, never `is_vanished`
+### D2 — The read path is `find_by_pubkey`, never `is_vanished`
 
-Both tools read the same pair, through one helper, so they cannot disagree about the row's shape
-or the balance's source. A pair is needed rather than either read alone: `find_by_pubkey` answers
-the balance as a field of its row but answers nothing for a pubkey with no row, and
-`get_balance_by_pubkey` answers `0` both for a pubkey with no row and for a row nothing has
-credited. Only the pair distinguishes the two, and `user_get`'s description says so.
+Both tools read the same row, through one helper, so they cannot disagree about the row's shape
+or the balance's source. One read answers both fields: `find_by_pubkey` answers `None` for a
+pubkey with no row and `Some(row)` — carrying `row.balance` — for a row, so `balance` is `0` for
+a pubkey with no row and the row's own number otherwise. `get_balance_by_pubkey` would answer
+the same two values from a second load of the row just decoded — a second query on Postgres, a
+second decode on LMDB — and its reading could land after a credit the first did not see, which
+is two snapshots in one answer. `None` versus `Some(row)` is what distinguishes no row from no
+funds, and `user_get`'s description says so.
 
 `is_vanished` is called by neither tool. It hydrates a live kind-62 into a stored row, and
 `user_get` is reachable with a document that carries no scope at all — so calling it would make
@@ -125,8 +128,11 @@ and the payments worker's `PENDING_INVOICE_PAGE_SIZE` is that worker's page rath
 the door states.
 
 **Cost:** `reports_list` has no offset, so a queue longer than 500 is unreadable past the first
-page, and `invoices_list`'s offset walks a live index, so a row inserted between two pages can be
-skipped. Paid for: one number and one message for the three tools that page.
+page, and `invoices_list`'s offset walks a live index, so a pending row that leaves the queue
+between two pages — its status moving off `Pending`, which the payments worker's expiry does —
+shifts the walk, and a row can be skipped or answered twice. Insertion cannot: the index is
+`created_at ‖ id` ascending, so a new invoice lands after the cursor. Paid for: one number and
+one message for the three tools that page.
 
 ### D7 — The absent-name example moves to `maintenance_run`, and five audit names land
 

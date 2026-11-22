@@ -10,7 +10,7 @@
 //! | `user_admin_admits_an_uppercase_pubkey_and_the_store_says_so` | the criterion lowercases, and the store — not the payload — carries the admission |
 //! | `admitting_a_row_keeps_its_balance` | `admit` writes the row that is there: the invoice's credit survives |
 //! | `user_admin_revokes_and_an_absent_pubkey_writes_no_row` | `revoke` clears the flag and creates nothing for a pubkey with no row |
-//! | `user_admin_vanishes_and_unvanishes_the_stored_flag` | the minimal row, and the tree's only clearing of the flag |
+//! | `user_admin_vanishes_and_unvanishes_the_stored_flag` | the minimal row, the tree's only clearing of the flag, and the payload's `action` for all four names the schema publishes |
 //! | `vanishing_writes_the_flag_and_deletes_no_event` | the tool is the row write, not the relay's strategy: no event is deleted |
 //! | `an_unknown_user_action_never_reaches_the_handler` | the closed set is the arguments type, so nothing is written |
 //! | `a_short_pubkey_is_refused_after_its_dispatch_line` | a prefix is refused by the length check before any store call, and its dispatch line exists |
@@ -332,6 +332,7 @@ async fn user_admin_vanishes_and_unvanishes_the_stored_flag() {
         .await;
     assert_eq!(vanished.is_error, Some(false), "{}", text(&vanished));
     let answer = payload(&vanished);
+    assert_eq!(answer["action"], "vanish", "{answer}");
     assert_eq!(answer["user"]["is_vanished"], true, "{answer}");
     assert_eq!(
         answer["user"]["is_admitted"], false,
@@ -351,13 +352,51 @@ async fn user_admin_vanishes_and_unvanishes_the_stored_flag() {
         )
         .await;
     assert_eq!(unvanished.is_error, Some(false), "{}", text(&unvanished));
-    assert_eq!(payload(&unvanished)["user"]["is_vanished"], false);
+    let answer = payload(&unvanished);
+    assert_eq!(answer["action"], "unvanish", "{answer}");
+    assert_eq!(answer["user"]["is_vanished"], false, "{answer}");
     assert!(
         stored_user(&fixture, &key())
             .await
             .is_some_and(|row| !row.is_vanished),
         "the flag is cleared in the store, which is what the relay's gate reads"
     );
+
+    // The four names the schema publishes, and the payload's own `action` for each (R4): the
+    // enum is read from the same spelling the payload is, so a mistyped arm cannot answer a
+    // value outside the contract a validating client checked the call against.
+    let tools = client.tools().await;
+    let tool = tools
+        .iter()
+        .find(|tool| tool.name == TOOL_USER_ADMIN)
+        .expect("user_admin is listed");
+    let schema = Value::Object((*tool.input_schema).clone());
+    let advertised: Vec<String> = schema["properties"]["action"]["enum"]
+        .as_array()
+        .expect("the action enum is published")
+        .iter()
+        .map(|name| name.as_str().expect("a member is a name").to_owned())
+        .collect();
+    assert_eq!(
+        advertised,
+        ["admit", "revoke", "vanish", "unvanish"],
+        "{schema}"
+    );
+    for action in &advertised {
+        let answered = client
+            .call(
+                TOOL_USER_ADMIN,
+                json!({ "pubkey": key_hex(), "action": action }),
+            )
+            .await;
+        assert_eq!(answered.is_error, Some(false), "{}", text(&answered));
+        let answered = payload(&answered);
+        assert_eq!(
+            answered["action"],
+            json!(action),
+            "the payload's action is the schema's member: {answered}"
+        );
+    }
 }
 
 #[tokio::test]
