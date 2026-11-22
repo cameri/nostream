@@ -1,7 +1,7 @@
 import { PeeringPayment, PeeringPaymentStatus, PeeringPeerSyncState } from '../@types/peering'
 import { Settings } from '../@types/settings'
 import { parsePeeringPeerPubkey } from './peering-auth'
-import { resolvePaidPeeringTerm } from './peering-billing'
+import { isPeeringAccessActive, resolvePaidPeeringTerm } from './peering-billing'
 import { PeeringRequestStats } from './peering-request-stats'
 import { isPeeringSyncStateStale, PEERING_SYNC_STATE_STALE_AFTER_SECONDS } from './peering-sync-state'
 
@@ -55,6 +55,7 @@ const relationshipFor = (
   configured: boolean,
   enabled: boolean,
   billing: AdminPeeringBilling | undefined,
+  now: Date,
 ): AdminPeeringRelationship => {
   if (billing?.status === PeeringPaymentStatus.LAPSED) {
     return 'lapsed'
@@ -69,7 +70,9 @@ const relationshipFor = (
     billing?.status === PeeringPaymentStatus.ACTIVE ||
     billing?.status === PeeringPaymentStatus.RENEWAL_PENDING
   ) {
-    return 'active'
+    // The billing sweep can lag the access check. Do not call a peer active
+    // once its saved period has already ended.
+    return isPeeringAccessActive(billing.status, billing.periodEnd, now) ? 'active' : 'lapsed'
   }
   if (
     billing?.status === PeeringPaymentStatus.UNPAID ||
@@ -92,6 +95,7 @@ export const mergePeeringRows = (
   staleAfterSeconds = PEERING_SYNC_STATE_STALE_AFTER_SECONDS,
   requestStats: PeeringRequestStats[] = [],
   billing: PeeringPayment[] = [],
+  now = new Date(),
 ): AdminPeeringRow[] => {
   const statesByPubkey = new Map(states.map((state) => [state.pubkey.toLowerCase(), state]))
   const requestsByPubkey = new Map(requestStats.map((stats) => [stats.pubkey.toLowerCase(), stats]))
@@ -114,8 +118,14 @@ export const mergePeeringRows = (
     const billing = billingByPubkey.get(normalized)
       ? toAdminBilling(billingByPubkey.get(normalized)!)
       : undefined
-    const relationship =
-      enabled && !billing && configuredTerms ? 'unpaid' : relationshipFor(true, enabled, billing)
+    const paidConfiguration = configuredTerms !== undefined
+    const relationship = !paidConfiguration
+      ? enabled
+        ? 'free'
+        : 'suspended'
+      : enabled && !billing
+        ? 'unpaid'
+        : relationshipFor(true, enabled, billing, now)
     rows.push({
       pubkey,
       relayUrl: peer.relayUrl,
@@ -123,7 +133,7 @@ export const mergePeeringRows = (
       enabled,
       stale: enabled && (!state || isPeeringSyncStateStale(state.updatedAt, staleAfterSeconds)),
       relationship,
-      terms: termsFor(billing) ?? configuredTerms,
+      terms: paidConfiguration ? (termsFor(billing) ?? configuredTerms) : undefined,
       state,
       requests: requestsByPubkey.get(normalized),
       billing,
@@ -146,7 +156,7 @@ export const mergePeeringRows = (
       configured: false,
       enabled: false,
       stale: isPeeringSyncStateStale(state.updatedAt, staleAfterSeconds),
-      relationship: relationshipFor(false, false, billing),
+      relationship: relationshipFor(false, false, billing, now),
       terms: termsFor(billing),
       state,
       requests: requestsByPubkey.get(state.pubkey.toLowerCase()),
@@ -171,7 +181,7 @@ export const mergePeeringRows = (
       configured: false,
       enabled: false,
       stale: true,
-      relationship: relationshipFor(false, false, billing),
+      relationship: relationshipFor(false, false, billing, now),
       terms: termsFor(billing),
       billing,
     })

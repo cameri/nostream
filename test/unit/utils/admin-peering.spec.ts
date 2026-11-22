@@ -3,6 +3,8 @@ import { PeeringPeerSyncState } from '../../../src/@types/peering'
 import { Settings } from '../../../src/@types/settings'
 import { mergePeeringRows } from '../../../src/utils/admin-peering'
 
+const now = new Date('2026-11-23T00:00:00.000Z')
+
 const state = (overrides: Partial<PeeringPeerSyncState> = {}): PeeringPeerSyncState => ({
   pubkey: 'a'.repeat(64),
   relayUrl: 'wss://peer.example.com',
@@ -71,6 +73,7 @@ describe('admin peering rows', () => {
       {
         peering: {
           enabled: true,
+          terms: [{ amount: 21000, unit: 'msats', period: 2592000 }],
           peers: [{ pubkey: 'a'.repeat(64), relayUrl: 'wss://peer.example.com' }],
         },
       } as Settings,
@@ -96,6 +99,7 @@ describe('admin peering rows', () => {
           updatedAt: new Date(),
         } as any,
       ],
+      now,
     )
 
     expect(rows[0].relationship).to.equal('unpaid')
@@ -168,6 +172,7 @@ describe('admin peering rows', () => {
       {
         peering: {
           enabled: true,
+          terms: [{ amount: 21000, unit: 'msats', period: 2592000 }],
           peers: [{ pubkey: 'a'.repeat(64), relayUrl: 'wss://peer.example.com' }],
         },
       } as Settings,
@@ -193,6 +198,7 @@ describe('admin peering rows', () => {
           updatedAt: new Date('2026-11-01T00:00:00.000Z'),
         } as any,
       ],
+      now,
     )
 
     expect(rows[0].billing).to.include({
@@ -203,6 +209,80 @@ describe('admin peering rows', () => {
     expect(rows[0].billing?.periodEnd).to.equal(periodEnd)
     expect(rows[0].relationship).to.equal('active')
     expect(rows[0].terms).to.deep.equal({ amountMsats: '21000', periodSeconds: 2592000 })
+  })
+
+  it('shows an ended active period as lapsed', () => {
+    const rows = mergePeeringRows(
+      {
+        peering: {
+          enabled: true,
+          terms: [{ amount: 21000, unit: 'msats', period: 2592000 }],
+          peers: [{ pubkey: 'a'.repeat(64), relayUrl: 'wss://peer.example.com' }],
+        },
+      } as Settings,
+      [state()],
+      undefined,
+      [],
+      [
+        {
+          peerPubkey: 'a'.repeat(64),
+          direction: 'sell',
+          status: 'active',
+          currentInvoiceId: null,
+          renewalInvoiceId: null,
+          periodStart: new Date('2026-10-01T00:00:00.000Z'),
+          periodEnd: new Date('2026-11-01T00:00:00.000Z'),
+          termAmountMsats: 21000n,
+          termPeriodSeconds: 2592000,
+          lastSettledInvoiceId: 'inv-1',
+          lastSettledAt: new Date('2026-10-01T00:00:00.000Z'),
+          lastCheckedAt: null,
+          lastError: null,
+          createdAt: new Date('2026-10-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-10-01T00:00:00.000Z'),
+        } as any,
+      ],
+      now,
+    )
+
+    expect(rows[0].relationship).to.equal('lapsed')
+  })
+
+  it('shows free terms instead of an old billing row', () => {
+    const rows = mergePeeringRows(
+      {
+        peering: {
+          enabled: true,
+          peers: [{ pubkey: 'a'.repeat(64), relayUrl: 'wss://peer.example.com' }],
+        },
+      } as Settings,
+      [state()],
+      undefined,
+      [],
+      [
+        {
+          peerPubkey: 'a'.repeat(64),
+          direction: 'sell',
+          status: 'lapsed',
+          currentInvoiceId: null,
+          renewalInvoiceId: null,
+          periodStart: new Date('2026-10-01T00:00:00.000Z'),
+          periodEnd: new Date('2026-11-01T00:00:00.000Z'),
+          termAmountMsats: 21000n,
+          termPeriodSeconds: 2592000,
+          lastSettledInvoiceId: 'inv-1',
+          lastSettledAt: new Date('2026-10-01T00:00:00.000Z'),
+          lastCheckedAt: null,
+          lastError: null,
+          createdAt: new Date('2026-10-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-10-01T00:00:00.000Z'),
+        } as any,
+      ],
+      now,
+    )
+
+    expect(rows[0].relationship).to.equal('free')
+    expect(rows[0].terms).to.be.undefined
   })
 
   it('shows a billing row for a peer removed from settings', () => {
@@ -242,6 +322,7 @@ describe('admin peering rows', () => {
       {
         peering: {
           enabled: true,
+          terms: [{ amount: 21000, unit: 'msats', period: 2592000 }],
           peers: [{ pubkey: 'a'.repeat(64), relayUrl: 'wss://peer.example.com' }],
         },
       } as Settings,
