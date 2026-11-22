@@ -114,8 +114,8 @@ export interface PeeringInvoice {
   globalBudgetPeriodEnd?: Date | null
   /** Ownership token for the current wallet attempt. */
   paymentAttemptId?: string | null
-  /** When the current attempt last handed a payment to the wallet. */
-  paymentSubmittedAt?: Date | null
+  /** When the current attempt last started or submitted a payment. */
+  paymentActivityAt?: Date | null
   /** Period this invoice buys from the peer, from the advertised term. */
   termPeriodSeconds?: number | null
   expiresAt?: Date | null
@@ -139,7 +139,7 @@ export interface DBPeeringInvoice {
   global_budget_period_start: Date | null
   global_budget_period_end: Date | null
   payment_attempt_id: string | null
-  payment_submitted_at: Date | null
+  payment_activity_at: Date | null
   term_period_seconds: number | null
   expires_at: Date | null
   seen_count: number

@@ -26,7 +26,7 @@ const toRow = (invoice: PeeringInvoice): DBPeeringInvoice => ({
   global_budget_period_start: invoice.globalBudgetPeriodStart ?? null,
   global_budget_period_end: invoice.globalBudgetPeriodEnd ?? null,
   payment_attempt_id: invoice.paymentAttemptId ?? null,
-  payment_submitted_at: invoice.paymentSubmittedAt ?? null,
+  payment_activity_at: invoice.paymentActivityAt ?? null,
   term_period_seconds: invoice.termPeriodSeconds ?? null,
   expires_at: invoice.expiresAt ?? null,
   seen_count: invoice.seenCount,
@@ -49,7 +49,7 @@ const fromRow = (row: DBPeeringInvoice): PeeringInvoice => ({
   globalBudgetPeriodStart: row.global_budget_period_start,
   globalBudgetPeriodEnd: row.global_budget_period_end,
   paymentAttemptId: row.payment_attempt_id,
-  paymentSubmittedAt: row.payment_submitted_at,
+  paymentActivityAt: row.payment_activity_at,
   termPeriodSeconds: row.term_period_seconds,
   expiresAt: row.expires_at,
   seenCount: row.seen_count,
@@ -124,7 +124,7 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
         | 'globalBudgetPeriodStart'
         | 'globalBudgetPeriodEnd'
         | 'paymentAttemptId'
-        | 'paymentSubmittedAt'
+        | 'paymentActivityAt'
         | 'termPeriodSeconds'
       >
     >,
@@ -158,14 +158,14 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
     if (changes.paymentAttemptId !== undefined) {
       patch.payment_attempt_id = changes.paymentAttemptId
     }
-    if (changes.paymentSubmittedAt !== undefined) {
-      patch.payment_submitted_at = changes.paymentSubmittedAt
+    if (changes.paymentActivityAt !== undefined) {
+      patch.payment_activity_at = changes.paymentActivityAt
     }
     if (changes.termPeriodSeconds !== undefined) {
       patch.term_period_seconds = changes.termPeriodSeconds
     }
-    if (changes.paymentSubmittedAt !== undefined) {
-      patch.payment_submitted_at = changes.paymentSubmittedAt
+    if (changes.paymentActivityAt !== undefined) {
+      patch.payment_activity_at = changes.paymentActivityAt
     }
 
     const rows = await client<DBPeeringInvoice>('peering_invoices')
@@ -213,7 +213,7 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
           budgetPeriodEnd: null,
           globalBudgetPeriodStart: null,
           globalBudgetPeriodEnd: null,
-          paymentSubmittedAt: null,
+          paymentActivityAt: new Date(),
         }),
       )
       .returning('*')
@@ -254,7 +254,7 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
           builder.where('payment_attempt_id', attemptId)
         }
         builder.where((stale) => {
-          stale.whereNull('payment_submitted_at').orWhere('payment_submitted_at', '<', staleBefore)
+          stale.whereNull('payment_activity_at').orWhere('payment_activity_at', '<', staleBefore)
         })
       })
       .update(this.attemptPatch(attemptId, to, changes))
@@ -297,8 +297,8 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
     if (changes.termPeriodSeconds !== undefined) {
       patch.term_period_seconds = changes.termPeriodSeconds
     }
-    if (changes.paymentSubmittedAt !== undefined) {
-      patch.payment_submitted_at = changes.paymentSubmittedAt
+    if (changes.paymentActivityAt !== undefined) {
+      patch.payment_activity_at = changes.paymentActivityAt
     }
 
     return patch

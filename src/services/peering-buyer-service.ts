@@ -524,7 +524,7 @@ export class PeeringBuyerService implements IPeeringBuyerService {
     // Serialize submission against failure recovery: this write refreshes the
     // row's activity, and recovery refuses to release a recent attempt.
     const submission = await this.transition(invoice, attemptId, PeeringInvoiceStatus.PAYING, {
-      paymentSubmittedAt: now,
+      paymentActivityAt: now,
     })
     if (!submission) {
       logger(

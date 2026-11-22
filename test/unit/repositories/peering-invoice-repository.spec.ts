@@ -30,7 +30,7 @@ describe('PeeringInvoiceRepository', () => {
     budget_period_end: new Date(now.getTime() + 86_400_000),
     term_period_seconds: 86_400,
     payment_attempt_id: null,
-    payment_submitted_at: null,
+    payment_activity_at: null,
     expires_at: new Date(now.getTime() + 60_000),
     seen_count: 2,
     paid_at: null,
@@ -51,7 +51,7 @@ describe('PeeringInvoiceRepository', () => {
     budgetPeriodEnd: null,
     termPeriodSeconds: null,
     paymentAttemptId: null,
-    paymentSubmittedAt: null,
+    paymentActivityAt: null,
     expiresAt: null,
     seenCount: 1,
     paidAt: null,
@@ -84,7 +84,7 @@ describe('PeeringInvoiceRepository', () => {
     expect(result.invoice.seenCount).to.equal(3)
     expect(recording.queries[1].sql).to.include('"peering_invoices"')
     expect(recording.queries[2].sql).to.include('"seen_count"')
-    expect(recording.queries[2].sql).not.to.include('payment_submitted_at')
+    expect(recording.queries[2].sql).not.to.include('payment_activity_at')
   })
 
   it('updates only the provided invoice fields', async () => {
@@ -150,7 +150,7 @@ describe('PeeringInvoiceRepository', () => {
       'budget_period_end',
       'global_budget_period_start',
       'global_budget_period_end',
-      'payment_submitted_at',
+      'payment_activity_at',
     ]) {
       expect(recording.queries[0].sql).to.include(`"${column}"`)
     }
@@ -210,7 +210,7 @@ describe('PeeringInvoiceRepository', () => {
     expect(result?.status).to.equal(PeeringInvoiceStatus.HELD)
     expect(recording.queries[0].sql).to.include('"payment_attempt_id"')
     expect(recording.queries[0].sql).to.include('"status" in')
-    expect(recording.queries[0].sql).to.include('"payment_submitted_at" <')
+    expect(recording.queries[0].sql).to.include('"payment_activity_at" <')
     expect(recording.queries[0].sql).not.to.include('"updated_at" <')
   })
 
