@@ -193,6 +193,7 @@ export interface IUserRepository {
   setVanished(pubkey: Pubkey, vanished: boolean, client?: DatabaseClient): Promise<number>
   admitUser(pubkey: Pubkey, admittedAt: Date, client?: DatabaseClient): Promise<void>
   revokeAdmission(pubkey: Pubkey, client?: DatabaseClient): Promise<number>
+  findAdmittedPubkeys(limit: number, client?: DatabaseClient): Promise<Pubkey[]>
 }
 
 export interface Nip05VerificationAdminListQuery {

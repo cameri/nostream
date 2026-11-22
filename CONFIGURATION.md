@@ -222,6 +222,7 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | nip43.defaultMaxUses                        | How many times a newly minted invite code can be claimed. Defaults to 1. |
 | nip43.allowInviteRequests                   | Answer REQs for kind 28935 by minting an invite code on the fly and returning it as a relay-signed ephemeral event on that subscription. NIP-43 requires relays to opt in to this explicitly. Requesters must be authenticated via NIP-42, and `info.self` must match the relay's signing pubkey. Defaults to false. |
 | nip43.inviteRequestWhitelist                | Public keys allowed to request kind 28935 invite codes. Empty (the default) means any authenticated pubkey may request one; a non-empty list restricts minting to those pubkeys. |
+| nip43.publishMembershipList                 | Publish a kind 13534 membership list (a replaceable event with a NIP-70 `-` tag and one `member` tag per admitted pubkey) signed by the relay's own key, and refresh it after each successful join or leave. **It makes every member's pubkey public to anyone who can read the relay.** `info.self` must match the relay's signing pubkey, or nothing is published. It is also refreshed when a member's request to vanish is accepted, which takes that pubkey out of it. Joins and leaves that are rejected or change nothing do not refresh it, and neither does an admission made another way (for example a paid admission). The list is a convenience for clients, not the source of truth for who may publish. Defaults to false. |
 | nip45.enabled                               | Enable or disable NIP-45 COUNT handling. Defaults to true. |
 | nip50.enabled                               | Enable or disable NIP-50 full-text search. Defaults to false. When enabled, clients can include a `search` field in REQ filters to perform text queries against event content. Requires the GIN full-text index migration. |
 | nip50.language                              | PostgreSQL text-search configuration name. Defaults to `simple` (language-agnostic tokenization). Set to `english`, `spanish`, etc. for stemming support. See [PostgreSQL text search configurations](https://www.postgresql.org/docs/current/textsearch-configuration.html). **Note:** The GIN index migration is built with the `simple` configuration. If you change this value, you must manually rebuild the index: `DROP INDEX CONCURRENTLY events_content_fts_idx; CREATE INDEX CONCURRENTLY events_content_fts_idx ON events USING gin (to_tsvector('<your_language>', event_content));` — otherwise the planner cannot use the index and queries fall back to sequential scans. |
@@ -244,11 +245,11 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | nip77.maxEventsPerSession                   | Most events one session may cover. A `NEG-OPEN` whose filter matches more is rejected with `NEG-ERR blocked:` (clients should split the sync into `since`/`until` windows). The filter's `limit` is ignored, since reconciliation needs the whole set. Defaults to 100000. |
 | nip77.maxSessionsPerConnection              | Concurrent negentropy sessions one websocket connection may hold; opening an id that is already open replaces it. Further `NEG-OPEN`s are rejected with `NEG-ERR blocked:`. Defaults to 3. |
 | nip77.sessionIdleTimeoutMs                  | A session that receives no `NEG-MSG` for this many milliseconds is closed with `NEG-ERR closed:`. Defaults to 60000. |
-| paymentProcessors.lnbits.baseURL            | Base URL of your Lnbits instance. |
-| paymentProcessors.lnbits.callbackBaseURL    | Public-facing Nostream's Lnbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
+| paymentProcessors.lnbits.baseURL            | Base URL of your LNbits instance. |
+| paymentProcessors.lnbits.callbackBaseURL    | Public-facing nostream's LNbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
 | paymentProcessors.lnurl.invoiceURL          | [LUD-06 Pay Request](https://github.com/lnurl/luds/blob/luds/06.md) provider URL. (e.g. https://getalby.com/lnurlp/your-username) |
 | paymentProcessors.zebedee.baseURL           | Zebedee's API base URL. |
-| paymentProcessors.zebedee.callbackBaseURL   | Public-facing Nostream's Zebedee Callback URL (e.g. https://relay.your-domain.com/callbacks/zebedee) |
+| paymentProcessors.zebedee.callbackBaseURL   | Public-facing nostream's Zebedee Callback URL (e.g. https://relay.your-domain.com/callbacks/zebedee) |
 | paymentProcessors.zebedee.ipWhitelist       | List with Zebedee's API Production IPs. See [ZBD API Documentation](https://api-reference.zebedee.io/#c7e18276-6935-4cca-89ae-ad949efe9a6a) for more info. |
 | payments.enabled                            | Enabled payments. Defaults to false. |
 | payments.feeSchedules.admission[].amount    | Admission fee amount in msats. |
@@ -280,11 +281,11 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | nip05.mode                                  | NIP-05 verification mode: `enabled` requires verification, `passive` verifies without blocking, `disabled` does nothing. Defaults to `disabled`. |
 | nip05.verifyExpiration                      | Time in milliseconds before a successful NIP-05 verification expires and needs re-checking. Defaults to 604800000 (1 week). |
 | nip05.verifyUpdateFrequency                 | Minimum interval in milliseconds between re-verification attempts for a given author. Defaults to 86400000 (24 hours). |
-| paymentProcessors.lnbits.baseURL            | Base URL of your Lnbits instance. |
-| paymentProcessors.lnbits.callbackBaseURL    | Public-facing Nostream's Lnbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
+| paymentProcessors.lnbits.baseURL            | Base URL of your LNbits instance. |
+| paymentProcessors.lnbits.callbackBaseURL    | Public-facing nostream's LNbits Callback URL. (e.g. https://relay.your-domain.com/callbacks/lnbits) |
 | paymentProcessors.lnurl.invoiceURL          | [LUD-06 Pay Request](https://github.com/lnurl/luds/blob/luds/06.md) provider URL. (e.g. https://getalby.com/lnurlp/your-username) |
 | paymentProcessors.zebedee.baseURL           | Zebedee's API base URL. |
-| paymentProcessors.zebedee.callbackBaseURL   | Public-facing Nostream's Zebedee Callback URL (e.g. https://relay.your-domain.com/callbacks/zebedee) |
+| paymentProcessors.zebedee.callbackBaseURL   | Public-facing nostream's Zebedee Callback URL (e.g. https://relay.your-domain.com/callbacks/zebedee) |
 | paymentProcessors.zebedee.ipWhitelist       | List with Zebedee's API Production IPs. See [ZBD API Documentation](https://api-reference.zebedee.io/#c7e18276-6935-4cca-89ae-ad949efe9a6a) for more info. |
 | payments.enabled                            | Enabled payments. Defaults to false. |
 | payments.feeSchedules.admission[].amount    | Admission fee amount in msats. |

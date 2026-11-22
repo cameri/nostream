@@ -28,8 +28,8 @@ Each processor step ends with `nostream stop` and `nostream start`, which is the
    - Follow the required steps for all payments processors
    - On `.nostr/settings.yaml` file make the following changes:
      - `payments.processor` to `zebedee`
-     - `paymentsProcessors.zebedee.callbackBaseURL` to match your Nostream URL (e.g. `https://{YOUR_DOMAIN_HERE}/callbacks/zebedee`)
-   - Restart Nostream (`nostream stop` followed by `nostream start`)
+     - `paymentsProcessors.zebedee.callbackBaseURL` to match your nostream URL (e.g. `https://{YOUR_DOMAIN_HERE}/callbacks/zebedee`)
+   - Restart nostream (`nostream stop` followed by `nostream start`)
    - Read the in-depth guide for more information: [Set Up a Paid Nostr Relay with ZEBEDEE API](https://docs.zbdpay.com/payments/nostr/nostr-relay)
 
 3. Nodeless
@@ -47,7 +47,7 @@ Each processor step ends with `nostream stop` and `nostream start`, which is the
    - On your `.nostr/settings.yaml` file make the following changes:
      - Set `payments.processor` to `nodeless`
      - Set `paymentsProcessors.nodeless.storeId` to your store ID
-   - Restart Nostream (`nostream stop` followed by `nostream start`)
+   - Restart nostream (`nostream stop` followed by `nostream start`)
 
 4. [OpenNode](https://www.opennode.com/)
    - Complete the step "Before you begin"
@@ -62,10 +62,10 @@ Each processor step ends with `nostream stop` and `nostream start`, which is the
 
    - On your `.nostr/settings.yaml` file make the following changes:
      - Set `payments.processor` to `opennode`
-     - Set `paymentsProcessors.opennode.callbackBaseURL` to match your Nostream URL (e.g. `https://{YOUR_DOMAIN_HERE}/callbacks/opennode`)
-   - Restart Nostream (`nostream stop` followed by `nostream start`)
+     - Set `paymentsProcessors.opennode.callbackBaseURL` to match your nostream URL (e.g. `https://{YOUR_DOMAIN_HERE}/callbacks/opennode`)
+   - Restart nostream (`nostream stop` followed by `nostream start`)
 
-5. [LNBITS](https://lnbits.com/)
+5. [LNbits](https://lnbits.com/)
     - Complete the step "Before you begin"
     - Create a new wallet on you public LNbits instance
       - [Demo](https://legend.lnbits.com/) server must not be used for production
@@ -79,16 +79,16 @@ Each processor step ends with `nostream stop` and `nostream start`, which is the
     - On your `.nostr/settings.yaml` file make the following changes:
       - Set `payments.processor` to `lnbits`
       - set `paymentsProcessors.lnbits.baseURL` to your LNbits instance URL (e.g. `https://{YOUR_LNBITS_DOMAIN_HERE}/`)
-      - Set `paymentsProcessors.lnbits.callbackBaseURL` to match your Nostream URL (e.g. `https://{YOUR_DOMAIN_HERE}/callbacks/lnbits`)
-    - Restart Nostream (`nostream stop` followed by `nostream start`)
+      - Set `paymentsProcessors.lnbits.callbackBaseURL` to match your nostream URL (e.g. `https://{YOUR_DOMAIN_HERE}/callbacks/lnbits`)
+    - Restart nostream (`nostream stop` followed by `nostream start`)
 
-6. [Alby](https://getalby.com/), or another LNURL-pay provider that serves its callback at `<invoiceURL>/callback`. That path is a Nostream requirement, not something [LUD-06](https://github.com/lnurl/luds/blob/luds/06.md) guarantees, since a provider may advertise any callback it likes. [LNURL-verify](https://github.com/lnurl/luds/issues/182) support is also needed
+6. [Alby](https://getalby.com/), or another LNURL-pay provider that serves its callback at `<invoiceURL>/callback`. That path is a nostream requirement, not something [LUD-06](https://github.com/lnurl/luds/blob/luds/06.md) guarantees, since a provider may advertise any callback it likes. [LNURL-verify](https://github.com/lnurl/luds/issues/182) support is also needed
    - Complete the step "Before you begin"
    - [Create a new account](https://getalby.com/) if you don't have an LNURL
    - On your `.nostr/settings.yaml` file make the following changes:
      - Set `payments.processor` to `lnurl`
      - Set `paymentsProcessors.lnurl.invoiceURL` to your LNURL-pay address up to but excluding `/callback` (e.g. `https://getalby.com/lnurlp/your-username`, with your own username)
-   - Restart Nostream (`nostream stop` followed by `nostream start`)
+   - Restart nostream (`nostream stop` followed by `nostream start`)
 
 7. Nostr Wallet Connect (NIP-47 / NWC)
     - Complete the step "Before you begin"
@@ -102,7 +102,7 @@ Each processor step ends with `nostream stop` and `nostream start`, which is the
 
    - On your `.nostr/settings.yaml` file make the following changes:
      - Set `payments.processor` to `nwc`
-   - Restart Nostream (`nostream stop` followed by `nostream start`)
+   - Restart nostream (`nostream stop` followed by `nostream start`)
 
 8. Ensure payments are required for your public key
    - Visit https://{YOUR-DOMAIN}/

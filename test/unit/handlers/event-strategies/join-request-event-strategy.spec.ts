@@ -160,4 +160,71 @@ describe('JoinRequestEventStrategy', () => {
     expect(result[2]).to.be.true
     expect(result[3]).to.contain('welcome to')
   })
+
+  describe('membership list', () => {
+    let refresh: sinon.SinonStub
+
+    beforeEach(() => {
+      refresh = sinon.stub().resolves()
+      strategy = new JoinRequestEventStrategy(adapter, inviteCodeRepository, userRepository, cache, settings, {
+        refresh,
+      } as any)
+      ;(userRepository.findByPubkey as sinon.SinonStub).resolves(undefined)
+      ;(inviteCodeRepository.claimCode as sinon.SinonStub).resolves(true)
+      ;(userRepository.admitUser as sinon.SinonStub).resolves()
+    })
+
+    it('refreshes the list after a user is admitted', async () => {
+      await strategy.execute(event)
+
+      expect(refresh).to.have.been.calledOnce
+      expect(refresh).to.have.been.calledAfter(userRepository.admitUser as sinon.SinonStub)
+    })
+
+    it('still admits and welcomes the user when the refresh fails', async () => {
+      refresh.rejects(new Error('db down'))
+
+      await strategy.execute(event)
+
+      expect((userRepository.admitUser as sinon.SinonStub).calledOnce).to.be.true
+      const result = emitStub.firstCall.args[1]
+      expect(result[2]).to.be.true
+      expect(result[3]).to.contain('welcome to')
+    })
+
+    it('does not refresh when the request is rejected', async () => {
+      settings = () => ({ info: { relay_url: 'wss://test.relay' }, nip43: { enabled: false } }) as any
+      strategy = new JoinRequestEventStrategy(adapter, inviteCodeRepository, userRepository, cache, settings, {
+        refresh,
+      } as any)
+
+      await strategy.execute(event)
+
+      expect(refresh).not.to.have.been.called
+    })
+
+    it('does not refresh when the invite code is not valid', async () => {
+      ;(inviteCodeRepository.claimCode as sinon.SinonStub).resolves(false)
+
+      await strategy.execute(event)
+
+      expect(refresh).not.to.have.been.called
+    })
+
+    it('does not refresh when the user is already a member', async () => {
+      ;(userRepository.findByPubkey as sinon.SinonStub).resolves({ isAdmitted: true })
+
+      await strategy.execute(event)
+
+      expect(refresh).not.to.have.been.called
+    })
+
+    it('does not refresh when the user is not authenticated', async () => {
+      ;(adapter.getAuthenticatedPubkeys as sinon.SinonStub).returns(new Set())
+
+      await strategy.execute(event)
+
+      expect(refresh).not.to.have.been.called
+    })
+  })
 })
