@@ -299,6 +299,42 @@ describe('PeeringBillingService', () => {
       )
     })
 
+    it('does not mint another period outside the renewal window', async () => {
+      paymentRepository.lockByPeer.resolves(
+        payment({
+          status: PeeringPaymentStatus.ACTIVE,
+          periodEnd: new Date(now.getTime() + 10 * 86_400_000),
+        }),
+      )
+
+      const result = await service.ensureInvoice(peer, { now })
+
+      expect(result).to.be.undefined
+      expect(paymentsService.createPeeringInvoice).not.to.have.been.called
+      expect(mockTrx.rollback).to.have.been.calledOnce
+    })
+
+    it('mints a renewal inside the renewal window without a reconnect override', async () => {
+      paymentRepository.lockByPeer.resolves(
+        payment({
+          status: PeeringPaymentStatus.ACTIVE,
+          periodEnd: new Date(now.getTime() + 86_400_000),
+        }),
+      )
+      paymentsService.createPeeringInvoice.resolves(invoice({ id: 'renewal-1' }))
+
+      const result = await service.ensureInvoice(peer, { now })
+
+      expect(result?.id).to.equal('renewal-1')
+      expect(paymentRepository.save).to.have.been.calledWith(
+        Sinon.match({
+          status: PeeringPaymentStatus.RENEWAL_PENDING,
+          renewalInvoiceId: 'renewal-1',
+        }),
+        mockTrx,
+      )
+    })
+
     it('returns no invoice for settlement-free peering', async () => {
       settingsState.peering!.terms = []
 

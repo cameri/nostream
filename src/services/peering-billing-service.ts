@@ -13,6 +13,7 @@ import {
   PEERING_REISSUE_COOLDOWN_SECONDS,
   PEERING_RENEWAL_LEAD_SECONDS,
   PeeringInvoiceCooldownError,
+  peeringRenewalLeadSeconds,
   peeringInvoiceDescription,
   resolvePaidPeeringTerm,
 } from '../utils/peering-billing'
@@ -158,19 +159,28 @@ export class PeeringBillingService implements IPeeringBillingService {
         throw new Error(`Unable to lock peering payment row for ${peerPubkey}`)
       }
 
-      const running = payment.periodEnd instanceof Date && payment.periodEnd.getTime() > now.getTime()
+      const periodEnd = payment.periodEnd instanceof Date ? payment.periodEnd : undefined
+      const running = periodEnd !== undefined && periodEnd.getTime() > now.getTime()
+      const renewalDue =
+        running &&
+        periodEnd.getTime() - now.getTime() <= peeringRenewalLeadSeconds(term.periodSeconds) * 1000
 
       // Any open invoice is returned first, even one issued before the period ended:
       // it is still payable and creating a second one would charge the peer twice.
       const openInvoice = await this.findOpenInvoice(payment, now, transaction.transaction)
       if (openInvoice) {
         invoice = openInvoice
+      } else if (running && !renewalDue && options.renewal !== true) {
+        // A reconnect during a still-running period must not buy another period.
+        // Renewals are issued by the lifecycle sweep or inside the lead window.
+        await transaction.rollback()
+        return undefined
       } else {
         // findOpenInvoice clears pointers to invoices it retired. Re-read the locked row
         // so the new invoice is written against those cleared pointers, not stale ones.
         const current =
           (await this.peeringPaymentRepository.lockByPeer(peerPubkey, transaction.transaction)) ?? payment
-        const renewal = options.renewal === true || running
+        const renewal = options.renewal === true || renewalDue
         const created = await this.paymentsService.createPeeringInvoice(
           peerPubkey,
           term.amountMsats,

@@ -10,6 +10,13 @@ export const PEERING_INVOICE_TAG = 'peering'
 export const PEERING_RENEWAL_LEAD_SECONDS = 3 * 24 * 60 * 60
 
 /**
+ * Renewal invoices open shortly before the period ends: a fifth of the period,
+ * capped at the fixed lead. Short terms must not be "always due".
+ */
+export const peeringRenewalLeadSeconds = (periodSeconds: number): number =>
+  Math.min(PEERING_RENEWAL_LEAD_SECONDS, Math.max(1, Math.floor(periodSeconds / 5)))
+
+/**
  * Recovery refuses to release a PAYING attempt until it has been idle this
  * long, so a wallet lookup cannot predate the attempt's own submission.
  */

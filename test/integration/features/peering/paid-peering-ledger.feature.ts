@@ -347,6 +347,24 @@ Then(
   },
 )
 
+Then(
+  'requesting an invoice during the running period creates nothing',
+  async function (this: World<Record<string, any>>) {
+    const billing = this.parameters.peeringBillingService as PeeringBillingService
+    const peer = this.parameters.peeringPeer as string
+    const before = await peerRow(this, peer)
+
+    const result = await billing.ensureInvoice(peer, { now: new Date() })
+
+    expect(result).to.be.undefined
+    const after = await peerRow(this, peer)
+    expect(after.status).to.equal(before.status)
+    expect(after.period_end.getTime()).to.equal(before.period_end.getTime())
+    expect(after.current_invoice_id ?? null).to.equal(before.current_invoice_id ?? null)
+    expect(after.renewal_invoice_id ?? null).to.equal(before.renewal_invoice_id ?? null)
+  },
+)
+
 When('the paid peering period ends', async function (this: World<Record<string, any>>) {
   const db = this.parameters.peeringDb
   const peer = this.parameters.peeringPeer as string

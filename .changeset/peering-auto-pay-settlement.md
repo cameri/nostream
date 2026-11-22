@@ -11,3 +11,5 @@ outcomes keep their reservation and stay `PAYING` for recovery, while outgoing
 LNbits expiry no longer counts as a failed payment. Each payment attempt owns
 its row, may only leave `PAYING` once, and serializes submission against
 recovery, so a stale lookup cannot release a charge that is still in flight.
+Renewal invoices are only offered inside the period-relative renewal window, so
+ordinary reconnects cannot buy extra periods.
