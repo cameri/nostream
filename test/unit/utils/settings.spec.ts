@@ -305,6 +305,12 @@ describe('SettingsStatic', () => {
       expect(defaults).to.have.nested.property('nip43.inviteRequestWhitelist').that.deep.equals([])
     })
 
+    it('default-settings.yaml does not publish the membership list, as it makes the members public', () => {
+      const defaults = SettingsStatic.loadAndParseYamlFile(SettingsStatic.getDefaultSettingsFilePath())
+
+      expect(defaults).to.have.nested.property('nip43.publishMembershipList', false)
+    })
+
     it('default-settings.yaml rate limits kind 28935 invite requests per pubkey', () => {
       const defaults = SettingsStatic.loadAndParseYamlFile(SettingsStatic.getDefaultSettingsFilePath())
 

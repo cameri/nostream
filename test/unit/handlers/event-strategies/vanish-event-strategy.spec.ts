@@ -83,4 +83,45 @@ describe('VanishEventStrategy', () => {
       'duplicate:',
     ])
   })
+
+  describe('membership list', () => {
+    let refresh: Sinon.SinonStub
+
+    beforeEach(() => {
+      refresh = sandbox.stub().resolves()
+      strategy = new VanishEventStrategy(webSocket, eventRepository, userRepository, { refresh } as any)
+    })
+
+    it('refreshes the membership list once the user is marked as vanished', async () => {
+      await strategy.execute(event)
+
+      expect(refresh).to.have.been.calledOnce
+      expect(refresh).to.have.been.calledAfter(userRepository.setVanished)
+    })
+
+    it('still completes the vanish and answers OK when the refresh fails', async () => {
+      refresh.rejects(new Error('db down'))
+
+      await strategy.execute(event)
+
+      expect(userRepository.setVanished).to.have.been.calledOnceWithExactly(event.pubkey, true)
+      expect(webSocketEmitStub).to.have.been.calledOnce
+    })
+
+    it('does not refresh when the vanish could not be completed', async () => {
+      userRepository.setVanished.rejects(new Error('db down'))
+
+      await expect(strategy.execute(event)).to.be.rejectedWith('db down')
+
+      expect(refresh).not.to.have.been.called
+    })
+
+    it('works without a membership list publisher', async () => {
+      strategy = new VanishEventStrategy(webSocket, eventRepository, userRepository)
+
+      await strategy.execute(event)
+
+      expect(webSocketEmitStub).to.have.been.calledOnce
+    })
+  })
 })
