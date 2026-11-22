@@ -1,8 +1,17 @@
 # Contributing
 
-When contributing to this repository, please first discuss the change you wish to make via issue,
-email, or any other method with the owners of this repository
-before making a change.
+Thanks for wanting to help. This guide covers the environment you need, the checks a change has to
+pass, and how work actually gets merged — including the common case where your pull request cannot
+be opened in this repository directly.
+
+Three things cause most of the friction, so start with them:
+
+- **Open or find an issue first.** Every pull request here has one; a change without a linked issue
+  may not be merged, and opening a pull request does not assign the issue to you.
+- **Read the setup and test sections below.** A change that has not been run against the tests is
+  the reason most first pull requests need a second round.
+- **Follow [Pull Requests From Outside Contributors](#pull-requests-from-outside-contributors).**
+  If GitHub does not offer you a way to open a pull request here, that section is the path.
 
 Please keep the conversations civil, respectful and focus on the topic being discussed.
 
@@ -379,13 +388,56 @@ pnpm check:deps
 
 `pnpm lint` now runs Biome.
 
+## Pull Requests From Outside Contributors
+
+Opening a pull request directly against this repository is limited to people GitHub lists as
+collaborators, and most people are not. Your work can still be merged — it takes one extra step:
+
+1. Fork the repository on GitHub and create your branch on your own fork.
+2. Commit your change there with the changeset described in
+   [Releases & Versioning](#releases--versioning), and open a pull request **from your branch to
+   your fork's `main`**. That keeps the diff, the CI run and the review discussion in one place.
+3. Comment on the issue you are working on with the link to that pull request and a one-line
+   summary, and ask for it to be cherry-picked. Mention the commit sha if the branch has more than
+   one.
+
+A maintainer copies your commits onto a branch in this repository, opens the pull request here, and
+keeps you as the author — the commit is yours and the changelog credits you. Review may ask for
+changes; push them to your fork and say so on the issue, and the same branch is picked up again.
+You can also cherry-pick your own work across with `git cherry-pick -x <sha>`, which records where
+it came from.
+
+Two things make a cherry-pick quick: a branch with a single focused commit, and the changeset
+already in it. A branch that mixes an unrelated fix will usually be asked to split first.
+
+## Becoming a Collaborator
+
+Write access to this repository is granted rarely, because a merge, a CI run and a release here are
+the maintainer's responsibility rather than a button press. The path there is short:
+
+- **Land something first.** At least one change through the route above. Thoughtful review on an
+  issue or on someone else's pull request counts in your favour too.
+- **Ask.** A short note on the pull request that was merged for you is enough. There is no form and
+  no waiting list.
+- **Talk to the core maintainer.** Access is an interview, in the plain sense: a conversation about
+  what you want to work on, how you handle review on your own changes, and whether you are around
+  to answer for a merge after it lands.
+
+A request that arrives before a merged contribution will be declined — not as a verdict on the
+person, but because the conversation needs something concrete to be about. Land the change, then
+ask again. Anyone who stops being reachable, or who pushes to another contributor's branch, keeps
+read access and loses write access.
+
 ## Pull Request Process
 
 1. Update the relevant documentation with details of changes to the interface, this includes new environment
    variables, exposed ports, useful file locations and container parameters.
 2. Follow the versioning and changeset process described in [Releases & Versioning](#releases--versioning).
-3. You may merge the Pull Request in once you have the sign-off of two other developers, or if you
-   do not have permission to do that, you may request the second reviewer to merge it for you.
+3. Keep the pull request scoped to the issue it closes. An unrelated fix in the same branch is asked
+   to be split into its own pull request.
+4. A maintainer merges it once review is satisfied and CI is green; you do not need to merge your own
+   work. If you cannot open a pull request here at all, start at
+   [Pull Requests From Outside Contributors](#pull-requests-from-outside-contributors).
 
 ## Releases & Versioning
 
