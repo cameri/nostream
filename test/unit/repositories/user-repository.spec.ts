@@ -104,6 +104,49 @@ describe('UserRepository', () => {
     })
   })
 
+  describe('.findAdmittedPubkeys', () => {
+    const otherHex = 'a'.repeat(64)
+
+    const clientReturning = (rows: unknown[]) => {
+      const limitStub = sandbox.stub().resolves(rows)
+      const orderByStub = sandbox.stub().returns({ limit: limitStub })
+      const andWhereStub = sandbox.stub().returns({ orderBy: orderByStub })
+      const whereStub = sandbox.stub().returns({ andWhere: andWhereStub })
+      const selectStub = sandbox.stub().returns({ where: whereStub })
+      const client = sandbox.stub().returns({ select: selectStub }) as unknown as DatabaseClient
+
+      return { client, selectStub, whereStub, andWhereStub, orderByStub, limitStub }
+    }
+
+    it('returns the admitted pubkeys as hex', async () => {
+      const { client } = clientReturning([
+        { pubkey: Buffer.from(pubkeyHex, 'hex') },
+        { pubkey: Buffer.from(otherHex, 'hex') },
+      ])
+
+      expect(await repository.findAdmittedPubkeys(10, client)).to.deep.equal([pubkeyHex, otherHex])
+    })
+
+    it('returns an empty list when nobody is admitted', async () => {
+      const { client } = clientReturning([])
+
+      expect(await repository.findAdmittedPubkeys(10, client)).to.deep.equal([])
+    })
+
+    it('asks for admitted users who have not vanished, in a stable order, up to the limit', async () => {
+      const { client, selectStub, whereStub, andWhereStub, orderByStub, limitStub } = clientReturning([])
+
+      await repository.findAdmittedPubkeys(25, client)
+
+      expect(client).to.have.been.calledWith('users')
+      expect(selectStub).to.have.been.calledOnceWithExactly('pubkey')
+      expect(whereStub).to.have.been.calledOnceWithExactly('is_admitted', true)
+      expect(andWhereStub).to.have.been.calledOnceWithExactly('is_vanished', false)
+      expect(orderByStub).to.have.been.calledOnceWithExactly('pubkey', 'asc')
+      expect(limitStub).to.have.been.calledOnceWithExactly(25)
+    })
+  })
+
   describe('.upsert', () => {
     function makeFakeQueryBuilder(rowCount = 1) {
       const fakeQB = {

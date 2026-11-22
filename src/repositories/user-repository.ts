@@ -1,7 +1,7 @@
 import { always, applySpec, defaultTo, omit, pipe, prop } from 'ramda'
 import { DatabaseClient, Pubkey } from '../@types/base'
 import { DBUser, User } from '../@types/user'
-import { fromDBUser, toBuffer } from '../utils/transform'
+import { fromBuffer, fromDBUser, toBuffer } from '../utils/transform'
 import { IEventRepository, IUserRepository } from '../@types/repositories'
 import { createLogger } from '../factories/logger-factory'
 
@@ -111,6 +111,23 @@ export class UserRepository implements IUserRepository {
     }
 
     return BigInt(user.balance)
+  }
+
+  /**
+   * Pubkeys of the admitted members, in a stable order, at most `limit`. Users who asked to vanish are left
+   * out: they cannot publish, and they asked not to be shown.
+   */
+  public async findAdmittedPubkeys(limit: number, client: DatabaseClient = this.dbClient): Promise<Pubkey[]> {
+    logger('find admitted pubkeys (limit %d)', limit)
+
+    const rows = await client<DBUser>('users')
+      .select('pubkey')
+      .where('is_admitted', true)
+      .andWhere('is_vanished', false)
+      .orderBy('pubkey', 'asc')
+      .limit(limit)
+
+    return rows.map((row) => fromBuffer(row.pubkey))
   }
 
   // Targeted update instead of upsert so admission revocation cannot clobber
