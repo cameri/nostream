@@ -317,8 +317,9 @@ describe('admin settings API', () => {
       expect(storedHash()).to.equal(passwordHash)
     })
 
-    it('refuses a batch in which one change replaces the admin object', async () => {
+    it('refuses a batch in which one change replaces the admin object, and saves none of it', async () => {
       const { baseUrl, cookie, admin, passwordHash } = await startWithPassword()
+      const settingsBefore = fs.readFileSync(getSettingsFilePath(), 'utf-8')
 
       const response = await patch(baseUrl, cookie, {
         changes: [
@@ -329,7 +330,9 @@ describe('admin settings API', () => {
 
       expect(response.status).to.equal(400)
       expect(storedHash()).to.equal(passwordHash)
-      expect(fs.readFileSync(getSettingsFilePath(), 'utf-8')).not.to.include('enabled: true\npayments')
+      // The whole file, so a change of the batch that was saved before the refusal would show too.
+      expect(fs.readFileSync(getSettingsFilePath(), 'utf-8')).to.equal(settingsBefore)
+      expect((yaml.load(settingsBefore) as any).payments?.enabled).not.to.equal(true)
     })
 
     it('still lets an admin setting be changed on its own path', async () => {
