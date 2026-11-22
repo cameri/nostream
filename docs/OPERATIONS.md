@@ -4,8 +4,6 @@ Running, backing up and maintaining a relay after it is set up.
 
 ## Running as a service
 
-By default this server will run continuously until you stop it with Ctrl+C or until the system restarts.
-
 To have it start again whenever the system restarts, install it as a systemd service. For example:
 
 ```
@@ -15,7 +13,7 @@ $ nano /etc/systemd/system/nostream.service
 # "/home/nostr/nostream" with the directory where you cloned the repo.
 
 [Unit]
-Description=Nostr TS Relay
+Description=nostream
 After=network.target
 StartLimitIntervalSec=0
 
