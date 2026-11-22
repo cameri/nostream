@@ -1,4 +1,4 @@
-import { createHash } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 
 import { DatabaseClient, Pubkey } from '../@types/base'
 import {
@@ -170,10 +170,13 @@ export class PeeringBuyerService implements IPeeringBuyerService {
       return invoice
     }
 
-    const claimed = await this.invoiceRepository.claim(
+    const attemptId = randomUUID()
+    const claimed = await this.invoiceRepository.claimForAttempt(
       paymentHash,
       [PeeringInvoiceStatus.HELD, PeeringInvoiceStatus.FAILED],
       PeeringInvoiceStatus.PAYING,
+      attemptId,
+      { autoPaid: false, reason: null },
     )
     if (!claimed) {
       throw new Error(`peering invoice ${paymentHash} is not awaiting approval`)
@@ -182,7 +185,15 @@ export class PeeringBuyerService implements IPeeringBuyerService {
     const peer = findConfiguredPeeringPeer(this.settings(), invoice.peerPubkey)
     const peerBudget = resolvePeeringBudget(peer?.budget)
 
-    return this.settle(claimed, peerBudget, claimed.termPeriodSeconds ?? null, false, now)
+    return this.settle(
+      claimed,
+      peerBudget,
+      claimed.termPeriodSeconds ?? null,
+      false,
+      now,
+      undefined,
+      attemptId,
+    )
   }
 
   public async reject(paymentHash: string): Promise<PeeringInvoice> {
@@ -221,13 +232,22 @@ export class PeeringBuyerService implements IPeeringBuyerService {
     try {
       const result = await this.paymentsService.getInvoiceFromPaymentsProcessor(invoice.paymentHash)
       if (result.status === InvoiceStatus.COMPLETED) {
+        const paid = invoice.paymentAttemptId
+          ? await this.invoiceRepository.transitionAttempt(
+              invoice.paymentHash,
+              invoice.paymentAttemptId,
+              PeeringInvoiceStatus.PAID,
+              { reason: null, autoPaid: invoice.autoPaid, paidAt: now },
+            )
+          : await this.invoiceRepository.update(invoice.paymentHash, {
+              status: PeeringInvoiceStatus.PAID,
+              reason: null,
+              autoPaid: invoice.autoPaid,
+              paidAt: now,
+            })
         return (
-          (await this.invoiceRepository.update(invoice.paymentHash, {
-            status: PeeringInvoiceStatus.PAID,
-            reason: null,
-            autoPaid: invoice.autoPaid,
-            paidAt: now,
-          })) ?? {
+          paid ??
+          (await this.invoiceRepository.findByHash(invoice.paymentHash)) ?? {
             ...invoice,
             status: PeeringInvoiceStatus.PAID,
             reason: null,
@@ -255,12 +275,20 @@ export class PeeringBuyerService implements IPeeringBuyerService {
       try {
         await transaction.begin()
         started = true
-        const claimed = await this.invoiceRepository.claim(
-          invoice.paymentHash,
-          [PeeringInvoiceStatus.PAYING],
-          PeeringInvoiceStatus.HELD,
-          transaction.transaction,
-        )
+        const claimed = invoice.paymentAttemptId
+          ? await this.invoiceRepository.transitionAttempt(
+              invoice.paymentHash,
+              invoice.paymentAttemptId,
+              PeeringInvoiceStatus.HELD,
+              { reason: PeeringInvoiceReason.PAYMENT_FAILED, autoPaid: false },
+              transaction.transaction,
+            )
+          : await this.invoiceRepository.claim(
+              invoice.paymentHash,
+              [PeeringInvoiceStatus.PAYING],
+              PeeringInvoiceStatus.HELD,
+              transaction.transaction,
+            )
         if (!claimed) {
           await transaction.rollback()
           return invoice
@@ -281,11 +309,13 @@ export class PeeringBuyerService implements IPeeringBuyerService {
             transaction.transaction,
           )
         }
-        await this.invoiceRepository.update(
-          invoice.paymentHash,
-          { reason: PeeringInvoiceReason.PAYMENT_FAILED, autoPaid: false },
-          transaction.transaction,
-        )
+        if (!invoice.paymentAttemptId) {
+          await this.invoiceRepository.update(
+            invoice.paymentHash,
+            { reason: PeeringInvoiceReason.PAYMENT_FAILED, autoPaid: false },
+            transaction.transaction,
+          )
+        }
         await transaction.commit()
         started = false
         return claimed
@@ -427,10 +457,13 @@ export class PeeringBuyerService implements IPeeringBuyerService {
     auto: boolean,
     now: Date,
   ): Promise<PeeringInvoice> {
-    const claimed = await this.invoiceRepository.claim(
+    const attemptId = randomUUID()
+    const claimed = await this.invoiceRepository.claimForAttempt(
       invoice.paymentHash,
       [PeeringInvoiceStatus.RECEIVED],
       PeeringInvoiceStatus.PAYING,
+      attemptId,
+      { autoPaid: auto, reason: null, termPeriodSeconds },
     )
     if (!claimed) {
       // A restart can leave the row in PAYING. Check the wallet before letting
@@ -439,11 +472,15 @@ export class PeeringBuyerService implements IPeeringBuyerService {
       return current.status === PeeringInvoiceStatus.PAYING ? this.recoverInvoice(current, now) : current
     }
 
-    const reservation = await this.reserve(claimed, peerBudget, auto, now)
+    const reservation = await this.reserve(claimed, peerBudget, auto, now, attemptId)
     if (!reservation.reserved) {
-      return this.hold(
+      return this.failAndHold(
         { ...claimed, termPeriodSeconds },
+        { reserved: false },
         PeeringInvoiceReason.BUDGET_EXCEEDED,
+        termPeriodSeconds,
+        now,
+        attemptId,
       )
     }
 
@@ -454,6 +491,7 @@ export class PeeringBuyerService implements IPeeringBuyerService {
       auto,
       now,
       reservation,
+      attemptId,
     )
   }
 
@@ -464,26 +502,14 @@ export class PeeringBuyerService implements IPeeringBuyerService {
     auto: boolean,
     now: Date,
     reservation?: ReserveResult,
+    attemptId?: string,
   ): Promise<PeeringInvoice> {
-    const current = reservation ?? (await this.reserve(invoice, peerBudget, auto, now))
+    const current = reservation ?? (await this.reserve(invoice, peerBudget, auto, now, attemptId))
     if (!current.reserved) {
-      return this.hold(invoice, PeeringInvoiceReason.BUDGET_EXCEEDED)
-    }
-
-    if (current.peerWindow || current.globalWindow) {
-      try {
-        await this.invoiceRepository.update(invoice.paymentHash, {
-          autoPaid: auto,
-          budgetPeriodStart: current.peerWindow?.start ?? null,
-          budgetPeriodEnd: current.peerWindow?.end ?? null,
-          globalBudgetPeriodStart: current.globalWindow?.start ?? null,
-          globalBudgetPeriodEnd: current.globalWindow?.end ?? null,
-          termPeriodSeconds,
-        })
-      } catch (error) {
-        logger('unable to persist the reserved budget for %s: %o', invoice.paymentHash, error)
-        return this.failAndHold(invoice, current, PeeringInvoiceReason.PAYMENT_FAILED, termPeriodSeconds, now)
-      }
+      // Never overwrite a row another attempt now owns.
+      return attemptId
+        ? this.failAndHold(invoice, current, PeeringInvoiceReason.BUDGET_EXCEEDED, termPeriodSeconds, now, attemptId)
+        : this.hold(invoice, PeeringInvoiceReason.BUDGET_EXCEEDED)
     }
 
     let payment
@@ -494,8 +520,7 @@ export class PeeringBuyerService implements IPeeringBuyerService {
       if (error instanceof PaymentsProcessorOutcomeUnknownError) {
         // The wallet may still settle. Keep the reservation and PAYING row so
         // recovery can reconcile the outcome instead of refunding twice.
-        await this.invoiceRepository.update(invoice.paymentHash, {
-          status: PeeringInvoiceStatus.PAYING,
+        await this.transition(invoice, attemptId, PeeringInvoiceStatus.PAYING, {
           reason: PeeringInvoiceReason.PAYMENT_FAILED,
           autoPaid: false,
           termPeriodSeconds,
@@ -507,7 +532,7 @@ export class PeeringBuyerService implements IPeeringBuyerService {
         error instanceof PaymentsProcessorCannotPayError
           ? PeeringInvoiceReason.UNSUPPORTED_PROCESSOR
           : PeeringInvoiceReason.PAYMENT_FAILED
-      const held = await this.failAndHold(invoice, current, reason, termPeriodSeconds, now)
+      const held = await this.failAndHold(invoice, current, reason, termPeriodSeconds, now, attemptId)
 
       await this.notify(OperatorNotificationEventType.PEERING_INVOICE_FAILED, {
         paymentHash: invoice.paymentHash,
@@ -519,9 +544,8 @@ export class PeeringBuyerService implements IPeeringBuyerService {
       return held
     }
 
-    if (payment.settled === false) {
-      await this.invoiceRepository.update(invoice.paymentHash, {
-        status: PeeringInvoiceStatus.PAYING,
+    if (payment.settled !== true) {
+      await this.transition(invoice, attemptId, PeeringInvoiceStatus.PAYING, {
         reason: null,
         autoPaid: auto,
         termPeriodSeconds,
@@ -536,8 +560,7 @@ export class PeeringBuyerService implements IPeeringBuyerService {
         paidHash,
         invoice.paymentHash,
       )
-      await this.invoiceRepository.update(invoice.paymentHash, {
-        status: PeeringInvoiceStatus.PAYING,
+      await this.transition(invoice, attemptId, PeeringInvoiceStatus.PAYING, {
         reason: PeeringInvoiceReason.PAYMENT_FAILED,
         autoPaid: false,
       })
@@ -546,8 +569,7 @@ export class PeeringBuyerService implements IPeeringBuyerService {
     }
 
     try {
-      const paid = await this.invoiceRepository.update(invoice.paymentHash, {
-        status: PeeringInvoiceStatus.PAID,
+      const paid = await this.transition(invoice, attemptId, PeeringInvoiceStatus.PAID, {
         reason: null,
         autoPaid: auto,
         paidAt: now,
@@ -570,12 +592,26 @@ export class PeeringBuyerService implements IPeeringBuyerService {
     }
   }
 
+  private async transition(
+    invoice: PeeringInvoice,
+    attemptId: string | undefined,
+    to: PeeringInvoiceStatus,
+    changes: Partial<PeeringInvoice>,
+  ): Promise<PeeringInvoice | undefined> {
+    if (attemptId) {
+      return this.invoiceRepository.transitionAttempt(invoice.paymentHash, attemptId, to, changes)
+    }
+
+    return this.invoiceRepository.update(invoice.paymentHash, { status: to, ...changes })
+  }
+
   private async failAndHold(
     invoice: PeeringInvoice,
     reservation: ReserveResult,
     reason: PeeringInvoiceReason,
     termPeriodSeconds: number | null,
     now: Date,
+    attemptId?: string,
   ): Promise<PeeringInvoice> {
     const transaction = new Transaction(this.dbClient)
     let started = false
@@ -583,18 +619,26 @@ export class PeeringBuyerService implements IPeeringBuyerService {
     try {
       await transaction.begin()
       started = true
-      const claimed = await this.invoiceRepository.claim(
-        invoice.paymentHash,
-        [PeeringInvoiceStatus.PAYING],
-        PeeringInvoiceStatus.HELD,
-        transaction.transaction,
-      )
+      const claimed = attemptId
+        ? await this.invoiceRepository.transitionAttempt(
+            invoice.paymentHash,
+            attemptId,
+            PeeringInvoiceStatus.HELD,
+            { reason, autoPaid: false, termPeriodSeconds },
+            transaction.transaction,
+          )
+        : await this.invoiceRepository.claim(
+            invoice.paymentHash,
+            [PeeringInvoiceStatus.PAYING],
+            PeeringInvoiceStatus.HELD,
+            transaction.transaction,
+          )
       if (!claimed) {
         await transaction.rollback()
         return (await this.invoiceRepository.findByHash(invoice.paymentHash)) ?? invoice
       }
 
-      if (reservation.peerWindow) {
+      if (reservation.reserved && reservation.peerWindow) {
         await this.invoiceRepository.releaseBudget(
           `peer:${invoice.peerPubkey.toLowerCase()}`,
           reservation.peerWindow.start,
@@ -602,7 +646,7 @@ export class PeeringBuyerService implements IPeeringBuyerService {
           transaction.transaction,
         )
       }
-      if (reservation.globalWindow) {
+      if (reservation.reserved && reservation.globalWindow) {
         await this.invoiceRepository.releaseBudget(
           'global',
           reservation.globalWindow.start,
@@ -611,11 +655,13 @@ export class PeeringBuyerService implements IPeeringBuyerService {
         )
       }
 
-      const held = await this.invoiceRepository.update(
-        invoice.paymentHash,
-        { reason, autoPaid: false, termPeriodSeconds },
-        transaction.transaction,
-      )
+      const held = attemptId
+        ? claimed
+        : await this.invoiceRepository.update(
+            invoice.paymentHash,
+            { reason, autoPaid: false, termPeriodSeconds },
+            transaction.transaction,
+          )
       await transaction.commit()
       started = false
 
@@ -639,6 +685,7 @@ export class PeeringBuyerService implements IPeeringBuyerService {
     peerBudget: PeeringBudgetSnapshot | undefined,
     auto: boolean,
     now: Date,
+    attemptId?: string,
   ): Promise<ReserveResult> {
     const globalBudget = resolvePeeringBudget(this.settings().peering?.autoPay?.globalBudget)
     const peerWindow = peerBudget ? peeringBudgetWindow(now, peerBudget.periodSeconds) : undefined
@@ -707,6 +754,26 @@ export class PeeringBuyerService implements IPeeringBuyerService {
             invoice.amountMsats,
             transaction.transaction,
           )
+        }
+      }
+
+      if (attemptId) {
+        const updated = await this.invoiceRepository.transitionAttempt(
+          invoice.paymentHash,
+          attemptId,
+          PeeringInvoiceStatus.PAYING,
+          {
+            autoPaid: auto,
+            budgetPeriodStart: peerWindow?.start ?? null,
+            budgetPeriodEnd: peerWindow?.end ?? null,
+            globalBudgetPeriodStart: globalWindow?.start ?? null,
+            globalBudgetPeriodEnd: globalWindow?.end ?? null,
+          },
+          transaction.transaction,
+        )
+        if (!updated) {
+          await transaction.rollback()
+          return { reserved: false, peerBudget, peerWindow, globalBudget, globalWindow }
         }
       }
 

@@ -29,6 +29,7 @@ describe('PeeringInvoiceRepository', () => {
     budget_period_start: now,
     budget_period_end: new Date(now.getTime() + 86_400_000),
     term_period_seconds: 86_400,
+    payment_attempt_id: null,
     expires_at: new Date(now.getTime() + 60_000),
     seen_count: 2,
     paid_at: null,
@@ -48,6 +49,7 @@ describe('PeeringInvoiceRepository', () => {
     budgetPeriodStart: null,
     budgetPeriodEnd: null,
     termPeriodSeconds: null,
+    paymentAttemptId: null,
     expiresAt: null,
     seenCount: 1,
     paidAt: null,
@@ -123,6 +125,49 @@ describe('PeeringInvoiceRepository', () => {
 
     expect(result?.status).to.equal(PeeringInvoiceStatus.PAYING)
     expect(recording.queries[0].sql).to.include('"status" in')
+  })
+
+  it('claims an invoice for a new payment attempt', async () => {
+    const recording = createRecordingKnex()
+    const repository = new PeeringInvoiceRepository(recording.db)
+    recording.respondWith([{ ...row, status: 'paying', payment_attempt_id: 'attempt-1' }])
+
+    const result = await repository.claimForAttempt(
+      'hash-1',
+      [PeeringInvoiceStatus.HELD],
+      PeeringInvoiceStatus.PAYING,
+      'attempt-1',
+      { autoPaid: false },
+    )
+
+    expect(result?.paymentAttemptId).to.equal('attempt-1')
+    expect(recording.queries[0].sql).to.include('"payment_attempt_id"')
+    expect(recording.queries[0].bindings).to.include('attempt-1')
+  })
+
+  it('transitions only the invoice still owned by the attempt', async () => {
+    const recording = createRecordingKnex()
+    const repository = new PeeringInvoiceRepository(recording.db)
+    recording.respondWith([{ ...row, status: 'paid', payment_attempt_id: 'attempt-1', paid_at: now }])
+
+    const result = await repository.transitionAttempt('hash-1', 'attempt-1', PeeringInvoiceStatus.PAID, {
+      paidAt: now,
+    })
+
+    expect(result?.status).to.equal(PeeringInvoiceStatus.PAID)
+    expect(recording.queries[0].sql).to.include('"payment_attempt_id"')
+    expect(recording.queries[0].bindings).to.include('attempt-1')
+  })
+
+  it('does not transition an invoice owned by a newer attempt', async () => {
+    const recording = createRecordingKnex()
+    const repository = new PeeringInvoiceRepository(recording.db)
+    recording.respondWith([])
+
+    expect(
+      await repository.transitionAttempt('hash-1', 'attempt-1', PeeringInvoiceStatus.PAID),
+    ).to.equal(undefined)
+    expect(recording.queries[0].bindings).to.include('attempt-1')
   })
 
   it('lists invoices filtered by status', async () => {

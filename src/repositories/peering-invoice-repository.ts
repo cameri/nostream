@@ -25,6 +25,7 @@ const toRow = (invoice: PeeringInvoice): DBPeeringInvoice => ({
   budget_period_end: invoice.budgetPeriodEnd ?? null,
   global_budget_period_start: invoice.globalBudgetPeriodStart ?? null,
   global_budget_period_end: invoice.globalBudgetPeriodEnd ?? null,
+  payment_attempt_id: invoice.paymentAttemptId ?? null,
   term_period_seconds: invoice.termPeriodSeconds ?? null,
   expires_at: invoice.expiresAt ?? null,
   seen_count: invoice.seenCount,
@@ -46,6 +47,7 @@ const fromRow = (row: DBPeeringInvoice): PeeringInvoice => ({
   budgetPeriodEnd: row.budget_period_end,
   globalBudgetPeriodStart: row.global_budget_period_start,
   globalBudgetPeriodEnd: row.global_budget_period_end,
+  paymentAttemptId: row.payment_attempt_id,
   termPeriodSeconds: row.term_period_seconds,
   expiresAt: row.expires_at,
   seenCount: row.seen_count,
@@ -119,6 +121,7 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
         | 'budgetPeriodEnd'
         | 'globalBudgetPeriodStart'
         | 'globalBudgetPeriodEnd'
+        | 'paymentAttemptId'
         | 'termPeriodSeconds'
       >
     >,
@@ -149,6 +152,9 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
     if (changes.globalBudgetPeriodEnd !== undefined) {
       patch.global_budget_period_end = changes.globalBudgetPeriodEnd
     }
+    if (changes.paymentAttemptId !== undefined) {
+      patch.payment_attempt_id = changes.paymentAttemptId
+    }
     if (changes.termPeriodSeconds !== undefined) {
       patch.term_period_seconds = changes.termPeriodSeconds
     }
@@ -175,6 +181,78 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
       .returning('*')
 
     return rows.length > 0 ? fromRow(rows[0]) : undefined
+  }
+
+  public async claimForAttempt(
+    paymentHash: string,
+    from: PeeringInvoiceStatus[],
+    to: PeeringInvoiceStatus,
+    attemptId: string,
+    changes: Partial<PeeringInvoice> = {},
+    client: DatabaseClient = this.dbClient,
+  ): Promise<PeeringInvoice | undefined> {
+    const rows = await client<DBPeeringInvoice>('peering_invoices')
+      .where({ payment_hash: paymentHash })
+      .whereIn('status', from)
+      .whereNot('status', to)
+      .update(this.attemptPatch(attemptId, to, changes))
+      .returning('*')
+
+    return rows.length > 0 ? fromRow(rows[0]) : undefined
+  }
+
+  public async transitionAttempt(
+    paymentHash: string,
+    attemptId: string,
+    to: PeeringInvoiceStatus,
+    changes: Partial<PeeringInvoice> = {},
+    client: DatabaseClient = this.dbClient,
+  ): Promise<PeeringInvoice | undefined> {
+    const rows = await client<DBPeeringInvoice>('peering_invoices')
+      .where({ payment_hash: paymentHash, payment_attempt_id: attemptId })
+      .whereNot('status', to)
+      .update(this.attemptPatch(attemptId, to, changes))
+      .returning('*')
+
+    return rows.length > 0 ? fromRow(rows[0]) : undefined
+  }
+
+  private attemptPatch(
+    attemptId: string,
+    status: PeeringInvoiceStatus,
+    changes: Partial<PeeringInvoice>,
+  ): Record<string, unknown> {
+    const patch: Record<string, unknown> = {
+      status,
+      payment_attempt_id: attemptId,
+      updated_at: new Date(),
+    }
+    if (changes.reason !== undefined) {
+      patch.reason = changes.reason
+    }
+    if (changes.autoPaid !== undefined) {
+      patch.auto_paid = changes.autoPaid
+    }
+    if (changes.paidAt !== undefined) {
+      patch.paid_at = changes.paidAt
+    }
+    if (changes.budgetPeriodStart !== undefined) {
+      patch.budget_period_start = changes.budgetPeriodStart
+    }
+    if (changes.budgetPeriodEnd !== undefined) {
+      patch.budget_period_end = changes.budgetPeriodEnd
+    }
+    if (changes.globalBudgetPeriodStart !== undefined) {
+      patch.global_budget_period_start = changes.globalBudgetPeriodStart
+    }
+    if (changes.globalBudgetPeriodEnd !== undefined) {
+      patch.global_budget_period_end = changes.globalBudgetPeriodEnd
+    }
+    if (changes.termPeriodSeconds !== undefined) {
+      patch.term_period_seconds = changes.termPeriodSeconds
+    }
+
+    return patch
   }
 
   public async list(statuses?: PeeringInvoiceStatus[], limit = 100): Promise<PeeringInvoice[]> {
