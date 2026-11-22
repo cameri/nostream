@@ -2,7 +2,13 @@ import fs from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 
-import { getConfigBaseDir, getDefaultSettingsFilePath, getProjectPath, getSettingsFilePath } from './paths'
+import {
+  getConfigBaseDir,
+  getDefaultSettingsFilePath,
+  getLegacySettingsFilePath,
+  getProjectPath,
+  getSettingsFilePath,
+} from './paths'
 
 export const ensureNotRoot = (): void => {
   if (typeof process.geteuid === 'function' && process.geteuid() === 0) {
@@ -19,7 +25,11 @@ export const ensureConfigBootstrap = (): void => {
     fs.mkdirSync(configDir, { recursive: true })
   }
 
-  if (!fs.existsSync(settingsFile)) {
+  // settings.yaml takes precedence over the deprecated settings.json, so writing the defaults next to an existing
+  // settings.json would shadow every override in it (an admission policy, payment settings, limits) without a word.
+  // A deployment that still has only settings.json keeps working on it, and the admin console writes settings.yaml
+  // itself on the first save.
+  if (!fs.existsSync(settingsFile) && !fs.existsSync(getLegacySettingsFilePath())) {
     fs.copyFileSync(defaultsFile, settingsFile)
   }
 }
