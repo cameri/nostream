@@ -150,6 +150,18 @@ export interface IPeeringInvoiceRepository {
     changes?: Partial<PeeringInvoice>,
     client?: DatabaseClient,
   ): Promise<PeeringInvoice | undefined>
+  /**
+   * Transitions a PAYING invoice whose attempt has been idle since
+   * `staleBefore`. Serializes failure recovery against payment submission.
+   */
+  transitionStale(
+    paymentHash: string,
+    attemptId: string | undefined,
+    staleBefore: Date,
+    to: PeeringInvoiceStatus,
+    changes?: Partial<PeeringInvoice>,
+    client?: DatabaseClient,
+  ): Promise<PeeringInvoice | undefined>
   list(statuses?: PeeringInvoiceStatus[], limit?: number): Promise<PeeringInvoice[]>
   /** Atomically adds `amount` when the resulting spend stays inside `limit`. */
   reserveBudget(

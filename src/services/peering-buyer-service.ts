@@ -26,6 +26,7 @@ import { getPublicKey, getRelayPrivateKey } from '../utils/event'
 import { findConfiguredPeeringPeer, parsePeeringPeerPubkey } from '../utils/peering-auth'
 import {
   PEERING_INVOICE_TAG,
+  PEERING_PAYMENT_SETTLE_GRACE_SECONDS,
   PeeringBudgetSnapshot,
   peeringBudgetWindow,
   resolvePeeringBudget,
@@ -262,10 +263,9 @@ export class PeeringBuyerService implements IPeeringBuyerService {
           paid ??
           (await this.invoiceRepository.findByHash(invoice.paymentHash)) ?? {
             ...invoice,
-            status: PeeringInvoiceStatus.PAID,
+            status: PeeringInvoiceStatus.PAYING,
             reason: null,
             autoPaid: invoice.autoPaid,
-            paidAt: now,
           }
         )
       }
@@ -274,26 +274,20 @@ export class PeeringBuyerService implements IPeeringBuyerService {
         return invoice
       }
 
+      const staleBefore = new Date(now.getTime() - PEERING_PAYMENT_SETTLE_GRACE_SECONDS * 1000)
       const transaction = new Transaction(this.dbClient)
       let started = false
       try {
         await transaction.begin()
         started = true
-        const claimed = invoice.paymentAttemptId
-          ? await this.invoiceRepository.transitionAttempt(
-              invoice.paymentHash,
-              invoice.paymentAttemptId,
-              [PeeringInvoiceStatus.PAYING],
-              PeeringInvoiceStatus.HELD,
-              { reason: PeeringInvoiceReason.PAYMENT_FAILED, autoPaid: false },
-              transaction.transaction,
-            )
-          : await this.invoiceRepository.claim(
-              invoice.paymentHash,
-              [PeeringInvoiceStatus.PAYING],
-              PeeringInvoiceStatus.HELD,
-              transaction.transaction,
-            )
+        const claimed = await this.invoiceRepository.transitionStale(
+          invoice.paymentHash,
+          invoice.paymentAttemptId,
+          staleBefore,
+          PeeringInvoiceStatus.HELD,
+          { reason: PeeringInvoiceReason.PAYMENT_FAILED, autoPaid: false },
+          transaction.transaction,
+        )
         if (!claimed) {
           await transaction.rollback()
           return invoice
@@ -527,6 +521,17 @@ export class PeeringBuyerService implements IPeeringBuyerService {
         : this.hold(invoice, PeeringInvoiceReason.BUDGET_EXCEEDED)
     }
 
+    // Serialize submission against failure recovery: this write refreshes the
+    // row's activity, and recovery refuses to release a recent attempt.
+    const submission = await this.transition(invoice, attemptId, PeeringInvoiceStatus.PAYING, {})
+    if (!submission) {
+      logger(
+        'peering invoice %s left PAYING before submission; not paying it',
+        invoice.paymentHash,
+      )
+      return (await this.invoiceRepository.findByHash(invoice.paymentHash)) ?? invoice
+    }
+
     let payment
     try {
       payment = await this.paymentsService.payInvoice(invoice.bolt11)
@@ -591,6 +596,15 @@ export class PeeringBuyerService implements IPeeringBuyerService {
         termPeriodSeconds,
       })
 
+      if (!paid) {
+        logger.error(
+          'wallet settled peering invoice %s but the PAID transition did not commit; keeping the charge',
+          invoice.paymentHash,
+        )
+
+        return (await this.invoiceRepository.findByHash(invoice.paymentHash)) ?? invoice
+      }
+
       await this.notify(OperatorNotificationEventType.PEERING_INVOICE_PAID, {
         paymentHash: invoice.paymentHash,
         peerPubkey: invoice.peerPubkey,
@@ -598,7 +612,7 @@ export class PeeringBuyerService implements IPeeringBuyerService {
         autoPaid: auto,
       })
 
-      return paid ?? { ...invoice, status: PeeringInvoiceStatus.PAID, reason: null, autoPaid: auto, paidAt: now }
+      return paid
     } catch (error) {
       // The wallet already paid. Keep the budget charge and PAYING status so
       // recover() can finish the row instead of releasing spent money.

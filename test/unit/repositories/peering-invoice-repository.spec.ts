@@ -191,6 +191,24 @@ describe('PeeringInvoiceRepository', () => {
     expect(recording.queries[0].bindings).to.include('attempt-1')
   })
 
+  it('holds only a PAYING attempt that has been idle long enough', async () => {
+    const recording = createRecordingKnex()
+    const repository = new PeeringInvoiceRepository(recording.db)
+    recording.respondWith([{ ...row, status: 'held' }])
+
+    const result = await repository.transitionStale(
+      'hash-1',
+      'attempt-1',
+      now,
+      PeeringInvoiceStatus.HELD,
+    )
+
+    expect(result?.status).to.equal(PeeringInvoiceStatus.HELD)
+    expect(recording.queries[0].sql).to.include('"payment_attempt_id"')
+    expect(recording.queries[0].sql).to.include('"status" in')
+    expect(recording.queries[0].sql).to.include('"updated_at" <')
+  })
+
   it('lists invoices filtered by status', async () => {
     const recording = createRecordingKnex()
     const repository = new PeeringInvoiceRepository(recording.db)

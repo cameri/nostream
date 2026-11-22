@@ -9,6 +9,12 @@ export const PEERING_INVOICE_TAG = 'peering'
 /** How long before a paid period ends the relay offers its renewal. */
 export const PEERING_RENEWAL_LEAD_SECONDS = 3 * 24 * 60 * 60
 
+/**
+ * Recovery refuses to release a PAYING attempt until it has been idle this
+ * long, so a wallet lookup cannot predate the attempt's own submission.
+ */
+export const PEERING_PAYMENT_SETTLE_GRACE_SECONDS = 300
+
 /** A peer that just let an invoice expire cannot immediately mint another one. */
 export const PEERING_REISSUE_COOLDOWN_SECONDS = 15
 

@@ -9,5 +9,5 @@ rejected until payment no longer closes the connection first. Wallet submits
 now report whether they settled; pending, unknown and ambiguous transport
 outcomes keep their reservation and stay `PAYING` for recovery, while outgoing
 LNbits expiry no longer counts as a failed payment. Each payment attempt owns
-its row and may only move an invoice out of `PAYING` once, so a stale recovery
-cannot refund or overwrite a newer approval.
+its row, may only leave `PAYING` once, and serializes submission against
+recovery, so a stale lookup cannot release a charge that is still in flight.

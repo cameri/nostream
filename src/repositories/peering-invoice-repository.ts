@@ -228,14 +228,39 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
     return rows.length > 0 ? fromRow(rows[0]) : undefined
   }
 
+  public async transitionStale(
+    paymentHash: string,
+    attemptId: string | undefined,
+    staleBefore: Date,
+    to: PeeringInvoiceStatus,
+    changes: Partial<PeeringInvoice> = {},
+    client: DatabaseClient = this.dbClient,
+  ): Promise<PeeringInvoice | undefined> {
+    const rows = await client<DBPeeringInvoice>('peering_invoices')
+      .where({ payment_hash: paymentHash })
+      .whereIn('status', [PeeringInvoiceStatus.PAYING])
+      .where((builder) => {
+        if (attemptId) {
+          builder.where('payment_attempt_id', attemptId)
+        }
+        builder.where((stale) => {
+          stale.whereNull('updated_at').orWhere('updated_at', '<', staleBefore)
+        })
+      })
+      .update(this.attemptPatch(attemptId, to, changes))
+      .returning('*')
+
+    return rows.length > 0 ? fromRow(rows[0]) : undefined
+  }
+
   private attemptPatch(
-    attemptId: string,
+    attemptId: string | undefined,
     status: PeeringInvoiceStatus,
     changes: Partial<PeeringInvoice>,
   ): Record<string, unknown> {
     const patch: Record<string, unknown> = {
       status,
-      payment_attempt_id: attemptId,
+      ...(attemptId ? { payment_attempt_id: attemptId } : {}),
       updated_at: new Date(),
     }
     if (changes.reason !== undefined) {
