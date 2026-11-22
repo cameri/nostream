@@ -864,9 +864,7 @@ maintenance worker runs in another process and its passes are not visible here"
         let counts = MaintenanceService::new(store, Arc::new(settings))
             .clear_old_events()
             .await?;
-        let run =
-            self.state
-                .record_maintenance_run(counts.deleted, counts.expired, counts.retained);
+        let run = self.state.record_maintenance_run(counts);
         Ok(json!({ "run": run }))
     }
 

@@ -19,6 +19,7 @@ use nostream_core::nip05::Nip05Fetch;
 use nostream_core::random::{RandomSource, SystemRandom};
 use nostream_relay::limits::{RateLimitConfig, RateLimiter, strategy_from_settings};
 use nostream_services::{HttpClient, ServiceStores};
+use nostream_storage::repositories::EventPurgeCounts;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -431,17 +432,15 @@ impl AdminState {
     /// Records the retention purge this process just ran, stamping it with the clock and
     /// replacing the previous record — never summing it into one — and answers the record it
     /// stored, so the caller reads back exactly what a later read will.
-    pub fn record_maintenance_run(
-        &self,
-        deleted: u64,
-        expired: u64,
-        retained: u64,
-    ) -> MaintenanceRun {
+    ///
+    /// The counts arrive as the store's own value rather than three positional numbers: a
+    /// transposed `deleted`/`expired` pair is a call the compiler can refuse, one it cannot.
+    pub fn record_maintenance_run(&self, counts: EventPurgeCounts) -> MaintenanceRun {
         let run = MaintenanceRun {
             ran_at: iso8601(self.clock.now_ms()),
-            deleted,
-            expired,
-            retained,
+            deleted: counts.deleted,
+            expired: counts.expired,
+            retained: counts.retained,
         };
         *self
             .runtime
