@@ -1,4 +1,4 @@
-//! `nostream-mcp` owns the admin MCP server: the tool router, the twelve tools, the credential
+//! `nostream-mcp` owns the admin MCP server: the tool router, the fourteen tools, the credential
 //! and its scopes, and the audit sink.
 //!
 //! It owns no transport and no socket. `nostreamd --mcp-stdio` serves this server on
@@ -23,9 +23,7 @@
 //! - the admin state, the console's session token, the audit file and the settings write path —
 //!   `nostream-admin` (used here, not re-implemented);
 //! - the settings merge, validation, redaction and the guided catalogue — `nostream-config`;
-//! - the event store and the repositories — `nostream-storage`;
-//! - every tool family outside this surface: `maintenance_run` and `maintenance_last_run` are
-//!   slice 5 of #1183.
+//! - the event store and the repositories — `nostream-storage`.
 
 mod credential;
 mod error;
@@ -41,7 +39,8 @@ pub use server::{
     MCP_SERVER_NAME, NOT_FOUND, OUTCOME_ALREADY_DELETED, OUTCOME_DELETED, OUTCOME_NOT_DELETEABLE,
     OUTCOME_NOT_FOUND, ReportAction, ReportsActionArgs, ReportsListArgs, Requires, SettingsSetArgs,
     TOOL_DELETE_EVENT, TOOL_GET_EVENT, TOOL_INVOICES_GET, TOOL_INVOICES_LIST, TOOL_LIST_EVENTS,
-    TOOL_RELAY_STATUS, TOOL_REPORTS_ACTION, TOOL_REPORTS_LIST, TOOL_SETTINGS_GET,
-    TOOL_SETTINGS_SET, TOOL_USER_ADMIN, TOOL_USER_GET, TOOLS, Tool, UNAUTHORIZED, UserAction,
-    UserAdminArgs, UserGetArgs, arguments_parse, audit_action, required_scope,
+    TOOL_MAINTENANCE_LAST_RUN, TOOL_MAINTENANCE_RUN, TOOL_RELAY_STATUS, TOOL_REPORTS_ACTION,
+    TOOL_REPORTS_LIST, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET, TOOL_USER_ADMIN, TOOL_USER_GET, TOOLS,
+    Tool, UNAUTHORIZED, UserAction, UserAdminArgs, UserGetArgs, arguments_parse, audit_action,
+    required_scope,
 };

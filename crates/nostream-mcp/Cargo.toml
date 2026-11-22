@@ -13,6 +13,7 @@ nostream-admin.workspace = true
 nostream-config.workspace = true
 nostream-core.workspace = true
 nostream-relay.workspace = true
+nostream-services.workspace = true
 nostream-storage.workspace = true
 rmcp.workspace = true
 serde.workspace = true
@@ -23,7 +24,6 @@ tracing.workspace = true
 [dev-dependencies]
 futures-core.workspace = true
 futures-util.workspace = true
-nostream-services.workspace = true
 rmcp = { workspace = true, features = ["client"] }
 serde_yaml.workspace = true
 tempfile.workspace = true

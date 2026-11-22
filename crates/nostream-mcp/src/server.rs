@@ -1,4 +1,4 @@
-//! The MCP server: the twelve tools, the credential gate and the audit sink.
+//! The MCP server: the fourteen tools, the credential gate and the audit sink.
 //!
 //! Every tool is a thin handler over a seam that already exists — `AdminState` for the settings,
 //! `EventRepository` for the events — and nothing here knows what an HTTP status is (R3). The
@@ -18,6 +18,7 @@ use nostream_admin::controllers::patch_settings::{self, SettingsWrite};
 use nostream_admin::utils::status;
 use nostream_core::{EventId, Filter, Kind, Pubkey};
 use nostream_relay::nip11;
+use nostream_services::services::maintenance_service::MaintenanceService;
 use nostream_storage::repositories::{EventRecord, collect_page, collect_records};
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::tool::ToolCallContext;
@@ -48,8 +49,9 @@ pub const MCP_INSTRUCTIONS: &str = "\
 The nostream admin MCP server. Every call is decided by the scoped token document the mode was \
 started with — `--admin-token-file <path>` or `--admin-token-fd <n>`, exactly one, its shape \
 {\"scopes\": [\"write\"]}: the document's presence authorises `settings_get`, `list_events`, \
-`get_event`, `relay_status`, `user_get`, `invoices_list`, `invoices_get` and `reports_list`, and \
-the \"write\" scope authorises `settings_set`, `delete_event`, `reports_action` and `user_admin` \
+`get_event`, `relay_status`, `user_get`, `invoices_list`, `invoices_get`, `reports_list` and \
+`maintenance_last_run`, and the \"write\" scope authorises `settings_set`, `delete_event`, \
+`reports_action`, `user_admin` and `maintenance_run` \
 (else the call is `Forbidden`). \
 `admin.enabled` must be true in the settings, or every call answers `Not Found`; a document \
 that cannot be read answers `Unauthorized`. Each executed call appends one `mcp.<tool>` line to \
@@ -69,6 +71,8 @@ pub const TOOL_USER_ADMIN: &str = "user_admin";
 pub const TOOL_USER_GET: &str = "user_get";
 pub const TOOL_INVOICES_LIST: &str = "invoices_list";
 pub const TOOL_INVOICES_GET: &str = "invoices_get";
+pub const TOOL_MAINTENANCE_RUN: &str = "maintenance_run";
+pub const TOOL_MAINTENANCE_LAST_RUN: &str = "maintenance_last_run";
 
 /// What a delete call did, as the payload's `outcome` (R3, R4): this call marked the row
 /// deleted.
@@ -125,11 +129,11 @@ pub fn audit_action(tool: &str) -> String {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Requires {
     /// Reading: the grant every accepted document carries, so no scope names it and none is
-    /// asked for at dispatch. The eight read tools say this in the table rather than leaving
+    /// asked for at dispatch. The nine read tools say this in the table rather than leaving
     /// the column empty.
     Read,
-    /// [`SCOPE_WRITE`]: the one scope a document may add, and the right to call the four tools
-    /// that write.
+    /// [`SCOPE_WRITE`]: the one scope a document may add, and the right to call
+    /// the five tools that write.
     Write,
 }
 
@@ -246,6 +250,16 @@ pub const TOOLS: &[Tool] = &[
     Tool {
         name: TOOL_INVOICES_GET,
         parses: invoices_get_parses,
+        needs: Requires::Read,
+    },
+    Tool {
+        name: TOOL_MAINTENANCE_RUN,
+        parses: accepts_any_arguments,
+        needs: Requires::Write,
+    },
+    Tool {
+        name: TOOL_MAINTENANCE_LAST_RUN,
+        parses: accepts_any_arguments,
         needs: Requires::Read,
     },
 ];
@@ -806,6 +820,54 @@ sets `amount_paid` and `confirmed_at`, and only a status update moves the status
             Ok(payload) => tool_ok(payload),
             Err(error) => tool_error(&error),
         }
+    }
+
+    /// The purge step, in the answering process, through the function the trait's own
+    /// `clear_old_events` arm delegates to — the worker's code path, not a second one (D2).
+    /// The tool applies no cap of its own; the 5 s cap is `run_pass`'s, for the loop's cadence.
+    ///
+    /// A failed purge answers the store's own message and records nothing, so the previous run's
+    /// record stands: a failure is not the same fact as "never ran".
+    #[tool(
+        description = "Run the retention purge now — the purge step of the maintenance worker's \
+pass, over this process's store. When `limits.event.retention.maxDays` is absent or not positive \
+the purge is skipped: the store is not called and the answer is three zeros. Answers `run` — \
+`ranAt`, and `deleted`, `expired` and `retained` as the store counted them; the same object is \
+what `maintenance_last_run` reports"
+    )]
+    async fn maintenance_run(&self) -> CallToolResult {
+        match self.purge().await {
+            Ok(payload) => tool_ok(payload),
+            Err(error) => tool_error(&error),
+        }
+    }
+
+    /// The record this process keeps, and nothing else: one `AdminState` read, no store call and
+    /// nothing run (D3). `None` renders `null`, which is how "never ran" stays distinct from
+    /// "ran and purged nothing".
+    #[tool(
+        description = "Read the last retention purge this process ran: `run` is null until a \
+`maintenance_run` call in this process records one, and otherwise carries `ranAt` and the \
+`deleted`, `expired` and `retained` counts. It reports this door's own runs — the daemon's \
+maintenance worker runs in another process and its passes are not visible here"
+    )]
+    async fn maintenance_last_run(&self) -> CallToolResult {
+        tool_ok(json!({ "run": self.state.latest_maintenance_run() }))
+    }
+
+    /// The purge, the record it leaves and the payload both tools share (R5, R7). The settings
+    /// are read per call, as every other tool's are, so a rewritten `settings.yaml` is in force
+    /// on the next call.
+    async fn purge(&self) -> Result<Value, McpError> {
+        let settings = self.state.settings()?;
+        let store = Arc::clone(&self.state.stores().events);
+        let counts = MaintenanceService::new(store, Arc::new(settings))
+            .clear_old_events()
+            .await?;
+        let run =
+            self.state
+                .record_maintenance_run(counts.deleted, counts.expired, counts.retained);
+        Ok(json!({ "run": run }))
     }
 
     /// The delete payload: one outcome from the store's own count and the row **as it stands
