@@ -156,6 +156,8 @@ describe('PeeringInvoiceRepository', () => {
 
     expect(result?.status).to.equal(PeeringInvoiceStatus.PAID)
     expect(recording.queries[0].sql).to.include('"payment_attempt_id"')
+    // A pending attempt must be able to persist its own PAYING row.
+    expect(recording.queries[0].sql).not.to.include('"status" not in')
     expect(recording.queries[0].bindings).to.include('attempt-1')
   })
 

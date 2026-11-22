@@ -210,7 +210,6 @@ export class PeeringInvoiceRepository implements IPeeringInvoiceRepository {
   ): Promise<PeeringInvoice | undefined> {
     const rows = await client<DBPeeringInvoice>('peering_invoices')
       .where({ payment_hash: paymentHash, payment_attempt_id: attemptId })
-      .whereNot('status', to)
       .update(this.attemptPatch(attemptId, to, changes))
       .returning('*')
 
