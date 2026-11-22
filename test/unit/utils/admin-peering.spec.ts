@@ -35,6 +35,23 @@ describe('admin peering rows', () => {
     expect(rows[0].terms).to.be.undefined
   })
 
+
+  it('shows a paid configured peer as unpaid before its first invoice', () => {
+    const rows = mergePeeringRows(
+      {
+        peering: {
+          enabled: true,
+          terms: [{ amount: 21000, unit: 'sats', period: 2592000 }],
+          peers: [{ pubkey: 'a'.repeat(64), relayUrl: 'wss://peer.example.com' }],
+        },
+      } as Settings,
+      [state()],
+    )
+
+    expect(rows[0].relationship).to.equal('unpaid')
+    expect(rows[0].terms).to.deep.equal({ amountMsats: '21000000', periodSeconds: 2592000 })
+  })
+
   it('marks a configured but disabled peer suspended', () => {
     const rows = mergePeeringRows(
       {

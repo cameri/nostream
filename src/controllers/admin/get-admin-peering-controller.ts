@@ -1,7 +1,7 @@
 import { Request, Response } from 'express'
 
 import { IController } from '../../@types/controllers'
-import { PeeringInvoice } from '../../@types/peering'
+import { PeeringInvoice, PeeringInvoiceStatus } from '../../@types/peering'
 import { IPeeringPaymentRepository } from '../../@types/repositories'
 import { IPeeringBuyerService } from '../../@types/services'
 import { Settings } from '../../@types/settings'
@@ -9,6 +9,9 @@ import { mergePeeringRows } from '../../utils/admin-peering'
 import { PeeringRequestStatsStore } from '../../utils/peering-request-stats'
 import { PeeringSyncStateStore } from '../../utils/peering-sync-state'
 import { loadMergedSettings } from '../../utils/settings-config'
+
+const ADMIN_RECENT_INVOICES = 50
+const ADMIN_HELD_INVOICES = 500
 
 export const serializePeeringInvoice = (invoice: PeeringInvoice) => ({
   paymentHash: invoice.paymentHash,
@@ -38,14 +41,24 @@ export class GetAdminPeeringController implements IController {
   ) {}
 
   public async handleRequest(_request: Request, response: Response): Promise<void> {
-    const [states, settings, requestStats, billing, invoices, budgets] = await Promise.all([
+    const [states, settings, requestStats, billing, recentInvoices, heldInvoices, budgets] = await Promise.all([
       this.stateStore.list(),
       this.getSettings(),
       this.requestStatsStore?.list() ?? [],
       this.peeringPaymentRepository?.list() ?? [],
-      this.peeringBuyerService?.list(undefined, 50) ?? [],
+      this.peeringBuyerService?.list(undefined, ADMIN_RECENT_INVOICES) ?? [],
+      this.peeringBuyerService?.list(
+        [PeeringInvoiceStatus.HELD, PeeringInvoiceStatus.FAILED],
+        ADMIN_HELD_INVOICES,
+      ) ?? [],
       this.peeringBuyerService?.budgetSummary() ?? [],
     ])
+    const invoicesByHash = new Map(
+      [...heldInvoices, ...recentInvoices].map((invoice) => [invoice.paymentHash, invoice]),
+    )
+    const invoices = [...invoicesByHash.values()].sort(
+      (left, right) => right.createdAt.getTime() - left.createdAt.getTime(),
+    )
     const peers = mergePeeringRows(settings, states, undefined, requestStats, billing)
 
     response

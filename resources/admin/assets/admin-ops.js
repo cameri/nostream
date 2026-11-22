@@ -127,12 +127,19 @@
     return `<span class="status-badge${degraded ? ' status-degraded' : ''}"><span class="status-led" aria-hidden="true"></span>${escapeHtml(status)}</span>`
   }
 
+  const formatPeeringPeriod = (seconds) => {
+    if (seconds % 86400 === 0) return `${seconds / 86400}d`
+    if (seconds % 3600 === 0) return `${seconds / 3600}h`
+    if (seconds % 60 === 0) return `${seconds / 60}m`
+    return `${seconds}s`
+  }
+
   const peeringTerms = (terms) => {
     if (!terms?.amountMsats || !terms?.periodSeconds) {
       return 'Free'
     }
 
-    return `${Math.round(Number(BigInt(terms.amountMsats) / 1000n))} sats / ${Math.round(terms.periodSeconds / 86400)}d`
+    return `${Math.round(Number(BigInt(terms.amountMsats) / 1000n))} sats / ${formatPeeringPeriod(terms.periodSeconds)}`
   }
 
   const peeringSignalBadge = (row) => {
@@ -444,11 +451,20 @@
   }
 
   const decidePeeringInvoice = async (paymentHash, action) => {
-    const response = await adminFetch('/peering/invoices/decision', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ paymentHash, action }),
-    })
+    let response
+    try {
+      response = await adminFetch('/peering/invoices/decision', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ paymentHash, action }),
+      })
+    } catch (error) {
+      if (elements.peeringInvoicesSync) {
+        elements.peeringInvoicesSync.innerHTML = `<span class="prompt-char">&gt;</span><span class="text-danger"> invoice: ${escapeHtml(error instanceof Error ? error.message : 'decision request failed')}</span>`
+      }
+      return
+    }
+
     const payload = await response.json().catch(() => ({}))
     if (!response.ok) {
       if (elements.peeringInvoicesSync) {
@@ -456,7 +472,15 @@
       }
       return
     }
-    await loadPeering()
+
+    try {
+      await loadPeering()
+    } catch {
+      if (elements.peeringInvoicesSync) {
+        elements.peeringInvoicesSync.innerHTML =
+          '<span class="prompt-char">&gt;</span><span class="text-warning"> invoice saved; refresh failed</span>'
+      }
+    }
   }
 
   const refreshAll = async () => {
