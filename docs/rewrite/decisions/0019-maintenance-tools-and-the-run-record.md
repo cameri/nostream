@@ -88,11 +88,17 @@ guard makes a real distinction. The record is not a `WorkerHeartbeat` field, not
 The alternatives cost more than the fact is worth here: a file needs a writer inside
 `MaintenanceWorker` (which has no clock and no path), a TTL policy and a second writer rule
 beside the audit file's; a sixth key in the published document is an amendment to ADR 0016 for a
-value the daemon does not produce.
+value the daemon did not produce when this record was written.
 
-**Cost:** `maintenance_last_run` reports only the runs **this door** ran. A door piped alongside a
-running daemon — which the modes being alternatives already puts outside the tree — answers `null`
-until that door runs one, and the tool's description says so in its own words.
+**Cost:** the record is **this process's own**. A door run beside a daemon is a supported
+deployment, not an excluded one: the stdio mode is its own process over the same config
+directory (ADR 0014), the published status document exists so a door can report facts a running
+daemon produced (ADR 0016), and `CONFIGURATION.md` examples the door over that directory. Beside
+a running daemon, `{"run": null}` therefore means "**this** process has not run one", not "no
+pass has run": the daemon purges on its own tick and its passes are invisible here. That is a
+known blind spot, not a fact, and the tool's description says so in its own words. D3 accepts it
+because the alternative — a durable record — was priced above this slice (Consequences names it
+as the successor).
 
 ### D4 — The run is a `Requires::Write` row and the read is a `Requires::Read` row, and neither detail carries a count
 
@@ -141,6 +147,9 @@ retention options forwarded verbatim are unchanged.
 Nothing under `crates/nostream-storage` moves. `ServiceStores` keeps its eight fields, because
 the purge needs `events` and the settings and nothing else.
 
-A durable, cross-process record — the change that would make the daemon's pass visible to a door —
-is named here so a later job takes it deliberately: it needs a writer inside `MaintenanceWorker`,
-a TTL, and an amendment to ADR 0016's five-key document, which is the cost D3 chose not to pay.
+A durable, cross-process record is the **named successor** to D3, not a gap left unnamed. The
+daemon now produces the counts (`PassOutcome.counts`), so what is missing is only the writer and
+the read path: a sixth key in the published document — an amendment to ADR 0016's five — or a
+record written by whichever process runs a pass, which needs a writer inside `MaintenanceWorker`
+with a clock and a path, and a TTL. The next slice that has to read a daemon's passes must
+resolve it; until then a door's `null` beside a daemon is the blind spot D3's cost states.
