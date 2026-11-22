@@ -19,6 +19,10 @@ Feature: Paid peering billing ledger
     When the peer pays a 21000 msat peering invoice
     Then the lifecycle offers a renewal without moving the paid period
 
+  Scenario: A reconnect during a running period does not buy another period
+    When the peer pays a 21000 msat peering invoice
+    Then requesting an invoice during the running period creates nothing
+
   Scenario: An ended paid period is lapsed, alerted and revoked once
     When the peer pays a 21000 msat peering invoice
     And the paid peering period ends

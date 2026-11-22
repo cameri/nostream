@@ -25,6 +25,25 @@ const makeEvent = async (content: string, createdAt: number): Promise<Event> => 
   return signEvent(privateKey)(unsigned)
 }
 
+
+const makePaidInvoiceEvent = async (): Promise<Event> =>
+  signEvent('b'.repeat(64))(
+    await identifyEvent({
+      pubkey: peerPubkey,
+      created_at: Math.floor(Date.now() / 1000),
+      kind: 402,
+      tags: [
+        ['p', pubkey],
+        ['t', 'peering'],
+        [
+          'bolt11',
+          'lnbc2500u1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu9qrsgquk0rl77nj30yxdy8j9vdx85fkpmdla2087ne0xh8nhedh8w27kyke0lp53ut353s06fv3qfegext0eh0ymjpf39tuven09sam30g4vgpfna3rh',
+        ],
+      ],
+      content: '',
+    }),
+  )
+
 const waitFor = async (predicate: () => boolean, timeoutMs = 5_000): Promise<void> => {
   const startedAt = Date.now()
   while (!predicate()) {
@@ -37,6 +56,7 @@ const waitFor = async (predicate: () => boolean, timeoutMs = 5_000): Promise<voi
 
 class FakeConnection {
   public liveOnEvent?: (event: Event) => void
+  public invoiceOnEvent?: (event: Event) => void
   public closeCalls = 0
   private readonly closed: Promise<void>
   private resolveClosed: (() => void) | undefined
@@ -67,8 +87,15 @@ class FakeConnection {
     return this.remoteEvents.filter((event) => wanted.has(event.id))
   }
 
-  public async subscribe(_filters: unknown[], onEvent: (event: Event) => void): Promise<void> {
-    this.liveOnEvent = onEvent
+  public async subscribe(filters: unknown[], onEvent: (event: Event) => void): Promise<void> {
+    const isInvoice = (filters as any[]).some(
+      (filter) => Array.isArray(filter?.kinds) && filter.kinds.length === 1 && filter.kinds[0] === 402,
+    )
+    if (isInvoice) {
+      this.invoiceOnEvent = onEvent
+    } else {
+      this.liveOnEvent = onEvent
+    }
   }
 
   public waitForClose(): Promise<void> {
@@ -182,6 +209,11 @@ describe('PeeringSyncWorker', () => {
 
   interface StartWorkerOptions {
     scopes?: { kinds: number[]; windowSeconds?: number }[]
+    terms?: { amount: number; unit: string; period: number }[]
+    buyerService?: {
+      handleInvoice?: (...args: any[]) => Promise<unknown>
+      recover?: (now?: Date) => Promise<number>
+    }
     reconcileIntervalMs?: number
     peerRefreshMs?: number
     stateHeartbeatMs?: number
@@ -202,7 +234,7 @@ describe('PeeringSyncWorker', () => {
         enabled: true,
         supportedNips: [1, 77],
         self: peerPubkey,
-        terms: [],
+        terms: options.terms ?? [],
         scopes: options.scopes ?? [{ kinds: [1] }],
       }),
       createConnection: () => connection as any,
@@ -213,6 +245,7 @@ describe('PeeringSyncWorker', () => {
       stateHeartbeatMs: options.stateHeartbeatMs,
       reconnectDelayMs: 10,
       userRepository: options.userRepository,
+      buyerService: options.buyerService as any,
     })
 
     worker.run()
@@ -474,5 +507,76 @@ describe('PeeringSyncWorker', () => {
 
     await waitFor(() => stateStore.published.some((state) => state.status === 'error'))
     expect(stateStore.published.some((state) => state.lastError === 'peer does not advertise peering')).to.equal(true)
+  })
+
+
+  it('recovers interrupted payments on start', async () => {
+    let recovered = 0
+    startWorker([], {
+      buyerService: {
+        recover: async () => {
+          recovered++
+          return 0
+        },
+      },
+    })
+
+    await waitFor(() => recovered > 0)
+    expect(recovered).to.be.greaterThan(0)
+  })
+
+  it('hands a paid peer invoice to the buyer service', async () => {
+    const calls: any[][] = []
+    const terms = [{ amount: 250_000_000, unit: 'msats', period: 2592000 }]
+    const buyerService = {
+      handleInvoice: async (...args: any[]) => {
+        calls.push(args)
+      },
+    }
+    const invoiceEvent = await signEvent('b'.repeat(64))(
+      await identifyEvent({
+        pubkey: peerPubkey,
+        created_at: Math.floor(Date.now() / 1000),
+        kind: 402,
+        tags: [
+          ['p', getPublicKey(privateKey)],
+          ['t', 'peering'],
+          [
+            'bolt11',
+            'lnbc2500u1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu9qrsgquk0rl77nj30yxdy8j9vdx85fkpmdla2087ne0xh8nhedh8w27kyke0lp53ut353s06fv3qfegext0eh0ymjpf39tuven09sam30g4vgpfna3rh',
+          ],
+        ],
+        content: '',
+      }),
+    )
+
+    startWorker([], { terms, buyerService })
+    await waitFor(() => typeof connection.invoiceOnEvent === 'function')
+    connection.invoiceOnEvent?.(invoiceEvent)
+    await waitFor(() => calls.length > 0)
+
+    expect(calls[0][0].pubkey).to.equal(peerPubkey)
+    expect(calls[0][1].terms).to.deep.equal(terms)
+    expect(calls[0][2].id).to.equal(invoiceEvent.id)
+  })
+
+  it('keeps processing invoices after a malformed event', async () => {
+    const calls: any[][] = []
+    const terms = [{ amount: 250_000_000, unit: 'msats', period: 2592000 }]
+    const buyerService = {
+      handleInvoice: async (...args: any[]) => {
+        calls.push(args)
+      },
+    }
+    const invoiceEvent = await makePaidInvoiceEvent()
+
+    startWorker([], { terms, buyerService })
+    await waitFor(() => typeof connection.invoiceOnEvent === 'function')
+    connection.invoiceOnEvent?.({} as any)
+    connection.invoiceOnEvent?.(invoiceEvent)
+    await waitFor(() => calls.length > 0)
+
+    expect(calls).to.have.length(1)
+    expect(calls[0][2].id).to.equal(invoiceEvent.id)
   })
 })

@@ -213,11 +213,13 @@ peering:
   #     - pubkey: replace-with-peer-relay-pubkey-in-hex
   #       relayUrl: wss://peer.example.com
   #       enabled: true
+  #       # Buying side: auto-pay this peer's invoices up to this budget.
+  #       budget: { amount: 10000, unit: sats, period: 2592000 }
   peers: []
   # Buying side automatic payment. Invoices are paid only when the peer is
   # configured above, the amount matches the peer's advertised NIP-11 terms,
   # the payment hash has not been seen, and both budgets have room. Anything
-  # else is held for operator approval.
+  # else is held for operator approval in the admin console.
   autoPay:
     enabled: false
     # Optional cap across every peer, per this budget's own period.

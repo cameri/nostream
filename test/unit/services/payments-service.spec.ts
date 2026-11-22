@@ -216,9 +216,9 @@ describe('PaymentsService', () => {
 
   describe('payInvoice', () => {
     it('pays through the processor and returns the payment hash', async () => {
-      paymentsProcessor.payInvoice.resolves({ paymentHash: 'paid-hash' })
+      paymentsProcessor.payInvoice.resolves({ paymentHash: 'paid-hash', settled: true })
 
-      expect(await service.payInvoice('lnbc1invoice')).to.equal('paid-hash')
+      expect(await service.payInvoice('lnbc1invoice')).to.deep.equal({ paymentHash: 'paid-hash', settled: true })
       expect(paymentsProcessor.payInvoice).to.have.been.calledOnceWith({ bolt11: 'lnbc1invoice' })
     })
 

@@ -227,3 +227,55 @@ Billing state is stored in `peering_payments`, one row per peer and direction
 (`sell` here; `buy` is reserved for the paying side). `GET /admin/peering`
 merges it with the sync and request rows, showing status, access end, the open
 invoice and the last processor error.
+
+## Buying side: auto-pay and budgets
+
+The relay can also be the buyer. It subscribes to the `kind 402` invoice stream
+of every enabled peer that advertises a paid term, over the same authenticated
+peering connection it uses for the feed. Invoices are deduplicated by BOLT11
+payment hash, so a redelivered event or a reconnect never pays twice.
+
+Auto-pay is opt-in and requires a per-peer budget:
+
+```yaml
+peering:
+  autoPay:
+    enabled: true
+    # Optional cap across every peer, per its own period. Zero means no cap.
+    globalBudget: { amount: 100000, unit: sats, period: 2592000 }
+  peers:
+    - pubkey: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      relayUrl: wss://peer.example.com
+      budget: { amount: 10000, unit: sats, period: 2592000 }
+```
+
+An invoice is paid automatically only when all of these hold:
+
+- the event is signed by the configured peer pubkey and p-tagged to this relay;
+- its BOLT11 amount equals the single paid term in the peer's NIP-11 document;
+- the payment hash has not been seen before;
+- the per-peer budget, and the optional global budget, have room in the current
+  period.
+
+Budget windows are fixed and epoch-aligned. A renewal inside the same window
+counts against the same counter, and auto-pay never borrows from the next
+window. The counters are updated atomically before the wallet is called, so two
+workers cannot both spend the last unit of a budget.
+
+Anything else is stored as a **held** invoice and shown under Operations →
+Peering invoices in the admin console. The reason is one of `amount_mismatch`,
+`unknown_peer`, `budget_exceeded`, `budget_not_configured`, `auto_pay_disabled`,
+`payment_failed` or `expired`. Held invoices can be approved (paid manually) or
+rejected. Manual approval is not limited by the auto-pay budget, but its spend is
+still recorded. Every hold, payment and budget exhaustion feeds the existing
+peering notification switches, so the operator can subscribe to
+`peering.invoice.paid` / `peering.invoice.failed`.
+
+Auto-pay uses the configured payments processor as the wallet. LNbits and NWC
+can pay BOLT11 invoices; receive-only adapters hold every invoice because they
+have no way to spend. The LNbits key must allow
+**outgoing payments**, not only invoice creation/read access. An Invoice/read
+key can create the relay's own invoices but cannot spend, so every buyer
+invoice is held instead of paid. The buyer never credits a user balance and never touches
+the seller's payment processor: the payment is a normal Lightning payment from
+this relay's wallet to the BOLT11 invoice in the peer's signed event.

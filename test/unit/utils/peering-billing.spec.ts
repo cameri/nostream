@@ -6,6 +6,7 @@ import {
   isPeeringInvoiceRequest,
   peeringBudgetWindow,
   peeringPaymentRequiredReason,
+  peeringRenewalLeadSeconds,
   resolvePaidPeeringTerm,
   resolvePeeringBudget,
 } from '../../../src/utils/peering-billing'
@@ -123,5 +124,17 @@ describe('peeringPaymentRequiredReason', () => {  it('prefixes an unprefixed den
     expect(peeringPaymentRequiredReason({})).to.equal(
       'payment-required: peering payment required; request the kind 402 peering invoice',
     )
+  })
+})
+
+
+describe('peeringRenewalLeadSeconds', () => {
+  it('keeps the three-day lead for long periods', () => {
+    expect(peeringRenewalLeadSeconds(30 * 24 * 60 * 60)).to.equal(3 * 24 * 60 * 60)
+  })
+
+  it('scales the lead down for short periods', () => {
+    expect(peeringRenewalLeadSeconds(60)).to.equal(12)
+    expect(peeringRenewalLeadSeconds(10)).to.equal(2)
   })
 })

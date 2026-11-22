@@ -1,11 +1,20 @@
-import { CreateInvoiceRequest, CreateInvoiceResponse, GetInvoiceResponse, IPaymentsProcessor } from '../@types/clients'
+import {
+  CreateInvoiceRequest,
+  CreateInvoiceResponse,
+  GetInvoiceResponse,
+  IPaymentsProcessor,
+  PayInvoiceRequest,
+  PayInvoiceResponse,
+  PaymentsProcessorOutcomeUnknownError,
+} from '../@types/clients'
 import { deriveFromSecret, hmacSha256 } from '../utils/secret'
 import { Invoice, InvoiceStatus, InvoiceUnit } from '../@types/invoice'
 
-import { AxiosInstance } from 'axios'
+import { AxiosInstance, isAxiosError } from 'axios'
 import { createLogger } from '../factories/logger-factory'
 import { Factory } from '../@types/base'
 import { isExpiredInvoice } from '../utils/invoice'
+import { bolt11PaymentHash } from '../utils/bolt11'
 import { Pubkey } from '../@types/base'
 import { Settings } from '../@types/settings'
 
@@ -14,6 +23,21 @@ const logger = createLogger('lnbits-payments-processor')
 // LNbits < 1.0 returns unix seconds for details.time/details.expiry,
 // LNbits >= 1.0 returns ISO 8601 strings ("2025-10-11T15:24:27+00:00").
 const toDate = (value: number | string): Date => (typeof value === 'number' ? new Date(value * 1000) : new Date(value))
+
+/**
+ * A request with no response, or a gateway/timeout response, may still have
+ * settled inside LNbits. Definite 4xx rejections are safe to fail.
+ */
+const isAmbiguousPaymentError = (error: unknown): boolean => {
+  if (!isAxiosError(error)) {
+    return false
+  }
+  if (!error.response) {
+    return true
+  }
+
+  return error.response.status >= 500 || error.response.status === 408
+}
 
 export class LNbitsInvoice implements Invoice {
   id: string
@@ -50,7 +74,10 @@ export class LNbitsPaymentsProcessor implements IPaymentsProcessor {
     private settings: Factory<Settings>,
   ) {}
 
-  public async getInvoice(invoiceId: string): Promise<GetInvoiceResponse> {
+  public async getInvoice(
+    invoiceId: string,
+    direction: 'incoming' | 'outgoing' = 'incoming',
+  ): Promise<GetInvoiceResponse> {
     logger('get invoice: %s', invoiceId)
     try {
       const response = await this.httpClient.get(`/api/v1/payments/${invoiceId}`, {
@@ -59,7 +86,7 @@ export class LNbitsPaymentsProcessor implements IPaymentsProcessor {
       const invoice = new LNbitsInvoice()
       const data = response.data
       invoice.id = data.details.payment_hash
-      invoice.pubkey = data.details.extra.internalId
+      invoice.pubkey = data.details.extra?.internalId
       invoice.bolt11 = data.details.bolt11
       invoice.amountRequested = BigInt(Math.floor(data.details.amount / 1000))
       if (data.paid) {
@@ -67,9 +94,17 @@ export class LNbitsPaymentsProcessor implements IPaymentsProcessor {
       }
       invoice.unit = InvoiceUnit.SATS
       invoice.expiresAt = toDate(data.details.expiry)
+      const outgoingFailed =
+        direction === 'outgoing' &&
+        (data.details?.pending === false || data.status === 'failed')
+
       if (data.paid) {
         invoice.status = InvoiceStatus.COMPLETED
-      } else if (isExpiredInvoice(invoice)) {
+      } else if (outgoingFailed) {
+        // For an outgoing payment the bolt11 expiry says nothing about whether
+        // the wallet settled it; only a terminal wallet state is a failure.
+        invoice.status = InvoiceStatus.EXPIRED
+      } else if (direction === 'incoming' && isExpiredInvoice(invoice)) {
         invoice.status = InvoiceStatus.EXPIRED
       } else {
         invoice.status = InvoiceStatus.PENDING
@@ -82,6 +117,44 @@ export class LNbitsPaymentsProcessor implements IPaymentsProcessor {
     } catch (error) {
       logger.error(`Unable to get invoice ${invoiceId}. Reason:`, error)
 
+      throw error
+    }
+  }
+
+  public async payInvoice(request: PayInvoiceRequest): Promise<PayInvoiceResponse> {
+    logger('pay invoice')
+    try {
+      const response = await this.httpClient.post(
+        '/api/v1/payments',
+        {
+          out: true,
+          bolt11: request.bolt11,
+        },
+        { maxRedirects: 1 },
+      )
+
+      const paymentHash =
+        typeof response.data?.payment_hash === 'string' && response.data.payment_hash
+          ? response.data.payment_hash
+          : bolt11PaymentHash(request.bolt11)
+      let settled = response.data?.paid === true
+
+      if (!settled && typeof response.data?.paid !== 'boolean') {
+        try {
+          const check = await this.httpClient.get(`/api/v1/payments/${encodeURIComponent(paymentHash)}`)
+          settled = check.data?.paid === true
+        } catch {
+          // Accepted but unconfirmed; recovery will check again.
+        }
+      }
+
+      return { paymentHash, settled }
+    } catch (error) {
+      if (isAmbiguousPaymentError(error)) {
+        logger.error('Unable to confirm the LNbits payment outcome. Reason:', error)
+        throw new PaymentsProcessorOutcomeUnknownError(error instanceof Error ? error.message : undefined)
+      }
+      logger.error('Unable to pay invoice. Reason:', error)
       throw error
     }
   }
@@ -126,7 +199,7 @@ export class LNbitsPaymentsProcessor implements IPaymentsProcessor {
       const invoice = new LNbitsCreateInvoiceResponse()
       const data = invoiceResponse.data
       invoice.id = data.details.payment_hash
-      invoice.pubkey = data.details.extra.internalId
+      invoice.pubkey = data.details.extra?.internalId
       invoice.bolt11 = data.details.bolt11
       invoice.amountRequested = BigInt(Math.floor(data.details.amount / 1000))
       invoice.unit = InvoiceUnit.SATS

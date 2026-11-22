@@ -3,6 +3,9 @@ import {
   CreateInvoiceResponse,
   GetInvoiceResponse,
   IPaymentsProcessor,
+  PayInvoiceRequest,
+  PayInvoiceResponse,
+  PaymentsProcessorCannotPayError,
 } from '../@types/clients'
 import { Invoice } from '../@types/invoice'
 import { createLNbitsPaymentProcessor } from './payments-processors/lnbits-payments-processor-factory'
@@ -65,7 +68,19 @@ export class LazyPaymentsProcessor implements IPaymentsProcessor {
     return this.get().createInvoice(request)
   }
 
-  public getInvoice(invoice: string | Invoice): Promise<GetInvoiceResponse> {
-    return this.get().getInvoice(invoice)
+  public getInvoice(
+    invoice: string | Invoice,
+    direction?: 'incoming' | 'outgoing',
+  ): Promise<GetInvoiceResponse> {
+    return direction ? this.get().getInvoice(invoice, direction) : this.get().getInvoice(invoice)
+  }
+
+  public payInvoice(request: PayInvoiceRequest): Promise<PayInvoiceResponse> {
+    const processor = this.get()
+    if (typeof processor.payInvoice !== 'function') {
+      throw new PaymentsProcessorCannotPayError()
+    }
+
+    return processor.payInvoice(request)
   }
 }

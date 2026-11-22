@@ -10,7 +10,7 @@ export interface AdminPeeringBilling {
   periodEnd?: Date | null
   currentInvoiceId?: string | null
   renewalInvoiceId?: string | null
-  termAmountMsats?: bigint | null
+  termAmountMsats?: string | null
   termPeriodSeconds?: number | null
   lastSettledAt?: Date | null
   lastCheckedAt?: Date | null
@@ -34,7 +34,7 @@ const toAdminBilling = (payment: PeeringPayment): AdminPeeringBilling => ({
   periodEnd: payment.periodEnd,
   currentInvoiceId: payment.currentInvoiceId,
   renewalInvoiceId: payment.renewalInvoiceId,
-  termAmountMsats: payment.termAmountMsats,
+  termAmountMsats: typeof payment.termAmountMsats === 'bigint' ? payment.termAmountMsats.toString() : null,
   termPeriodSeconds: payment.termPeriodSeconds,
   lastSettledAt: payment.lastSettledAt,
   lastCheckedAt: payment.lastCheckedAt,

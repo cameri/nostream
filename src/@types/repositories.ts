@@ -132,6 +132,36 @@ export interface IPeeringInvoiceRepository {
     to: PeeringInvoiceStatus,
     client?: DatabaseClient,
   ): Promise<PeeringInvoice | undefined>
+  /** Claims an invoice for a new wallet attempt and records its attempt id. */
+  claimForAttempt(
+    paymentHash: string,
+    from: PeeringInvoiceStatus[],
+    to: PeeringInvoiceStatus,
+    attemptId: string,
+    changes?: Partial<PeeringInvoice>,
+    client?: DatabaseClient,
+  ): Promise<PeeringInvoice | undefined>
+  /** Transitions only the invoice still owned by `attemptId` in one of `from`. */
+  transitionAttempt(
+    paymentHash: string,
+    attemptId: string,
+    from: PeeringInvoiceStatus[],
+    to: PeeringInvoiceStatus,
+    changes?: Partial<PeeringInvoice>,
+    client?: DatabaseClient,
+  ): Promise<PeeringInvoice | undefined>
+  /**
+   * Transitions a PAYING invoice whose attempt has been idle since
+   * `staleBefore`. Serializes failure recovery against payment submission.
+   */
+  transitionStale(
+    paymentHash: string,
+    attemptId: string | undefined,
+    staleBefore: Date,
+    to: PeeringInvoiceStatus,
+    changes?: Partial<PeeringInvoice>,
+    client?: DatabaseClient,
+  ): Promise<PeeringInvoice | undefined>
   list(statuses?: PeeringInvoiceStatus[], limit?: number): Promise<PeeringInvoice[]>
   /** Atomically adds `amount` when the resulting spend stays inside `limit`. */
   reserveBudget(

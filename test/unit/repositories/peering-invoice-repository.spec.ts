@@ -29,6 +29,8 @@ describe('PeeringInvoiceRepository', () => {
     budget_period_start: now,
     budget_period_end: new Date(now.getTime() + 86_400_000),
     term_period_seconds: 86_400,
+    payment_attempt_id: null,
+    payment_activity_at: null,
     expires_at: new Date(now.getTime() + 60_000),
     seen_count: 2,
     paid_at: null,
@@ -48,6 +50,8 @@ describe('PeeringInvoiceRepository', () => {
     budgetPeriodStart: null,
     budgetPeriodEnd: null,
     termPeriodSeconds: null,
+    paymentAttemptId: null,
+    paymentActivityAt: null,
     expiresAt: null,
     seenCount: 1,
     paidAt: null,
@@ -80,6 +84,7 @@ describe('PeeringInvoiceRepository', () => {
     expect(result.invoice.seenCount).to.equal(3)
     expect(recording.queries[1].sql).to.include('"peering_invoices"')
     expect(recording.queries[2].sql).to.include('"seen_count"')
+    expect(recording.queries[2].sql).not.to.include('payment_activity_at')
   })
 
   it('updates only the provided invoice fields', async () => {
@@ -123,6 +128,90 @@ describe('PeeringInvoiceRepository', () => {
 
     expect(result?.status).to.equal(PeeringInvoiceStatus.PAYING)
     expect(recording.queries[0].sql).to.include('"status" in')
+  })
+
+  it('claims an invoice for a new payment attempt', async () => {
+    const recording = createRecordingKnex()
+    const repository = new PeeringInvoiceRepository(recording.db)
+    recording.respondWith([{ ...row, status: 'paying', payment_attempt_id: 'attempt-1' }])
+
+    const result = await repository.claimForAttempt(
+      'hash-1',
+      [PeeringInvoiceStatus.HELD],
+      PeeringInvoiceStatus.PAYING,
+      'attempt-1',
+      { autoPaid: false },
+    )
+
+    expect(result?.paymentAttemptId).to.equal('attempt-1')
+    expect(recording.queries[0].sql).to.include('"payment_attempt_id"')
+    for (const column of [
+      'budget_period_start',
+      'budget_period_end',
+      'global_budget_period_start',
+      'global_budget_period_end',
+      'payment_activity_at',
+    ]) {
+      expect(recording.queries[0].sql).to.include(`"${column}"`)
+    }
+    expect(recording.queries[0].bindings).to.include('attempt-1')
+  })
+
+  it('transitions only the invoice still owned by the attempt', async () => {
+    const recording = createRecordingKnex()
+    const repository = new PeeringInvoiceRepository(recording.db)
+    recording.respondWith([{ ...row, status: 'paid', payment_attempt_id: 'attempt-1', paid_at: now }])
+
+    const result = await repository.transitionAttempt(
+      'hash-1',
+      'attempt-1',
+      [PeeringInvoiceStatus.PAYING],
+      PeeringInvoiceStatus.PAID,
+      { paidAt: now },
+    )
+
+    expect(result?.status).to.equal(PeeringInvoiceStatus.PAID)
+    expect(recording.queries[0].sql).to.include('"payment_attempt_id"')
+    // A pending attempt must be able to persist its own PAYING row, but only
+    // while the invoice is still PAYING.
+    expect(recording.queries[0].sql).to.include('"status" in')
+    expect(recording.queries[0].sql).not.to.include('"status" not in')
+    expect(recording.queries[0].bindings).to.include('attempt-1')
+  })
+
+  it('does not transition an invoice owned by a newer attempt', async () => {
+    const recording = createRecordingKnex()
+    const repository = new PeeringInvoiceRepository(recording.db)
+    recording.respondWith([])
+
+    expect(
+      await repository.transitionAttempt(
+        'hash-1',
+        'attempt-1',
+        [PeeringInvoiceStatus.PAYING],
+        PeeringInvoiceStatus.PAID,
+      ),
+    ).to.equal(undefined)
+    expect(recording.queries[0].bindings).to.include('attempt-1')
+  })
+
+  it('holds only a PAYING attempt that has been idle long enough', async () => {
+    const recording = createRecordingKnex()
+    const repository = new PeeringInvoiceRepository(recording.db)
+    recording.respondWith([{ ...row, status: 'held' }])
+
+    const result = await repository.transitionStale(
+      'hash-1',
+      'attempt-1',
+      now,
+      PeeringInvoiceStatus.HELD,
+    )
+
+    expect(result?.status).to.equal(PeeringInvoiceStatus.HELD)
+    expect(recording.queries[0].sql).to.include('"payment_attempt_id"')
+    expect(recording.queries[0].sql).to.include('"status" in')
+    expect(recording.queries[0].sql).to.include('"payment_activity_at" <')
+    expect(recording.queries[0].sql).not.to.include('"updated_at" <')
   })
 
   it('lists invoices filtered by status', async () => {
@@ -178,6 +267,36 @@ describe('PeeringInvoiceRepository', () => {
 
     expect(counts).to.deep.equal({ received: 2, paid: 1, held: 1 })
     expect(recording.queries[0].sql.toLowerCase()).to.include('filter (where status =')
+  })
+
+  it('records manual spend, releases it and reads budget rows', async () => {
+    const recording = createRecordingKnex()
+    const repository = new PeeringInvoiceRepository(recording.db)
+    recording.respondWith(
+      [{ spent_msats: '500000000' }],
+      1,
+      [{ scope: `peer:${peerPubkey}`, period_start: now, period_end: now, spent_msats: '500000000' }],
+    )
+
+    const spent = await repository.addBudgetSpend(`peer:${peerPubkey}`, now, now, 250_000_000n, recording.db)
+    await repository.releaseBudget(`peer:${peerPubkey}`, now, 250_000_000n, recording.db)
+    const rows = await repository.listBudgets()
+
+    expect(spent).to.equal(500_000_000n)
+    expect(rows[0].spentMsats).to.equal(500_000_000n)
+  })
+
+  it('rejects negative manual spend and release amounts', async () => {
+    const recording = createRecordingKnex()
+    const repository = new PeeringInvoiceRepository(recording.db)
+
+    expect(await rejection(repository.addBudgetSpend(`peer:${peerPubkey}`, now, now, -1n, recording.db))).to.equal(
+      'budget spend amount must be non-negative',
+    )
+    expect(await rejection(repository.releaseBudget(`peer:${peerPubkey}`, now, -1n, recording.db))).to.equal(
+      'budget release amount must be non-negative',
+    )
+    expect(recording.queries).to.be.empty
   })
 
   it('refuses a first reservation that already exceeds the limit', async () => {

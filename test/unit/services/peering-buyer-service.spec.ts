@@ -3,7 +3,9 @@ import chaiAsPromised from 'chai-as-promised'
 import Sinon from 'sinon'
 import sinonChai from 'sinon-chai'
 
+import { PaymentsProcessorOutcomeUnknownError } from '../../../src/@types/clients'
 import { Event } from '../../../src/@types/event'
+import { OperatorNotificationEventType } from '../../../src/@types/operator-notifications'
 import {
   PeeringInvoice,
   PeeringInvoiceReason,
@@ -73,6 +75,15 @@ describe('PeeringBuyerService', () => {
       findByHash: sandbox.stub().resolves(invoice()),
       update: sandbox.stub().callsFake(async (_hash, changes) => invoice(changes)),
       claim: sandbox.stub().resolves(invoice({ status: PeeringInvoiceStatus.PAYING })),
+      claimForAttempt: sandbox.stub().callsFake(async (_hash, _from, to, attemptId, changes) =>
+        invoice({ ...changes, status: to, paymentAttemptId: attemptId }),
+      ),
+      transitionAttempt: sandbox.stub().callsFake(async (_hash, attemptId, _from, to, changes) =>
+        invoice({ ...changes, status: to, paymentAttemptId: attemptId }),
+      ),
+      transitionStale: sandbox.stub().callsFake(async (_hash, attemptId, _staleBefore, to, changes) =>
+        invoice({ ...changes, status: to, paymentAttemptId: attemptId }),
+      ),
       list: sandbox.stub().resolves([]),
       reserveBudget: sandbox.stub().resolves(250_000_000n),
       addBudgetSpend: sandbox.stub().resolves(250_000_000n),
@@ -82,7 +93,7 @@ describe('PeeringBuyerService', () => {
     }
 
     paymentsService = {
-      payInvoice: sandbox.stub().resolves(PAYMENT_HASH),
+      payInvoice: sandbox.stub().resolves({ paymentHash: PAYMENT_HASH, settled: true }),
     }
 
     notificationOutboxRepository = { enqueue: sandbox.stub().resolves() }
@@ -140,13 +151,12 @@ describe('PeeringBuyerService', () => {
 
     expect(paymentsService.payInvoice).to.have.been.calledOnceWith(INVOICE)
     expect(invoiceRepository.reserveBudget).to.have.been.calledTwice
-    expect(invoiceRepository.update).to.have.been.calledWith(
+    expect(invoiceRepository.transitionAttempt).to.have.been.calledWith(
       PAYMENT_HASH,
-      Sinon.match({
-        status: PeeringInvoiceStatus.PAID,
-        autoPaid: true,
-        reason: null,
-      }),
+      Sinon.match.any,
+      [PeeringInvoiceStatus.PAYING],
+      PeeringInvoiceStatus.PAID,
+      Sinon.match({ autoPaid: true, reason: null }),
     )
     expect(result.status).to.equal(PeeringInvoiceStatus.PAID)
   })
@@ -215,15 +225,26 @@ describe('PeeringBuyerService', () => {
 
   it('approves a held invoice and records manual spend', async () => {
     invoiceRepository.findByHash.resolves(invoice({ status: PeeringInvoiceStatus.HELD }))
-    invoiceRepository.claim.resolves(invoice({ status: PeeringInvoiceStatus.PAYING }))
+    invoiceRepository.claimForAttempt.resolves(
+      invoice({ status: PeeringInvoiceStatus.PAYING, paymentAttemptId: 'attempt-1' }),
+    )
 
     const result = await service.approve(PAYMENT_HASH, now)
 
     expect(paymentsService.payInvoice).to.have.been.calledOnce
-    expect(invoiceRepository.addBudgetSpend).to.have.been.calledTwice
-    expect(invoiceRepository.update).to.have.been.calledWith(
+    expect(invoiceRepository.claimForAttempt).to.have.been.calledWith(
       PAYMENT_HASH,
-      Sinon.match({ status: PeeringInvoiceStatus.PAID, autoPaid: false }),
+      [PeeringInvoiceStatus.HELD, PeeringInvoiceStatus.FAILED],
+      PeeringInvoiceStatus.PAYING,
+      Sinon.match.string,
+    )
+    expect(invoiceRepository.addBudgetSpend).to.have.been.calledTwice
+    expect(invoiceRepository.transitionAttempt).to.have.been.calledWith(
+      PAYMENT_HASH,
+      Sinon.match.any,
+      [PeeringInvoiceStatus.PAYING],
+      PeeringInvoiceStatus.PAID,
+      Sinon.match({ autoPaid: false }),
     )
     expect(result.status).to.equal(PeeringInvoiceStatus.PAID)
   })
@@ -285,10 +306,14 @@ describe('PeeringBuyerService', () => {
 
     expect(paymentsService.payInvoice).not.to.have.been.called
     expect(result.reason).to.equal(PeeringInvoiceReason.BUDGET_EXCEEDED)
+    expect(notificationOutboxRepository.enqueue).to.have.been.calledWith(
+      OperatorNotificationEventType.PEERING_INVOICE_FAILED,
+      Sinon.match({ paymentHash: PAYMENT_HASH, reason: PeeringInvoiceReason.BUDGET_EXCEEDED }),
+    )
   })
 
   it('holds when the processor reports a different payment hash', async () => {
-    paymentsService.payInvoice.resolves('f'.repeat(64))
+    paymentsService.payInvoice.resolves({ paymentHash: 'f'.repeat(64), settled: true })
 
     const result = await service.handleInvoice(peer, advertisement, event, now)
 
@@ -298,10 +323,12 @@ describe('PeeringBuyerService', () => {
   })
 
   it('keeps the charge when the wallet paid but the paid update fails', async () => {
-    invoiceRepository.update
+    invoiceRepository.transitionAttempt
       .onFirstCall()
       .resolves(invoice({ status: PeeringInvoiceStatus.PAYING }))
       .onSecondCall()
+      .resolves(invoice({ status: PeeringInvoiceStatus.PAYING }))
+      .onThirdCall()
       .rejects(new Error('database down'))
 
     const result = await service.handleInvoice(peer, advertisement, event, now)
@@ -315,9 +342,17 @@ describe('PeeringBuyerService', () => {
     paymentsService.getInvoiceFromPaymentsProcessor = sandbox.stub().resolves({ status: 'completed' })
 
     expect(await service.recover(now)).to.equal(1)
+    expect(paymentsService.getInvoiceFromPaymentsProcessor).to.have.been.calledWith(
+      PAYMENT_HASH,
+      'outgoing',
+    )
     expect(invoiceRepository.update).to.have.been.calledWith(
       PAYMENT_HASH,
       Sinon.match({ status: PeeringInvoiceStatus.PAID, autoPaid: false }),
+    )
+    expect(notificationOutboxRepository.enqueue).to.have.been.calledWith(
+      OperatorNotificationEventType.PEERING_INVOICE_PAID,
+      Sinon.match({ paymentHash: PAYMENT_HASH }),
     )
   })
 
@@ -333,12 +368,21 @@ describe('PeeringBuyerService', () => {
       }),
     ])
     paymentsService.getInvoiceFromPaymentsProcessor = sandbox.stub().resolves({ status: 'expired' })
-    invoiceRepository.claim.resolves(invoice({ status: PeeringInvoiceStatus.HELD }))
+    invoiceRepository.transitionStale.resolves(
+      invoice({
+        status: PeeringInvoiceStatus.HELD,
+        budgetPeriodStart: now,
+        budgetPeriodEnd: new Date(now.getTime() + 60_000),
+        globalBudgetPeriodStart: now,
+        globalBudgetPeriodEnd: new Date(now.getTime() + 60_000),
+      }),
+    )
 
     expect(await service.recover(now)).to.equal(1)
-    expect(invoiceRepository.claim).to.have.been.calledWith(
+    expect(invoiceRepository.transitionStale).to.have.been.calledWith(
       PAYMENT_HASH,
-      [PeeringInvoiceStatus.PAYING],
+      undefined,
+      Sinon.match.instanceOf(Date),
       PeeringInvoiceStatus.HELD,
     )
     expect(invoiceRepository.releaseBudget).to.have.been.calledTwice
@@ -346,6 +390,72 @@ describe('PeeringBuyerService', () => {
       PAYMENT_HASH,
       Sinon.match({ reason: PeeringInvoiceReason.PAYMENT_FAILED, autoPaid: false }),
     )
+    expect(notificationOutboxRepository.enqueue).to.have.been.calledWith(
+      OperatorNotificationEventType.PEERING_INVOICE_FAILED,
+      Sinon.match({ paymentHash: PAYMENT_HASH, reason: PeeringInvoiceReason.PAYMENT_FAILED }),
+    )
+  })
+
+  it('leaves a newer attempt alone when an old recovery finds the invoice expired', async () => {
+    invoiceRepository.list.resolves([
+      invoice({
+        status: PeeringInvoiceStatus.PAYING,
+        paymentAttemptId: 'attempt-1',
+        budgetPeriodStart: now,
+        budgetPeriodEnd: new Date(now.getTime() + 60_000),
+      }),
+    ])
+    paymentsService.getInvoiceFromPaymentsProcessor = sandbox.stub().resolves({ status: 'expired' })
+    invoiceRepository.transitionStale.resolves(undefined)
+
+    expect(await service.recover(now)).to.equal(0)
+    expect(invoiceRepository.transitionStale).to.have.been.calledWith(
+      PAYMENT_HASH,
+      'attempt-1',
+      Sinon.match.instanceOf(Date),
+      PeeringInvoiceStatus.HELD,
+    )
+    expect(invoiceRepository.releaseBudget).not.to.have.been.called
+  })
+
+  it('releases the windows returned by the claim, not the stale snapshot', async () => {
+    invoiceRepository.list.resolves([
+      invoice({ status: PeeringInvoiceStatus.PAYING, paymentAttemptId: 'attempt-1' }),
+    ])
+    paymentsService.getInvoiceFromPaymentsProcessor = sandbox.stub().resolves({ status: 'expired' })
+    invoiceRepository.transitionStale.resolves(
+      invoice({
+        status: PeeringInvoiceStatus.HELD,
+        budgetPeriodStart: now,
+        budgetPeriodEnd: new Date(now.getTime() + 60_000),
+      }),
+    )
+
+    expect(await service.recover(now)).to.equal(1)
+    expect(invoiceRepository.releaseBudget).to.have.been.calledWith(`peer:${PEER}`, now, 250_000_000n)
+  })
+
+  it('does not release a reservation twice for retained recovery snapshots', async () => {
+    const snapshot = invoice({
+      status: PeeringInvoiceStatus.PAYING,
+      paymentAttemptId: 'attempt-1',
+      budgetPeriodStart: now,
+      budgetPeriodEnd: new Date(now.getTime() + 60_000),
+    })
+    invoiceRepository.list.resolves([snapshot])
+    paymentsService.getInvoiceFromPaymentsProcessor = sandbox.stub().resolves({ status: 'expired' })
+    invoiceRepository.transitionStale.onFirstCall().resolves(
+      invoice({
+        status: PeeringInvoiceStatus.HELD,
+        budgetPeriodStart: now,
+        budgetPeriodEnd: new Date(now.getTime() + 60_000),
+      }),
+    )
+    invoiceRepository.transitionStale.onSecondCall().resolves(undefined)
+
+    expect(await service.recover(now)).to.equal(1)
+    expect(await service.recover(now)).to.equal(0)
+    expect(invoiceRepository.releaseBudget).to.have.been.calledOnce
   })
 
   it('still records a payment when the notification outbox fails', async () => {
@@ -364,8 +474,9 @@ describe('PeeringBuyerService', () => {
     expect((await service.approve(PAYMENT_HASH, now)).status).to.equal(PeeringInvoiceStatus.PAID)
 
     invoiceRepository.findByHash.resolves(invoice({ status: PeeringInvoiceStatus.HELD }))
-    invoiceRepository.claim.resolves(undefined)
+    invoiceRepository.claimForAttempt.resolves(undefined)
     await expect(service.approve(PAYMENT_HASH, now)).to.be.rejectedWith('not awaiting approval')
+    invoiceRepository.claim.resolves(undefined)
     await expect(service.reject(PAYMENT_HASH)).to.be.rejectedWith('not awaiting a decision')
   })
 
@@ -418,7 +529,9 @@ describe('PeeringBuyerService', () => {
     expect(held.reason).to.equal(PeeringInvoiceReason.BUDGET_NOT_CONFIGURED)
 
     invoiceRepository.findByHash.resolves(invoice({ status: PeeringInvoiceStatus.HELD }))
-    invoiceRepository.claim.resolves(invoice({ status: PeeringInvoiceStatus.PAYING }))
+    invoiceRepository.claimForAttempt.resolves(
+      invoice({ status: PeeringInvoiceStatus.PAYING, paymentAttemptId: 'attempt-1' }),
+    )
     invoiceRepository.addBudgetSpend.rejects(new Error('budget store down'))
 
     const result = await service.approve(PAYMENT_HASH, now)
@@ -471,7 +584,7 @@ describe('PeeringBuyerService', () => {
 
 
   it('recovers a PAYING row when the claim is lost to a restart', async () => {
-    invoiceRepository.claim.resolves(undefined)
+    invoiceRepository.claimForAttempt.resolves(undefined)
     invoiceRepository.findByHash.resolves(invoice({ status: PeeringInvoiceStatus.PAYING }))
     paymentsService.getInvoiceFromPaymentsProcessor = sandbox.stub().resolves({ status: 'completed' })
 
@@ -479,6 +592,93 @@ describe('PeeringBuyerService', () => {
 
     expect(result.status).to.equal(PeeringInvoiceStatus.PAID)
     expect(paymentsService.payInvoice).not.to.have.been.called
+  })
+
+
+  it('refuses to approve a malformed invoice', async () => {
+    invoiceRepository.findByHash.resolves(
+      invoice({ paymentHash: 'invalid:abc', amountMsats: 0n, status: PeeringInvoiceStatus.HELD }),
+    )
+
+    await expect(service.approve('invalid:abc', now)).to.be.rejectedWith('no decodable payment')
+    expect(paymentsService.payInvoice).not.to.have.been.called
+  })
+
+
+  it('does not submit after recovery took the attempt', async () => {
+    invoiceRepository.transitionAttempt
+      .onFirstCall()
+      .resolves(invoice({ status: PeeringInvoiceStatus.PAYING, paymentAttemptId: 'attempt-1' }))
+      .onSecondCall()
+      .resolves(undefined)
+    invoiceRepository.findByHash.resolves(invoice({ status: PeeringInvoiceStatus.HELD }))
+
+    const result = await service.handleInvoice(peer, advertisement, event, now)
+
+    expect(paymentsService.payInvoice).not.to.have.been.called
+    expect(result.status).to.equal(PeeringInvoiceStatus.HELD)
+  })
+
+  it('does not report paid when the paid transition loses the row', async () => {
+    invoiceRepository.transitionAttempt
+      .onFirstCall()
+      .resolves(invoice({ status: PeeringInvoiceStatus.PAYING, paymentAttemptId: 'attempt-1' }))
+      .onSecondCall()
+      .resolves(invoice({ status: PeeringInvoiceStatus.PAYING, paymentAttemptId: 'attempt-1' }))
+      .onThirdCall()
+      .resolves(undefined)
+    invoiceRepository.findByHash.resolves(invoice({ status: PeeringInvoiceStatus.PAYING }))
+
+    const result = await service.handleInvoice(peer, advertisement, event, now)
+
+    expect(paymentsService.payInvoice).to.have.been.calledOnce
+    expect(result.status).to.equal(PeeringInvoiceStatus.PAYING)
+    expect(notificationOutboxRepository.enqueue).not.to.have.been.calledWith(
+      OperatorNotificationEventType.PEERING_INVOICE_PAID,
+    )
+  })
+
+  it('returns the current row when the failed-payment claim is lost', async () => {
+    invoiceRepository.transitionAttempt
+      .onFirstCall()
+      .resolves(invoice({ status: PeeringInvoiceStatus.PAYING }))
+      .onSecondCall()
+      .resolves(invoice({ status: PeeringInvoiceStatus.PAYING }))
+      .onThirdCall()
+      .resolves(undefined)
+    paymentsService.payInvoice.rejects(new Error('wallet down'))
+    invoiceRepository.findByHash.resolves(invoice({ status: PeeringInvoiceStatus.HELD }))
+
+    const result = await service.handleInvoice(peer, advertisement, event, now)
+
+    expect(result.status).to.equal(PeeringInvoiceStatus.HELD)
+    expect(invoiceRepository.releaseBudget).not.to.have.been.called
+  })
+
+
+  it('keeps a pending wallet payment reserved for recovery', async () => {
+    paymentsService.payInvoice.resolves({ paymentHash: PAYMENT_HASH, settled: false })
+
+    const result = await service.handleInvoice(peer, advertisement, event, now)
+
+    expect(result.status).to.equal(PeeringInvoiceStatus.PAYING)
+    expect(invoiceRepository.releaseBudget).not.to.have.been.called
+  })
+
+  it('keeps an unknown wallet outcome reserved for recovery', async () => {
+    paymentsService.payInvoice.rejects(new PaymentsProcessorOutcomeUnknownError())
+
+    const result = await service.handleInvoice(peer, advertisement, event, now)
+
+    expect(result.status).to.equal(PeeringInvoiceStatus.PAYING)
+    expect(invoiceRepository.releaseBudget).not.to.have.been.called
+    expect(invoiceRepository.transitionAttempt).to.have.been.calledWith(
+      PAYMENT_HASH,
+      Sinon.match.any,
+      [PeeringInvoiceStatus.PAYING],
+      PeeringInvoiceStatus.PAYING,
+      Sinon.match({ autoPaid: true }),
+    )
   })
 
   it('summarizes per-peer and global budget spend', async () => {

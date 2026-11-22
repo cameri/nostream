@@ -128,7 +128,7 @@ describe('admin peering rows', () => {
 
     expect(rows[0].billing).to.include({
       status: 'active',
-      termAmountMsats: 21000n,
+      termAmountMsats: '21000',
       termPeriodSeconds: 2592000,
     })
     expect(rows[0].billing?.periodEnd).to.equal(periodEnd)

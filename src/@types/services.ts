@@ -1,6 +1,7 @@
 import { DatabaseTransaction, Pubkey } from './base'
 import { Event } from './event'
 import { Invoice } from './invoice'
+import { PayInvoiceResponse } from './clients'
 import { NotificationOutboxPayload } from './notification-outbox'
 import { PeeringAccess, PeeringAdvertisement, PeeringBudgetSummary, PeeringInvoice, PeeringInvoiceStatus } from './peering'
 import { PeeringPeer } from './settings'
@@ -29,7 +30,10 @@ export interface IWotGraphService {
 }
 
 export interface IPaymentsService {
-  getInvoiceFromPaymentsProcessor(invoice: string | Invoice): Promise<Partial<Invoice>>
+  getInvoiceFromPaymentsProcessor(
+    invoice: string | Invoice,
+    direction?: 'incoming' | 'outgoing',
+  ): Promise<Partial<Invoice>>
   createInvoice(pubkey: Pubkey, amount: bigint, description: string, planId?: string): Promise<Invoice>
   updateInvoice(invoice: Partial<Invoice>): Promise<void>
   updateInvoiceStatus(invoice: Pick<Invoice, 'id' | 'status'>): Promise<Invoice>
@@ -55,8 +59,8 @@ export interface IPaymentsService {
   getPendingInvoices(offset?: number): Promise<Invoice[]>
   /** Completed peering invoices whose settlement did not commit, for retry. */
   getUnconfirmedPeeringInvoices(limit?: number, offset?: number): Promise<Invoice[]>
-  /** Pays a BOLT11 invoice from the configured wallet and returns its payment hash. */
-  payInvoice(bolt11: string): Promise<string>
+  /** Pays a BOLT11 invoice from the configured wallet and reports its outcome. */
+  payInvoice(bolt11: string): Promise<PayInvoiceResponse>
 }
 
 export interface IPeeringBillingService {
