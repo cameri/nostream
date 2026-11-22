@@ -49,7 +49,7 @@ pub mod utils;
 
 pub use error::AdminError;
 pub use routes::{ADMIN_ROUTES, AdminRoute, PREFIX_MIDDLEWARE, mount};
-pub use state::{AdminState, AdminStateConfig, GrafanaSettings};
+pub use state::{AdminState, AdminStateConfig, GrafanaSettings, MaintenanceRun};
 
 /// The CSP nonce the page's `<script>` tags carry, for a caller that mounts the page itself.
 pub use controllers::admin_enabled_middleware::Nonce;
