@@ -13,6 +13,7 @@
 //! | `the_store_backed_tools_report_the_unwired_store` | `list_events` answers the store's own `NotImplemented` message, not an empty list |
 //! | `the_write_tools_report_the_unwired_store` | both write tools reach the unwired store and answer its message, rather than a protocol error |
 //! | `the_store_family_tools_report_the_unwired_store` | the five store-family tools reach the unwired store and answer its message |
+//! | `the_maintenance_tools_report_the_unwired_store` | `maintenance_run` reaches the unwired store and answers its message while `maintenance_last_run` answers `{"run": null}` |
 //! | `the_help_text_names_the_credential` | `--help` names the two flags, the document's shape and scopes, the file rule and the retired variable |
 //! | `a_console_session_token_in_the_environment_refuses_to_start` | the retired variable is named rather than ignored, even when it carries a token the console would accept |
 //! | `a_group_readable_token_file_refuses_to_start` | mode 0644 fails the start, and the message names both modes |
@@ -108,6 +109,17 @@ impl Prepared {
         let settings = prepared.config_dir.join("settings.yaml");
         let mut document = std::fs::read_to_string(&settings).unwrap();
         document.push_str("payments:\n  enabled: true\n");
+        std::fs::write(&settings, document).unwrap();
+        prepared
+    }
+
+    /// The same fixture with a retention window configured: without one the purge's guard answers
+    /// three zeros and reaches no store, so the unwired store would never be seen.
+    fn with_retention() -> Self {
+        let prepared = Self::new();
+        let settings = prepared.config_dir.join("settings.yaml");
+        let mut document = std::fs::read_to_string(&settings).unwrap();
+        document.push_str("limits:\n  event:\n    retention:\n      maxDays: 7\n");
         std::fs::write(&settings, document).unwrap();
         prepared
     }
@@ -490,7 +502,7 @@ async fn the_mode_binds_no_socket() {
 
     assert_eq!(
         listed["result"]["tools"].as_array().map(Vec::len),
-        Some(12),
+        Some(14),
         "{listed}"
     );
     assert!(outcome.status.success(), "{}", outcome.stderr);
@@ -590,6 +602,34 @@ async fn the_store_family_tools_report_the_unwired_store() {
             "{tool}: {text}"
         );
     }
+    assert!(outcome.status.success(), "{}", outcome.stderr);
+}
+
+/// The maintenance tools exist in the real binary and the run reaches the daemon's unwired bundle:
+/// its answer is the store's own message, so no run record is written and the read stays `null`.
+#[tokio::test]
+async fn the_maintenance_tools_report_the_unwired_store() {
+    let prepared = Prepared::with_retention();
+    let mut daemon = Daemon::start(&prepared, &[]);
+    daemon.initialize().await;
+    let run = daemon.call("maintenance_run", json!({})).await;
+    let record = daemon.call("maintenance_last_run", json!({})).await;
+    let outcome = daemon.finish().await;
+
+    assert_eq!(run["result"]["isError"], true, "{run}");
+    let text = run["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        text.contains("not implemented in Phase 1 (job 005): storage::backend::wiring"),
+        "{text}"
+    );
+    assert_eq!(record["result"]["isError"], false, "{record}");
+    assert_eq!(
+        record["result"]["structuredContent"],
+        json!({ "run": null }),
+        "a failed run records nothing: {record}"
+    );
     assert!(outcome.status.success(), "{}", outcome.stderr);
 }
 
@@ -790,7 +830,7 @@ async fn an_inherited_descriptor_authenticates() {
 
     assert_eq!(
         listed["result"]["tools"].as_array().map(Vec::len),
-        Some(12),
+        Some(14),
         "{listed}"
     );
     assert_eq!(read["result"]["isError"], false, "{read}");
