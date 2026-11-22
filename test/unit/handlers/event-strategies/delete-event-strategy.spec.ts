@@ -74,6 +74,66 @@ describe('DeleteEventStrategy', () => {
       ])
     })
 
+    it('asks for each id once, in the order it first appears', async () => {
+      const a = 'a'.repeat(64)
+      const b = 'b'.repeat(64)
+      const c = 'c'.repeat(64)
+      const repeating: Event = {
+        ...event,
+        tags: [
+          [EventTags.Event, b],
+          [EventTags.Event, a],
+          [EventTags.Event, b],
+          [EventTags.Event, c],
+          [EventTags.Event, a],
+        ],
+      }
+
+      await strategy.execute(repeating)
+
+      expect(eventRepositoryDeleteByPubkeyAndIdsStub).to.have.been.calledOnceWithExactly(event.pubkey, [b, a, c])
+    })
+
+    it('ignores tags that are not a valid e tag', async () => {
+      const valid = 'd'.repeat(64)
+      const mixed: Event = {
+        ...event,
+        tags: [
+          [EventTags.Pubkey, 'e'.repeat(64)],
+          [EventTags.Event] as any,
+          [EventTags.Event, 'not-an-id'],
+          [EventTags.Event, 'D'.repeat(64)],
+          [EventTags.Event, valid, 'wss://relay.example'],
+        ],
+      }
+
+      await strategy.execute(mixed)
+
+      expect(eventRepositoryDeleteByPubkeyAndIdsStub).to.have.been.calledOnceWithExactly(event.pubkey, [valid])
+    })
+
+    it('does not delete anything when no tag is a valid e tag', async () => {
+      await strategy.execute({ ...event, tags: [[EventTags.Event, 'not-an-id'], [EventTags.Pubkey, 'f'.repeat(64)]] })
+
+      expect(eventRepositoryDeleteByPubkeyAndIdsStub).not.to.have.been.called
+      expect(eventRepositoryCreateStub).to.have.been.calledOnce
+    })
+
+    it('handles an event with as many e tags as the largest message allows', async () => {
+      const many = 7000
+      const big: Event = {
+        ...event,
+        tags: Array.from({ length: many }, (_, i) => [EventTags.Event, i.toString(16).padStart(64, '0')]),
+      }
+
+      await strategy.execute(big)
+
+      const [, ids] = eventRepositoryDeleteByPubkeyAndIdsStub.firstCall.args
+      expect(ids).to.have.length(many)
+      expect(ids[0]).to.equal('0'.repeat(64))
+      expect(ids[many - 1]).to.equal((many - 1).toString(16).padStart(64, '0'))
+    })
+
     it('does not delete events if there are no e tags', async () => {
       event.tags = []
 
