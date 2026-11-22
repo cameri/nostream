@@ -9,7 +9,7 @@
     <img alt="GitHub release" src="https://img.shields.io/github/v/release/Cameri/nostream">
   </a>
   <a href="https://github.com/cameri/nostream/issues">
-    <img alt="GitHub issues" src="https://img.shields.io/github/issues/Cameri/nostream?style=plastic" />
+    <img alt="GitHub issues" src="https://img.shields.io/github/issues/Cameri/nostream" />
   </a>
   <a href="https://github.com/cameri/nostream/stargazers">
     <img alt="GitHub stars" src="https://img.shields.io/github/stars/Cameri/nostream" />
@@ -33,7 +33,7 @@
 </p>
 
 This is a [nostr](https://github.com/fiatjaf/nostr) relay, written in
-Typescript. Documentation, features and guides live on the project website:
+TypeScript. Documentation, features and guides live on the project website:
 **[nostream.dev](https://nostream.dev)**.
 
 This implementation is production-ready. See below for supported features.
@@ -100,7 +100,7 @@ NIPs and MIPs with a relay-specific implementation are listed here.
 - PostgreSQL 14.0
 - Redis
 - Node v24
-- Typescript
+- TypeScript
 
 ### Docker setups
 - Docker v20.10

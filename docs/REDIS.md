@@ -1,17 +1,17 @@
 # Redis
 
-Nostream uses Redis as a cache layer, currently for rate limiting incoming requests. This document covers how to configure Redis to work with Nostream, including the recommended ACL-based setup for production environments.
+Nostream uses Redis as a cache layer, currently for rate limiting incoming requests. This document covers how to configure Redis to work with nostream, including the recommended ACL-based setup for production environments.
 
 ## Overview
 
 Nostream uses Redis 7.0.5 (Alpine 3.16) and connects to it via the `redis` npm package (v4.5.1). Currently, Redis is used exclusively for rate limiting — throttling incoming requests from clients to prevent abuse.
 
 The Redis client is initialized as a singleton instance in `src/cache/client.ts`, meaning a single connection is shared across the entire application. This connection is wrapped by a `RedisAdapter` which exposes only the specific Redis operations
-Nostream needs.
+nostream needs.
 
-Rate limiting is implemented using a sliding window strategy, which uses Redis sorted sets to track request timestamps. This allows Nostream to accurately enforce rate limits over a rolling time window rather than a fixed one, preventing clients from bursting requests at window boundaries.
+Rate limiting is implemented using a sliding window strategy, which uses Redis sorted sets to track request timestamps. This allows nostream to accurately enforce rate limits over a rolling time window rather than a fixed one, preventing clients from bursting requests at window boundaries.
 
-When Redis is temporarily unavailable, Nostream keeps serving the relay and admin HTTP endpoints and treats rate-limiter Redis failures as fail-closed (events are rejected as rate-limited when the backend cannot be consulted). Admin health degrades accordingly (`redis.ok=false`), so operators can detect and recover Redis without taking the relay offline.
+When Redis is temporarily unavailable, nostream keeps serving the relay and admin HTTP endpoints and treats rate-limiter Redis failures as fail-closed (events are rejected as rate-limited when the backend cannot be consulted). Admin health degrades accordingly (`redis.ok=false`), so operators can detect and recover Redis without taking the relay offline.
 
 ## Requirements
 
@@ -24,7 +24,7 @@ If you are using your own Redis instance instead of the one provided by Docker C
 
 ### Default Setup
 
-By default, Nostream connects to Redis using a single password on the default user via the `--requirepass` flag. This is configured in `docker-compose.yml`:
+By default, nostream connects to Redis using a single password on the default user via the `--requirepass` flag. This is configured in `docker-compose.yml`:
 
 ```yaml
 command: redis-server --loglevel warning --requirepass nostr_ts_relay
@@ -46,7 +46,7 @@ REDIS_PASSWORD=nostr_ts_relay
 
 ### ACL Setup (Recommended)
 
-Redis ACL (Access Control List), introduced in Redis 6.0, allows you to create restricted users that can only execute specific commands. This is recommended for production environments as it follows the principle of least privilege — Nostream only gets access to the commands it actually needs.
+Redis ACL (Access Control List), introduced in Redis 6.0, allows you to create restricted users that can only execute specific commands. This is recommended for production environments as it follows the principle of least privilege — nostream only gets access to the commands it actually needs.
 
 #### Required Commands
 
