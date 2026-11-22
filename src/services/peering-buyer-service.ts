@@ -483,10 +483,9 @@ export class PeeringBuyerService implements IPeeringBuyerService {
 
     const reservation = await this.reserve(claimed, peerBudget, auto, now, attemptId)
     if (!reservation.reserved) {
-      return this.failAndHold(
+      return this.failBudget(
         { ...claimed, termPeriodSeconds },
         { reserved: false },
-        PeeringInvoiceReason.BUDGET_EXCEEDED,
         termPeriodSeconds,
         now,
         attemptId,
@@ -516,9 +515,7 @@ export class PeeringBuyerService implements IPeeringBuyerService {
     const current = reservation ?? (await this.reserve(invoice, peerBudget, auto, now, attemptId))
     if (!current.reserved) {
       // Never overwrite a row another attempt now owns.
-      return attemptId
-        ? this.failAndHold(invoice, current, PeeringInvoiceReason.BUDGET_EXCEEDED, termPeriodSeconds, now, attemptId)
-        : this.hold(invoice, PeeringInvoiceReason.BUDGET_EXCEEDED)
+      return this.failBudget(invoice, current, termPeriodSeconds, now, attemptId)
     }
 
     // Serialize submission against failure recovery: this write refreshes the
@@ -640,6 +637,34 @@ export class PeeringBuyerService implements IPeeringBuyerService {
     }
 
     return this.invoiceRepository.update(invoice.paymentHash, { status: to, ...changes })
+  }
+
+  private async failBudget(
+    invoice: PeeringInvoice,
+    reservation: ReserveResult,
+    termPeriodSeconds: number | null,
+    now: Date,
+    attemptId?: string,
+  ): Promise<PeeringInvoice> {
+    const held = attemptId
+      ? await this.failAndHold(
+          invoice,
+          reservation,
+          PeeringInvoiceReason.BUDGET_EXCEEDED,
+          termPeriodSeconds,
+          now,
+          attemptId,
+        )
+      : await this.hold(invoice, PeeringInvoiceReason.BUDGET_EXCEEDED)
+
+    await this.notify(OperatorNotificationEventType.PEERING_INVOICE_FAILED, {
+      paymentHash: invoice.paymentHash,
+      peerPubkey: invoice.peerPubkey,
+      amountMsats: invoice.amountMsats.toString(),
+      reason: PeeringInvoiceReason.BUDGET_EXCEEDED,
+    })
+
+    return held
   }
 
   private async failAndHold(

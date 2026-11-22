@@ -306,6 +306,10 @@ describe('PeeringBuyerService', () => {
 
     expect(paymentsService.payInvoice).not.to.have.been.called
     expect(result.reason).to.equal(PeeringInvoiceReason.BUDGET_EXCEEDED)
+    expect(notificationOutboxRepository.enqueue).to.have.been.calledWith(
+      OperatorNotificationEventType.PEERING_INVOICE_FAILED,
+      Sinon.match({ paymentHash: PAYMENT_HASH, reason: PeeringInvoiceReason.BUDGET_EXCEEDED }),
+    )
   })
 
   it('holds when the processor reports a different payment hash', async () => {
