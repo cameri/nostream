@@ -5,6 +5,7 @@ import sinonChai from 'sinon-chai'
 
 import { PaymentsProcessorOutcomeUnknownError } from '../../../src/@types/clients'
 import { Event } from '../../../src/@types/event'
+import { OperatorNotificationEventType } from '../../../src/@types/operator-notifications'
 import {
   PeeringInvoice,
   PeeringInvoiceReason,
@@ -332,9 +333,17 @@ describe('PeeringBuyerService', () => {
     paymentsService.getInvoiceFromPaymentsProcessor = sandbox.stub().resolves({ status: 'completed' })
 
     expect(await service.recover(now)).to.equal(1)
+    expect(paymentsService.getInvoiceFromPaymentsProcessor).to.have.been.calledWith(
+      PAYMENT_HASH,
+      'outgoing',
+    )
     expect(invoiceRepository.update).to.have.been.calledWith(
       PAYMENT_HASH,
       Sinon.match({ status: PeeringInvoiceStatus.PAID, autoPaid: false }),
+    )
+    expect(notificationOutboxRepository.enqueue).to.have.been.calledWith(
+      OperatorNotificationEventType.PEERING_INVOICE_PAID,
+      Sinon.match({ paymentHash: PAYMENT_HASH }),
     )
   })
 
@@ -362,6 +371,10 @@ describe('PeeringBuyerService', () => {
     expect(invoiceRepository.update).to.have.been.calledWith(
       PAYMENT_HASH,
       Sinon.match({ reason: PeeringInvoiceReason.PAYMENT_FAILED, autoPaid: false }),
+    )
+    expect(notificationOutboxRepository.enqueue).to.have.been.calledWith(
+      OperatorNotificationEventType.PEERING_INVOICE_FAILED,
+      Sinon.match({ paymentHash: PAYMENT_HASH, reason: PeeringInvoiceReason.PAYMENT_FAILED }),
     )
   })
 

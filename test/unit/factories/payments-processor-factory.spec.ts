@@ -45,4 +45,14 @@ describe('LazyPaymentsProcessor', () => {
     expect(result).to.deep.equal({ id: 'inv-1', status: 'completed' })
     expect(getInvoice).to.have.been.calledWith('inv-1')
   })
+
+  it('forwards the lookup direction to the real processor', async () => {
+    const getInvoice = Sinon.stub().resolves({ id: 'inv-1', status: 'pending' })
+    const factory = Sinon.stub().returns({ createInvoice: Sinon.stub(), getInvoice })
+    const processor = new LazyPaymentsProcessor(factory)
+
+    await processor.getInvoice('inv-1', 'outgoing')
+
+    expect(getInvoice).to.have.been.calledWith('inv-1', 'outgoing')
+  })
 })

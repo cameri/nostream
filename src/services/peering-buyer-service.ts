@@ -249,6 +249,15 @@ export class PeeringBuyerService implements IPeeringBuyerService {
               autoPaid: invoice.autoPaid,
               paidAt: now,
             })
+        if (paid) {
+          await this.notify(OperatorNotificationEventType.PEERING_INVOICE_PAID, {
+            paymentHash: invoice.paymentHash,
+            peerPubkey: invoice.peerPubkey,
+            amountMsats: invoice.amountMsats.toString(),
+            autoPaid: invoice.autoPaid,
+          })
+        }
+
         return (
           paid ??
           (await this.invoiceRepository.findByHash(invoice.paymentHash)) ?? {
@@ -323,6 +332,14 @@ export class PeeringBuyerService implements IPeeringBuyerService {
         }
         await transaction.commit()
         started = false
+
+        await this.notify(OperatorNotificationEventType.PEERING_INVOICE_FAILED, {
+          paymentHash: invoice.paymentHash,
+          peerPubkey: invoice.peerPubkey,
+          amountMsats: invoice.amountMsats.toString(),
+          reason: PeeringInvoiceReason.PAYMENT_FAILED,
+        })
+
         return claimed
       } catch (error) {
         if (started) {
