@@ -68,6 +68,11 @@ second decode on LMDB — and its reading could land after a credit the first di
 is two snapshots in one answer. `None` versus `Some(row)` is what distinguishes no row from no
 funds, and `user_get`'s description says so.
 
+The pair was not even outcome-identical where a row's `balance` was NULL, which the migration
+allows (`20230107230901_create_users_table.sql:4` carries no `NOT NULL`): the row read coalesces
+it to `0` (`postgres/users.rs:24`), and the removed read's bare `try_get` would have failed on
+the same row (`postgres/users.rs:130`).
+
 `is_vanished` is called by neither tool. It hydrates a live kind-62 into a stored row, and
 `user_get` is reachable with a document that carries no scope at all — so calling it would make
 a read write, leaving a row behind for every pubkey anyone inspects. The stored flag is what the

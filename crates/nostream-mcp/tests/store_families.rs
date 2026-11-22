@@ -21,6 +21,7 @@
 //! | `a_confirmed_invoice_still_reads_pending` | confirmation sets the paid fields and leaves the status, and the list keeps naming the row |
 //! | `reports_list_is_the_actionable_queue_newest_first` | the queue is `find_actionable`: newest first, and a report an operator allowed is not in it |
 //! | `reports_list_refuses_a_page_outside_the_bound` | the queue shares the one page bound |
+//! | `user_get_never_calls_the_balance_read` | a users store that refuses `get_balance_by_pubkey` still answers the absent pubkey: the payload's one read is the row |
 //!
 //! The store is the harness's LMDB backend, seeded the way the storage tests seed it: the
 //! repository traits' own writes, so a case reads back through `find_by_pubkey` rather than
@@ -837,4 +838,31 @@ async fn reports_list_refuses_a_page_outside_the_bound() {
             "{given}"
         );
     }
+}
+
+/// The payload's one read, with a store that refuses the removed second: `user_get` on a pubkey
+/// with no row answers `user: null` and `balance: 0`, which is only possible when nothing calls
+/// `get_balance_by_pubkey`. It proves no second read happens on this path; it cannot prove the
+/// two answers would have differed, which with no writer between them they would not (D2).
+#[tokio::test]
+async fn user_get_never_calls_the_balance_read() {
+    let fixture = TestMcp::start_with(Fixture {
+        users: Some(std::sync::Arc::new(|backend| {
+            std::sync::Arc::new(common::NoBalanceRead::new(backend))
+                as std::sync::Arc<dyn UserRepository>
+        })),
+        ..Fixture::default()
+    })
+    .await;
+    let client = fixture.client().await;
+
+    let result = client
+        .call(TOOL_USER_GET, json!({ "pubkey": key_hex() }))
+        .await;
+    assert_eq!(result.is_error, Some(false), "{}", text(&result));
+    assert_eq!(
+        payload(&result),
+        json!({ "user": null, "balance": 0 }),
+        "the row is absent and the balance is the row's own field, so no second read answers it"
+    );
 }
