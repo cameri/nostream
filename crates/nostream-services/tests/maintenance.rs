@@ -30,7 +30,8 @@ use nostream_services::workers::maintenance::{
     MaintenanceRunner, MaintenanceTasks, MaintenanceWorker, NIP05_REVERIFICATION_BATCH_SIZE,
 };
 use nostream_storage::repositories::{
-    EventRepository, NotificationDeliveryLogRepository, NotificationOutboxRepository,
+    EventPurgeCounts, EventRepository, NotificationDeliveryLogRepository,
+    NotificationOutboxRepository,
 };
 use tokio::sync::{Semaphore, broadcast};
 
@@ -66,10 +67,20 @@ impl ScriptedTasks {
     }
 }
 
+/// The counts [`ScriptedTasks`] answers, and the ones the cases assert: not all zeros, so a pass
+/// that dropped the value or answered a default is visible.
+fn scripted_counts() -> EventPurgeCounts {
+    EventPurgeCounts {
+        deleted: 2,
+        expired: 3,
+        retained: 5,
+    }
+}
+
 impl MaintenanceTasks for ScriptedTasks {
     fn clear_old_events(
         &self,
-    ) -> Pin<Box<dyn Future<Output = Result<(), ServicesError>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<EventPurgeCounts, ServicesError>> + Send + '_>> {
         Box::pin(async move {
             self.record("purge started");
 
@@ -86,7 +97,7 @@ impl MaintenanceTasks for ScriptedTasks {
 
             self.record("purge finished");
 
-            Ok(())
+            Ok(scripted_counts())
         })
     }
 
@@ -179,16 +190,23 @@ async fn an_overlapping_tick_during_a_pass_is_skipped() {
 #[tokio::test]
 async fn the_retention_guard_skips_every_disabled_value_and_forwards_the_whitelists() {
     let events = testing::InMemoryEventRepository::new();
+    // The double would answer these; the guard's arms must answer zeros without asking it.
+    events.answers_purge_counts(scripted_counts());
     let event_store: Arc<dyn EventRepository> = Arc::clone(&events) as Arc<dyn EventRepository>;
 
     for max_days in [None, Some(-1i64), Some(0i64)] {
         let mut settings = testing::settings();
         settings.limits = Some(retention_limits(max_days));
 
-        MaintenanceService::new(Arc::clone(&event_store), Arc::new(settings))
+        let counts = MaintenanceService::new(Arc::clone(&event_store), Arc::new(settings))
             .clear_old_events()
             .await
             .expect("the pass");
+        assert_eq!(
+            counts,
+            EventPurgeCounts::default(),
+            "max_days {max_days:?} answers the guard's zeros, not the double's answer"
+        );
         assert!(
             events.purge_calls().is_empty(),
             "max_days {max_days:?} must not call the repository"
@@ -197,10 +215,15 @@ async fn the_retention_guard_skips_every_disabled_value_and_forwards_the_whiteli
 
     let mut settings = testing::settings();
     settings.limits = Some(retention_limits(Some(7)));
-    MaintenanceService::new(Arc::clone(&event_store), Arc::new(settings))
+    let counts = MaintenanceService::new(Arc::clone(&event_store), Arc::new(settings))
         .clear_old_events()
         .await
         .expect("the pass");
+    assert_eq!(
+        counts,
+        scripted_counts(),
+        "the enabled arm answers the store"
+    );
 
     let calls = events.purge_calls();
     assert_eq!(calls.len(), 1);
@@ -250,6 +273,10 @@ async fn a_slow_purge_that_outlives_the_timeout_does_not_fail_the_pass() {
 
     assert!(outcome.purge_timed_out);
     assert_eq!(
+        outcome.counts, None,
+        "a timed-out purge has no counts to report"
+    );
+    assert_eq!(
         tasks.entries(),
         vec!["purge started", "nip05", "outbox", "invoices"]
     );
@@ -268,6 +295,7 @@ async fn the_pass_order_is_the_captures() {
     let outcome = worker.run_pass().await;
 
     assert!(!outcome.purge_timed_out);
+    assert_eq!(outcome.counts, Some(scripted_counts()));
     assert_eq!(
         tasks.entries(),
         vec![
@@ -388,10 +416,15 @@ async fn the_relay_restarted_notification_is_one_enqueue_and_obeys_its_toggle() 
 fn runner(
     settings: nostream_config::Settings,
     fetch: Arc<testing::FakeNip05Fetch>,
-) -> (MaintenanceRunner, Arc<testing::InMemoryNip05Repository>) {
+) -> (
+    MaintenanceRunner,
+    Arc<testing::InMemoryNip05Repository>,
+    Arc<testing::InMemoryEventRepository>,
+) {
     let nip05 = testing::InMemoryNip05Repository::new();
+    let events = testing::InMemoryEventRepository::new();
     let stores = ServiceStores {
-        events: testing::InMemoryEventRepository::new(),
+        events: Arc::clone(&events) as Arc<dyn EventRepository>,
         users: testing::InMemoryUserRepository::new(),
         invoices: testing::InMemoryInvoiceRepository::new(),
         nip05: Arc::clone(&nip05)
@@ -437,7 +470,31 @@ fn runner(
             payments,
         ),
         nip05,
+        events,
     )
+}
+
+/// R2: the production arm answers what the service answers, counts and all — the value the trait
+/// used to drop at its own signature.
+#[tokio::test]
+async fn the_trait_arm_answers_the_services_counts() {
+    let mut settings = testing::settings();
+    settings.limits = Some(retention_limits(Some(7)));
+    let (runner, _, events) = self::runner(settings, testing::FakeNip05Fetch::new());
+    events.answers_purge_counts(scripted_counts());
+
+    let counts = runner.clear_old_events().await.expect("the purge");
+
+    assert_eq!(
+        counts,
+        scripted_counts(),
+        "the service's answer, through the trait"
+    );
+    assert_eq!(
+        events.purge_calls().len(),
+        1,
+        "the enabled arm reached the store once"
+    );
 }
 
 #[tokio::test]
@@ -453,7 +510,7 @@ async fn the_nip05_batch_is_skipped_when_disabled_and_read_with_the_captures_def
         domain_whitelist: None,
         domain_blacklist: None,
     });
-    let (runner, repository) = self::runner(settings, Arc::clone(&fetch));
+    let (runner, repository, _) = self::runner(settings, Arc::clone(&fetch));
     runner.reverify_nip05().await.expect("the pass");
     assert!(repository.pending_calls().is_empty());
 
@@ -466,7 +523,7 @@ async fn the_nip05_batch_is_skipped_when_disabled_and_read_with_the_captures_def
         domain_whitelist: None,
         domain_blacklist: None,
     });
-    let (runner, repository) = self::runner(settings, Arc::clone(&fetch));
+    let (runner, repository, _) = self::runner(settings, Arc::clone(&fetch));
 
     fetch.respond(
         200,
@@ -507,7 +564,7 @@ async fn the_nip05_batch_is_skipped_when_disabled_and_read_with_the_captures_def
             domain_whitelist: None,
             domain_blacklist: None,
         });
-        let (runner, repository) = self::runner(settings, Arc::clone(&fetch));
+        let (runner, repository, _) = self::runner(settings, Arc::clone(&fetch));
         repository.set_pending(vec![verified]);
         (runner, repository)
     };

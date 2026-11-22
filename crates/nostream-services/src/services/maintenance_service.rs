@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use nostream_config::Settings;
-use nostream_storage::repositories::{EventRepository, EventRetentionOptions};
+use nostream_storage::repositories::{EventPurgeCounts, EventRepository, EventRetentionOptions};
 
 use crate::error::ServicesError;
 
@@ -19,8 +19,9 @@ impl MaintenanceService {
         Self { events, settings }
     }
 
-    /// `clearOldEvents`: one retention call, or none when `maxDays` is absent or `<= 0`.
-    pub async fn clear_old_events(&self) -> Result<(), ServicesError> {
+    /// `clearOldEvents`: one retention call, or none when `maxDays` is absent or `<= 0` — the
+    /// guard's answer is three zeros with no call, because a skip is not a purge of nothing.
+    pub async fn clear_old_events(&self) -> Result<EventPurgeCounts, ServicesError> {
         let retention = self
             .settings
             .limits
@@ -31,7 +32,7 @@ impl MaintenanceService {
             .and_then(|retention| retention.max_days)
             .filter(|max_days| *max_days > 0)
         else {
-            return Ok(());
+            return Ok(EventPurgeCounts::default());
         };
 
         let options = EventRetentionOptions {
@@ -56,6 +57,6 @@ impl MaintenanceService {
             );
         }
 
-        Ok(())
+        Ok(counts)
     }
 }
