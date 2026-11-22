@@ -2,11 +2,12 @@
 //!
 //! | case | what it proves |
 //! |---|---|
-//! | `each_call_appends_one_line` | seven calls append eight lines in call order — the seven `mcp.*` lines, then `settings_set`'s own `settings.updated` |
+//! | `each_call_appends_one_line` | twelve calls append thirteen lines in call order — the twelve `mcp.*` lines, then `settings_set`'s own `settings.updated` |
 //! | `a_refused_call_appends_nothing` | a call with bad arguments and a call with no credential each leave the file untouched |
 //! | `every_registered_tool_has_a_table_row` | the table is total over the router's own list, so no tool can execute unaudited or ungated |
 //! | `the_audit_check_is_no_stricter_than_the_router` | the table's rule is the router's deserialiser, not the schema: a stricter check would fail open |
 //! | `the_write_tools_detail_carries_only_the_tool` | the two write tools' lines carry `{"tool": …}` and nothing else: no id, no action, no address |
+//! | `the_store_tools_detail_carries_only_the_tool` | the five store tools' lines carry `{"tool": …}` and nothing else: no pubkey, no action, no invoice id |
 //! R9 appends the `mcp.*` line at dispatch, before the handler's work, so the order in the file
 //! is the order of the calls and a domain line always follows its own dispatch line. The one
 //! refusal that does write is a credential's scope denial — `mcp.denied`, R28 — and it has its
@@ -20,8 +21,9 @@ use std::collections::BTreeSet;
 
 use common::{TestMcp, event, id_of, object, text};
 use nostream_mcp::{
-    TOOL_DELETE_EVENT, TOOL_GET_EVENT, TOOL_LIST_EVENTS, TOOL_RELAY_STATUS, TOOL_REPORTS_ACTION,
-    TOOL_SETTINGS_GET, TOOL_SETTINGS_SET, TOOLS, audit_action,
+    TOOL_DELETE_EVENT, TOOL_GET_EVENT, TOOL_INVOICES_GET, TOOL_INVOICES_LIST, TOOL_LIST_EVENTS,
+    TOOL_RELAY_STATUS, TOOL_REPORTS_ACTION, TOOL_REPORTS_LIST, TOOL_SETTINGS_GET,
+    TOOL_SETTINGS_SET, TOOL_USER_ADMIN, TOOL_USER_GET, TOOLS, audit_action,
 };
 use serde_json::json;
 
@@ -32,6 +34,7 @@ async fn each_call_appends_one_line() {
     let id = id_of(&record);
     fixture.seed(std::slice::from_ref(&record)).await;
     let client = fixture.client().await;
+    let pubkey = "ab".repeat(32);
 
     client.call(TOOL_SETTINGS_GET, json!({})).await;
     client.call(TOOL_LIST_EVENTS, json!({})).await;
@@ -43,6 +46,20 @@ async fn each_call_appends_one_line() {
             TOOL_REPORTS_ACTION,
             json!({ "id": report_id, "action": "allow" }),
         )
+        .await;
+    client.call(TOOL_REPORTS_LIST, json!({})).await;
+    client
+        .call(
+            TOOL_USER_ADMIN,
+            json!({ "pubkey": pubkey.clone(), "action": "admit" }),
+        )
+        .await;
+    client
+        .call(TOOL_USER_GET, json!({ "pubkey": pubkey }))
+        .await;
+    client.call(TOOL_INVOICES_LIST, json!({})).await;
+    client
+        .call(TOOL_INVOICES_GET, json!({ "id": "inv-1" }))
         .await;
     client.call(TOOL_RELAY_STATUS, json!({})).await;
     let written = client
@@ -66,6 +83,11 @@ async fn each_call_appends_one_line() {
             "mcp.get_event",
             "mcp.delete_event",
             "mcp.reports_action",
+            "mcp.reports_list",
+            "mcp.user_admin",
+            "mcp.user_get",
+            "mcp.invoices_list",
+            "mcp.invoices_get",
             "mcp.relay_status",
             "mcp.settings_set",
             "settings.updated",
@@ -79,6 +101,11 @@ async fn each_call_appends_one_line() {
         TOOL_GET_EVENT,
         TOOL_DELETE_EVENT,
         TOOL_REPORTS_ACTION,
+        TOOL_REPORTS_LIST,
+        TOOL_USER_ADMIN,
+        TOOL_USER_GET,
+        TOOL_INVOICES_LIST,
+        TOOL_INVOICES_GET,
         TOOL_RELAY_STATUS,
         TOOL_SETTINGS_SET,
     ]) {
@@ -93,19 +120,19 @@ async fn each_call_appends_one_line() {
     }
 
     assert_eq!(
-        entries[5]["detail"]["tool"],
+        entries[10]["detail"]["tool"],
         json!(TOOL_RELAY_STATUS),
-        "the sixth line is the status call's own: {entries:?}"
+        "the eleventh line is the status call's own: {entries:?}"
     );
     assert_eq!(
-        entries[6]["detail"]["paths"],
+        entries[11]["detail"]["paths"],
         json!(["wot.enabled"]),
         "the settings write names the paths it asked for, never the values"
     );
     assert!(
-        entries[6]["detail"].get("value").is_none(),
+        entries[11]["detail"].get("value").is_none(),
         "no value is recorded: {}",
-        entries[6]
+        entries[11]
     );
 }
 
@@ -145,6 +172,65 @@ async fn the_write_tools_detail_carries_only_the_tool() {
         "{entries:?}"
     );
     for (entry, tool) in entries.iter().zip([TOOL_DELETE_EVENT, TOOL_REPORTS_ACTION]) {
+        assert_eq!(
+            entry["detail"],
+            json!({ "tool": tool }),
+            "{tool}'s detail names the tool and nothing else: {entry}"
+        );
+        assert!(
+            entry.get("remoteAddress").is_none(),
+            "a stdio caller has no address: {entry}"
+        );
+    }
+}
+
+/// R22, R27: the five store tools' lines carry the tool and nothing else. A `detail` carrying the
+/// pubkey, the action or an invoice id would let a caller's own text shape a record — the reason
+/// `dispatch_detail` adds nothing for them. The action is compared through `audit_action` rather
+/// than spelled: `each_call_appends_one_line`'s vector stays the file's only list of literals.
+#[tokio::test]
+async fn the_store_tools_detail_carries_only_the_tool() {
+    let fixture = TestMcp::start().await;
+    let client = fixture.client().await;
+    let pubkey = "ab".repeat(32);
+
+    for (tool, arguments) in [
+        (
+            TOOL_USER_ADMIN,
+            json!({ "pubkey": pubkey, "action": "admit" }),
+        ),
+        (TOOL_USER_GET, json!({ "pubkey": pubkey })),
+        (TOOL_INVOICES_LIST, json!({})),
+        (TOOL_INVOICES_GET, json!({ "id": "inv-1" })),
+        (TOOL_REPORTS_LIST, json!({})),
+    ] {
+        let result = client.call(tool, arguments).await;
+        assert_eq!(result.is_error, Some(false), "{tool}: {}", text(&result));
+    }
+
+    let entries = fixture.audit_entries();
+    let actions: Vec<String> = entries
+        .iter()
+        .map(|entry| entry["action"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    assert_eq!(
+        actions,
+        vec![
+            audit_action(TOOL_USER_ADMIN),
+            audit_action(TOOL_USER_GET),
+            audit_action(TOOL_INVOICES_LIST),
+            audit_action(TOOL_INVOICES_GET),
+            audit_action(TOOL_REPORTS_LIST),
+        ],
+        "{entries:?}"
+    );
+    for (entry, tool) in entries.iter().zip([
+        TOOL_USER_ADMIN,
+        TOOL_USER_GET,
+        TOOL_INVOICES_LIST,
+        TOOL_INVOICES_GET,
+        TOOL_REPORTS_LIST,
+    ]) {
         assert_eq!(
             entry["detail"],
             json!({ "tool": tool }),

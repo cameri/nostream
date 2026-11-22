@@ -28,7 +28,7 @@ use serde::Deserialize;
 
 use crate::error::McpError;
 
-/// The one scope beyond reading: the right to call `settings_set` (R28).
+/// The one scope beyond reading: the right to call the four tools that write (R28).
 pub const SCOPE_WRITE: &str = "write";
 
 /// The scopes a token document may name, as a refusal states them.
@@ -57,14 +57,14 @@ pub const MAX_TOKEN_DOCUMENT_BYTES: u64 = 4 * 1024;
 /// The scopes a token document grants.
 ///
 /// Reading is not a scope: every accepted document reads (R28). `write` is the one name a
-/// document may add, and it is what makes `settings_set` callable.
+/// document may add, and it is what makes the four writes callable.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Scopes {
     write: bool,
 }
 
 impl Scopes {
-    /// The grant a document with no `scopes` carries: the four read tools.
+    /// The grant a document with no `scopes` carries: the eight read tools.
     pub fn read_only() -> Self {
         Self::default()
     }

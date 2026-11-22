@@ -281,8 +281,9 @@ backend, whose query is a real await, that the shape is for.
 
 The MCP server writes its calls to the same `<config>/admin-audit.jsonl` (D9), one line per
 executed call, and it extends the recorded action vocabulary by **one name per registered tool**
-rather than reusing one. Seven names have landed: four with the first slice, `relay_status` with
-the second, and `delete_event` and `reports_action` with the third; each later slice adds its own:
+rather than reusing one. **Twelve names have landed:** four with the first slice, `relay_status`
+with the second, `delete_event` and `reports_action` with the third, and `user_admin`, `user_get`,
+`invoices_list`, `invoices_get` and `reports_list` with the fourth; each later slice adds its own:
 
 | action | written by |
 |---|---|
@@ -293,6 +294,11 @@ the second, and `delete_event` and `reports_action` with the third; each later s
 | `mcp.relay_status` | a dispatched `relay_status` (ADR 0016) |
 | `mcp.delete_event` | a dispatched `delete_event` (ADR 0017) |
 | `mcp.reports_action` | a dispatched `reports_action` (ADR 0017) |
+| `mcp.user_admin` | a dispatched `user_admin` (ADR 0018) |
+| `mcp.user_get` | a dispatched `user_get` (ADR 0018) |
+| `mcp.invoices_list` | a dispatched `invoices_list` (ADR 0018) |
+| `mcp.invoices_get` | a dispatched `invoices_get` (ADR 0018) |
+| `mcp.reports_list` | a dispatched `reports_list` (ADR 0018) |
 
 **These extend the capture's nine names; they do not replace them.** The capture's vocabulary is
 a closed nine-name union (`src/@types/admin-audit.ts:1-10`), and the rewrite's writer takes
@@ -310,7 +316,8 @@ costs the column its meaning.
 
 **What each line carries.** `detail` holds `{"tool": "<name>"}`, plus `{"paths": [...]}` for
 `settings_set` (the paths requested, never a value); `delete_event` and `reports_action` carry
-`{"tool": …}` and nothing else, so neither an id nor an action enters the file, and
+`{"tool": …}` and nothing else, and the five tools of the fourth slice carry `{"tool": …}` and
+nothing else either, so neither an id nor an action enters the file, and
 `remoteAddress` is omitted because a stdio caller has no address (`state.rs:509-525`). The line is appended at dispatch, before the
 tool's work, so the file's order is the dispatch order: `mcp.settings_set` precedes the
 `settings.updated` line the shared write path then appends, and a call the credential refuses

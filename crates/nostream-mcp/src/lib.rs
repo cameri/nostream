@@ -1,4 +1,4 @@
-//! `nostream-mcp` owns the admin MCP server: the tool router, the seven tools, the credential
+//! `nostream-mcp` owns the admin MCP server: the tool router, the twelve tools, the credential
 //! and its scopes, and the audit sink.
 //!
 //! It owns no transport and no socket. `nostreamd --mcp-stdio` serves this server on
@@ -24,8 +24,8 @@
 //!   `nostream-admin` (used here, not re-implemented);
 //! - the settings merge, validation, redaction and the guided catalogue — `nostream-config`;
 //! - the event store and the repositories — `nostream-storage`;
-//! - every tool family outside this surface: `user_admin`, `invoices_*` and `maintenance_*` are
-//!   later slices of #1183.
+//! - every tool family outside this surface: `maintenance_run` and `maintenance_last_run` are
+//!   slice 5 of #1183.
 
 mod credential;
 mod error;
@@ -36,10 +36,12 @@ pub use credential::{
 };
 pub use error::McpError;
 pub use server::{
-    AUDIT_DENIED, AdminMcp, DeleteEventArgs, FORBIDDEN, GetEventArgs, ListEventsArgs,
-    MAX_FILTER_TERMS, MAX_ROWS_PER_PAGE, MCP_INSTRUCTIONS, MCP_SERVER_NAME, NOT_FOUND,
-    OUTCOME_ALREADY_DELETED, OUTCOME_DELETED, OUTCOME_NOT_DELETEABLE, OUTCOME_NOT_FOUND,
-    ReportAction, ReportsActionArgs, Requires, SettingsSetArgs, TOOL_DELETE_EVENT, TOOL_GET_EVENT,
-    TOOL_LIST_EVENTS, TOOL_RELAY_STATUS, TOOL_REPORTS_ACTION, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET,
-    TOOLS, Tool, UNAUTHORIZED, arguments_parse, audit_action, required_scope,
+    AUDIT_DENIED, AdminMcp, DeleteEventArgs, FORBIDDEN, GetEventArgs, InvoicesGetArgs,
+    InvoicesListArgs, ListEventsArgs, MAX_FILTER_TERMS, MAX_ROWS_PER_PAGE, MCP_INSTRUCTIONS,
+    MCP_SERVER_NAME, NOT_FOUND, OUTCOME_ALREADY_DELETED, OUTCOME_DELETED, OUTCOME_NOT_DELETEABLE,
+    OUTCOME_NOT_FOUND, ReportAction, ReportsActionArgs, ReportsListArgs, Requires, SettingsSetArgs,
+    TOOL_DELETE_EVENT, TOOL_GET_EVENT, TOOL_INVOICES_GET, TOOL_INVOICES_LIST, TOOL_LIST_EVENTS,
+    TOOL_RELAY_STATUS, TOOL_REPORTS_ACTION, TOOL_REPORTS_LIST, TOOL_SETTINGS_GET,
+    TOOL_SETTINGS_SET, TOOL_USER_ADMIN, TOOL_USER_GET, TOOLS, Tool, UNAUTHORIZED, UserAction,
+    UserAdminArgs, UserGetArgs, arguments_parse, audit_action, required_scope,
 };

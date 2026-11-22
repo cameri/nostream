@@ -330,7 +330,7 @@ async fn an_unknown_tool_is_a_protocol_error() {
     let client = fixture.client().await;
 
     let error = client
-        .try_call("user_admin", json!({}))
+        .try_call("maintenance_run", json!({}))
         .await
         .expect_err("an absent tool is a JSON-RPC error, not a result");
     let rmcp::ServiceError::McpError(error) = error else {

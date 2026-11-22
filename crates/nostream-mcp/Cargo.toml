@@ -8,6 +8,7 @@ repository.workspace = true
 description = "The admin MCP server: the tool router, the credential gate and the audit sink"
 
 [dependencies]
+chrono.workspace = true
 nostream-admin.workspace = true
 nostream-config.workspace = true
 nostream-core.workspace = true

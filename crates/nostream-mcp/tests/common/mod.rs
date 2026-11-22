@@ -70,7 +70,7 @@ pub fn base_settings() -> serde_yaml::Value {
 /// The scopes the fixture's token document names.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Grant {
-    /// `{"scopes": ["write"]}`: the four read tools and the three writes.
+    /// `{"scopes": ["write"]}`: the eight read tools and the four writes.
     #[default]
     Write,
     /// `{"scopes": []}`: the read tools only — the door's default (R28).
@@ -111,6 +111,9 @@ pub struct Fixture {
     pub stores: Stores,
     /// The report repository a case supplies in place of the backend's own.
     pub reports: Option<ReportRepositoryFactory>,
+    /// The user repository a case supplies in place of the backend's own — for a case whose
+    /// subject is which reads the door makes, where the backend would answer them all.
+    pub users: Option<UserRepositoryFactory>,
 }
 
 impl Default for Fixture {
@@ -122,6 +125,7 @@ impl Default for Fixture {
             now_ms: NOW_MS,
             stores: Stores::Seeded,
             reports: None,
+            users: None,
         }
     }
 }
@@ -143,6 +147,14 @@ pub type EventRepositoryFactory =
 /// subject is the handler's own ordering, which a store that answers ascending cannot show.
 pub type ReportRepositoryFactory = Arc<
     dyn Fn(Arc<LmdbBackend>) -> Arc<dyn nostream_storage::repositories::ReportRepository>
+        + Send
+        + Sync,
+>;
+
+/// Builds the user repository a case wants over the harness's own backend — for a case whose
+/// subject is which reads the door makes, which a store that answers them all cannot show.
+pub type UserRepositoryFactory = Arc<
+    dyn Fn(Arc<LmdbBackend>) -> Arc<dyn nostream_storage::repositories::UserRepository>
         + Send
         + Sync,
 >;
@@ -208,8 +220,13 @@ impl TestMcp {
                     || Arc::clone(&backend) as Arc<dyn EventRepository>,
                     |wrap| wrap(Arc::clone(&backend)),
                 ),
-                users: Arc::clone(&backend)
-                    as Arc<dyn nostream_storage::repositories::UserRepository>,
+                users: fixture.users.as_ref().map_or_else(
+                    || {
+                        Arc::clone(&backend)
+                            as Arc<dyn nostream_storage::repositories::UserRepository>
+                    },
+                    |wrap| wrap(Arc::clone(&backend)),
+                ),
                 invoices: Arc::clone(&backend)
                     as Arc<dyn nostream_storage::repositories::InvoiceRepository>,
                 nip05: Arc::clone(&backend)
@@ -801,5 +818,72 @@ impl EventRepository for ZeroCountDeleter {
 
     fn delete_all_events(&self) -> StorageFuture<'_, ()> {
         self.inner.delete_all_events()
+    }
+}
+
+/// The real users, with the balance read refused.
+///
+/// The user tools answer the row and the balance that row carries, so nothing on their path may
+/// call `get_balance_by_pubkey`: the backend would answer it, and a store that answers cannot say
+/// whether the call happened. This one refuses it, so a case can tell. Every other method is the
+/// backend's own.
+pub struct NoBalanceRead {
+    inner: Arc<LmdbBackend>,
+}
+
+impl NoBalanceRead {
+    /// The backend, with its balance read refused.
+    pub fn new(inner: Arc<LmdbBackend>) -> Self {
+        Self { inner }
+    }
+}
+
+impl nostream_storage::repositories::UserRepository for NoBalanceRead {
+    fn find_by_pubkey<'a>(
+        &'a self,
+        pubkey: &'a Pubkey,
+    ) -> StorageFuture<'a, Option<nostream_storage::repositories::User>> {
+        nostream_storage::repositories::UserRepository::find_by_pubkey(&*self.inner, pubkey)
+    }
+
+    fn upsert<'a>(
+        &'a self,
+        user: &'a nostream_storage::repositories::UserPatch,
+    ) -> StorageFuture<'a, u64> {
+        nostream_storage::repositories::UserRepository::upsert(&*self.inner, user)
+    }
+
+    /// Refused: the balance is the row's own field, and a case that reaches this read has found
+    /// a caller making the second load the user tools were written not to make.
+    fn get_balance_by_pubkey<'a>(&'a self, _pubkey: &'a Pubkey) -> StorageFuture<'a, i64> {
+        Box::pin(async {
+            Err(StorageError::InvalidArgument {
+                message: "the user tools derive the balance from the row and must not read it twice",
+            })
+        })
+    }
+
+    fn is_vanished<'a>(&'a self, pubkey: &'a Pubkey) -> StorageFuture<'a, bool> {
+        nostream_storage::repositories::UserRepository::is_vanished(&*self.inner, pubkey)
+    }
+
+    fn set_vanished<'a>(&'a self, pubkey: &'a Pubkey, vanished: bool) -> StorageFuture<'a, u64> {
+        nostream_storage::repositories::UserRepository::set_vanished(&*self.inner, pubkey, vanished)
+    }
+
+    fn admit_user<'a>(
+        &'a self,
+        pubkey: &'a Pubkey,
+        admitted_at: chrono::DateTime<chrono::Utc>,
+    ) -> StorageFuture<'a, ()> {
+        nostream_storage::repositories::UserRepository::admit_user(
+            &*self.inner,
+            pubkey,
+            admitted_at,
+        )
+    }
+
+    fn revoke_admission<'a>(&'a self, pubkey: &'a Pubkey) -> StorageFuture<'a, u64> {
+        nostream_storage::repositories::UserRepository::revoke_admission(&*self.inner, pubkey)
     }
 }

@@ -37,6 +37,54 @@
       "name": "get_event"
     },
     {
+      "description": "Read one invoice by id, whatever its status; `invoice` is null when no row carries the id. The id is the invoice's own opaque identifier — not a 64-character hex id — and is taken verbatim. A confirmed invoice can still read `status: \"pending\"`: confirmation sets `amount_paid` and `confirmed_at`, and only a status update moves the status",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "The invoice's own identifier, taken verbatim — not a hex id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "name": "invoices_get"
+    },
+    {
+      "description": "List the pending invoices, oldest first, paged by `offset` and `limit` — the store's own pending walk, so a completed or expired invoice is not here and `invoices_get` is how to read one whatever its status. `limit` is 1 to 500 rows, absent 500; `offset` skips that many. A confirmed invoice stays in this list while its status reads `pending`",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "description": "Page size: 1 to 500 rows, oldest first; absent uses 500.",
+            "format": "uint64",
+            "maximum": 500,
+            "minimum": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "offset": {
+            "description": "Rows to skip, oldest first; absent skips none.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "name": "invoices_list"
+    },
+    {
       "description": "List stored events matching the given kinds, authors, ids, since and until. Rows come back oldest first, and `limit` is the page size — the first rows in that order, at most 500; `truncated` is true when the page is full, so more rows may match",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -141,6 +189,27 @@
       "name": "reports_action"
     },
     {
+      "description": "The review queue: the reports still actionable, newest first, at most `limit` — 1 to 500, absent 500. This is not every report: a report an operator allowed has left the queue, and the queue has no offset, so there is nothing to page. `reports_action` takes the `event_id` this list shows, not the row's own `id`",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "description": "Page size: 1 to 500 reports, newest first; absent uses 500.",
+            "format": "uint64",
+            "maximum": 500,
+            "minimum": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "name": "reports_list"
+    },
+    {
       "description": "Read the merged settings document, narrowed to the defaults' keys and redacted. The document arrives under `settings`",
       "inputSchema": {
         "properties": {},
@@ -200,7 +269,53 @@
         "type": "object"
       },
       "name": "settings_set"
+    },
+    {
+      "description": "Administer one pubkey's user row: `admit` sets `is_admitted` and stamps `tos_accepted_at` from the server clock, `revoke` clears `is_admitted` and writes no row for a pubkey that has none, and `vanish`/`unvanish` set and clear the stored vanished flag, writing a minimal row (not admitted, balance 0) when the pubkey has none. These are the same writes the relay's own strategies make, with one difference each: `vanish` publishes no kind-62 request and deletes no event, `unvanish` is the only path in the tree that clears the flag, and an admitted pubkey is still held to `limits.event.pubkey.minBalance` by the relay's gate. Answers `action` and the row as it stands after the call — `user` null when no row exists, `balance` 0 for that same pubkey — so `revoke` and an unknown key answer the same shape as `admit`",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "`admit`, `revoke`, `vanish` or `unvanish`",
+            "enum": [
+              "admit",
+              "revoke",
+              "vanish",
+              "unvanish"
+            ],
+            "type": "string"
+          },
+          "pubkey": {
+            "description": "The pubkey's 64-character hex key, in either case",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pubkey",
+          "action"
+        ],
+        "type": "object"
+      },
+      "name": "user_admin"
+    },
+    {
+      "description": "Read one pubkey's stored user row — `is_admitted`, `is_vanished`, `balance` in msats and the two timestamps — and its balance on its own, so a missing row and an empty balance are different answers: `user` is null and `balance` is 0 for a pubkey with no row. `is_vanished` is the stored flag, never hydrated from a kind-62 request by this tool, so a pubkey the relay has not cached and the door has never written reads as absent. Changes nothing",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "pubkey": {
+            "description": "The pubkey's 64-character hex key, in either case",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pubkey"
+        ],
+        "type": "object"
+      },
+      "name": "user_get"
     }
   ]
 }
-
