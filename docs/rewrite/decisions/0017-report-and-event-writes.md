@@ -188,3 +188,5 @@ carry a `"name": "delete_event"` entry — data, not a case. A pattern that read
 case would make the snapshot criterion and this one unsatisfiable together, so the criterion names
 `--include=*.rs` and says why; the base reading is unchanged (three lines at `443cb985`, all in
 `.rs` files).
+
+ADR 0019 moved the example on once more, to `no_such_tool`, when the last planned name landed.

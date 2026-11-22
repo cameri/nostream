@@ -281,9 +281,10 @@ backend, whose query is a real await, that the shape is for.
 
 The MCP server writes its calls to the same `<config>/admin-audit.jsonl` (D9), one line per
 executed call, and it extends the recorded action vocabulary by **one name per registered tool**
-rather than reusing one. **Twelve names have landed:** four with the first slice, `relay_status`
-with the second, `delete_event` and `reports_action` with the third, and `user_admin`, `user_get`,
-`invoices_list`, `invoices_get` and `reports_list` with the fourth; each later slice adds its own:
+rather than reusing one. **Fourteen names have landed:** four with the first slice, `relay_status`
+with the second, `delete_event` and `reports_action` with the third, `user_admin`, `user_get`,
+`invoices_list`, `invoices_get` and `reports_list` with the fourth, and `maintenance_run` and
+`maintenance_last_run` with the fifth; each later slice adds its own:
 
 | action | written by |
 |---|---|
@@ -299,6 +300,8 @@ with the second, `delete_event` and `reports_action` with the third, and `user_a
 | `mcp.invoices_list` | a dispatched `invoices_list` (ADR 0018) |
 | `mcp.invoices_get` | a dispatched `invoices_get` (ADR 0018) |
 | `mcp.reports_list` | a dispatched `reports_list` (ADR 0018) |
+| `mcp.maintenance_run` | a dispatched `maintenance_run` (ADR 0019) |
+| `mcp.maintenance_last_run` | a dispatched `maintenance_last_run` (ADR 0019) |
 
 **These extend the capture's nine names; they do not replace them.** The capture's vocabulary is
 a closed nine-name union (`src/@types/admin-audit.ts:1-10`), and the rewrite's writer takes
@@ -315,9 +318,10 @@ into a field the page does not show. The cost is one more line in this record; t
 costs the column its meaning.
 
 **What each line carries.** `detail` holds `{"tool": "<name>"}`, plus `{"paths": [...]}` for
-`settings_set` (the paths requested, never a value); `delete_event` and `reports_action` carry
+`settings_set` (the paths requested, never a value); `delete_event`, `reports_action` and the two
+maintenance tools carry
 `{"tool": …}` and nothing else, and the five tools of the fourth slice carry `{"tool": …}` and
-nothing else either, so neither an id nor an action enters the file, and
+nothing else either, so neither an id, an action nor a purge count enters the file, and
 `remoteAddress` is omitted because a stdio caller has no address (`state.rs:509-525`). The line is appended at dispatch, before the
 tool's work, so the file's order is the dispatch order: `mcp.settings_set` precedes the
 `settings.updated` line the shared write path then appends, and a call the credential refuses
@@ -424,10 +428,11 @@ serving calls nobody could attribute.
 
 **The document declares what it may do.** `{"scopes": ["write"]}`, with `scopes` optional, and the
 set closed (`deny_unknown_fields`): a document still carrying a session token under `token` is
-refused for its shape rather than read for less than it says. Reading is not a scope — every
-accepted document may call the read tools — `settings_get`, `list_events`, `get_event` and, since
-job 035's slice, `relay_status` — and `write` is the one name a document may add, the right to call
-`settings_set`. A name the door does not know refuses
+refused for its shape rather than read for less than it says. Reading is not a scope: every
+accepted document may call the rows the door's `TOOLS` table marks `Requires::Read`, and `write`
+is the one name a document may add — the right to call the five rows it marks
+`Requires::Write`. Both sets are read from that one table, so this sentence cannot go stale as
+the surface grows. A name the door does not know refuses
 the load, naming the scope and the accepted set, because a typo narrowed silently would answer
 `Forbidden` to calls the operator believed it allowed with the typo nowhere in sight. A call the
 document's scopes deny is refused **and audited**: action `mcp.denied`, `detail`
