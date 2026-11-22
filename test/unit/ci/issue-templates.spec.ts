@@ -47,12 +47,21 @@ describe('issue templates', () => {
       expect(link?.url).to.equal('https://github.com/cameri/nostream/security/advisories/new')
     })
 
-    it('links the development chat, the protocol chat and the website that #857 asks for', () => {
+    it('links the contributing guide, the development chat, the protocol repository and the website', () => {
       const urls = config.contact_links?.map((entry) => entry.url)
 
+      expect(urls).to.include('https://github.com/cameri/nostream/blob/main/CONTRIBUTING.md')
       expect(urls).to.include('https://t.me/nostream_dev')
-      expect(urls).to.include('https://t.me/nostr_protocol')
-      expect(urls).to.include('https://ema.tnsor.network')
+      expect(urls).to.include('https://github.com/nostr-protocol/nostr')
+      expect(urls).to.include('https://nostream.dev')
+    })
+
+    it('does not send protocol questions to a Telegram group, because none is official', () => {
+      const telegramUrls = (config.contact_links ?? [])
+        .map((entry) => entry.url ?? '')
+        .filter((url) => url.startsWith('https://t.me/'))
+
+      expect(telegramUrls).to.deep.equal(['https://t.me/nostream_dev'])
     })
 
     it('gives every contact link a name, a https url and a description', () => {

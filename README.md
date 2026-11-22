@@ -56,7 +56,7 @@ Start with the guide for what you want to do; the README stays short on purpose.
 | [Operations](docs/OPERATIONS.md) | Backups, maintenance, query benchmarking, systemd, troubleshooting |
 | [Peering](docs/PEERING.md) | Configuring peers, authenticating, syncing their events |
 | [Redis](docs/REDIS.md) | Why the relay needs Redis, and how to configure it |
-| [Contributing](CONTRIBUTING.md) | Development setup, tests, load and performance testing |
+| [Contributing](CONTRIBUTING.md) | Setup, tests, changesets, and how pull requests from outside contributors are merged |
 | [Security policy](SECURITY.md) | Reporting a vulnerability |
 | [Changelog](CHANGELOG.md) | Released changes |
 
@@ -208,11 +208,19 @@ Default settings can be found under `resources/default-settings.yaml`. Feel free
 
 See [CONFIGURATION.md](CONFIGURATION.md) for a detailed explanation of each environment variable and setting.
 
-## Dev Channel
+## Community
 
-For development discussions, please use the [Nostr Typescript Relay Dev Group](https://t.me/nostream_dev).
+Running a relay, deploying nostream, or working on it: the
+[Nostream development group](https://t.me/nostream_dev) is where operators and contributors
+ask questions and work through problems together.
 
-For discussions about the protocol, please feel free to use the [Nostr Telegram Group](https://t.me/nostr_protocol).
+Protocol questions — NIPs, event kinds, client behaviour, what the spec intends — belong in
+[nostr-protocol/nostr](https://github.com/nostr-protocol/nostr). There is no official Nostr
+protocol group on Telegram, and the nostream group above is about this relay, not the protocol.
+
+Planning your first contribution? Read [CONTRIBUTING.md](CONTRIBUTING.md) first. It covers the
+environment, the tests, the changeset rule and, most often needed, how a pull request from
+someone outside the project gets merged.
 
 # Author
 
