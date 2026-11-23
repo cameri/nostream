@@ -4,6 +4,7 @@ import sinonChai from 'sinon-chai'
 
 import { ICacheAdapter } from '../../../src/@types/adapters'
 import {
+  ADMIN_SESSION_REVOCATION_TIMEOUT_MS,
   adminSessionRevocationCacheKey,
   CacheAdminSessionRevocations,
 } from '../../../src/utils/admin-session-revocations'
@@ -29,10 +30,14 @@ describe('CacheAdminSessionRevocations', () => {
     sandbox.restore()
   })
 
-  it('keeps a revoked session id until the token would have expired', async () => {
+  it('keeps a revoked session id until the token would have expired, plus the time a write may take', async () => {
     await revocations.revoke('abc', 3600)
 
-    expect(setKeyIfNotExists).to.have.been.calledOnceWithExactly(adminSessionRevocationCacheKey('abc'), '1', 3600)
+    expect(setKeyIfNotExists).to.have.been.calledOnceWithExactly(
+      adminSessionRevocationCacheKey('abc'),
+      '1',
+      3600 + ADMIN_SESSION_REVOCATION_TIMEOUT_MS / 1000,
+    )
   })
 
   it('tells the call that revoked a session so, and a later call for it that it did not', async () => {
@@ -48,12 +53,12 @@ describe('CacheAdminSessionRevocations', () => {
     expect(setKeyIfNotExists).to.have.been.calledOnce
   })
 
-  it('keeps a revoked session id for at least a second', async () => {
+  it('keeps a revoked session id for at least a second, plus the time a write may take', async () => {
     await revocations.revoke('abc', 0)
     await revocations.revoke('def', Number.NaN)
 
-    expect(setKeyIfNotExists.firstCall.args[2]).to.equal(1)
-    expect(setKeyIfNotExists.secondCall.args[2]).to.equal(1)
+    expect(setKeyIfNotExists.firstCall.args[2]).to.equal(1 + ADMIN_SESSION_REVOCATION_TIMEOUT_MS / 1000)
+    expect(setKeyIfNotExists.secondCall.args[2]).to.equal(1 + ADMIN_SESSION_REVOCATION_TIMEOUT_MS / 1000)
   })
 
   it('keys each session separately', () => {
