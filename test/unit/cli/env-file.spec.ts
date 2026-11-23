@@ -51,6 +51,28 @@ describe('the permissions of the .env file written by the CLI', function () {
       expect(fs.readFileSync(envPath(), 'utf-8')).to.equal('SECRET=abc\n')
     })
 
+    it('restricts an existing file before the new content is written into it', () => {
+      fs.writeFileSync(envPath(), 'OLD=1\n')
+      fs.chmodSync(envPath(), 0o644)
+
+      // What another account could read at the moment the new content arrives.
+      let modeWhenWritten: number | undefined
+      const write = fs.writeFileSync
+      ;(fs as any).writeFileSync = (...args: Parameters<typeof fs.writeFileSync>) => {
+        modeWhenWritten = modeOf(envPath())
+        return write(...args)
+      }
+
+      try {
+        writeEnvFile(envPath(), 'SECRET=abc\n')
+      } finally {
+        ;(fs as any).writeFileSync = write
+      }
+
+      expect(modeWhenWritten).to.equal(0o600)
+      expect(fs.readFileSync(envPath(), 'utf-8')).to.equal('SECRET=abc\n')
+    })
+
     it('does not fail when the permissions cannot be changed', () => {
       const chmod = fs.chmodSync
       ;(fs as any).chmodSync = () => {

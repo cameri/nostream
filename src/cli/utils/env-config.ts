@@ -208,14 +208,23 @@ const PRIVATE_FILE_MODE = 0o600
 
 /** Writes the .env file readable by its owner only, whether it exists already or not. */
 export const writeEnvFile = (envPath: string, content: string): void => {
-  // The mode applies when the file is created, so a new file is never readable by others, not even briefly.
+  // The mode option of the write only applies when the file is created, so a file that exists already is restricted
+  // first, before the new content is written into it. A file that does not exist yet fails here, which is fine.
+  restrictEnvFile(envPath)
+
+  // A new file is created with the private mode, so it is never readable by others, not even briefly.
   fs.writeFileSync(envPath, content, { encoding: 'utf-8', mode: PRIVATE_FILE_MODE })
 
-  // It does not change a file that exists already, which keeps whatever mode it had.
+  // Sets exactly the private mode on a new file as well, in case the umask left it with fewer bits.
+  restrictEnvFile(envPath)
+}
+
+const restrictEnvFile = (envPath: string): void => {
   try {
     fs.chmodSync(envPath, PRIVATE_FILE_MODE)
   } catch {
-    // Best effort: a file system without Unix permissions, or a file we do not own, must not stop the write.
+    // Best effort: a missing file, a file system without Unix permissions, or a file we do not own must not stop
+    // the write.
   }
 }
 
