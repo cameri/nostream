@@ -5,6 +5,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import Sinon from 'sinon'
+import yaml from 'js-yaml'
 
 import { hashAdminPassword } from '../../../src/utils/admin-password'
 import { CacheAdminSessionRevocations } from '../../../src/utils/admin-session-revocations'
@@ -253,6 +254,104 @@ describe('admin settings API', () => {
     const settingsRaw = fs.readFileSync(getSettingsFilePath(), 'utf-8')
     expect(settingsRaw).to.include('payments:')
     expect(settingsRaw).to.include('enabled: true')
+  })
+
+  describe('the admin password hash', () => {
+    const otherHash = () => hashAdminPassword('another-password')
+
+    const startWithPassword = async () => {
+      const passwordHash = hashAdminPassword('settings-password')
+      const admin = { enabled: true, passwordHash, sessionTtlSeconds: 3600 }
+      saveSettings({ ...loadDefaults(), admin })
+      const baseUrl = await startServer({ admin })
+      const cookie = await login(baseUrl)
+
+      return { baseUrl, cookie, passwordHash, admin }
+    }
+
+    const patch = (baseUrl: string, cookie: string, body: unknown) =>
+      axios.patch(`${baseUrl}/settings`, body, {
+        headers: { cookie, 'content-type': 'application/json' },
+        validateStatus: () => true,
+      })
+
+    const storedHash = () => (yaml.load(fs.readFileSync(getSettingsFilePath(), 'utf-8')) as any).admin?.passwordHash
+
+    it('refuses to change it by its own path', async () => {
+      const { baseUrl, cookie, passwordHash } = await startWithPassword()
+
+      const response = await patch(baseUrl, cookie, { path: 'admin.passwordHash', value: otherHash() })
+
+      expect(response.status).to.equal(400)
+      expect(storedHash()).to.equal(passwordHash)
+    })
+
+    it('refuses to change it by replacing the admin object that holds it', async () => {
+      const { baseUrl, cookie, admin, passwordHash } = await startWithPassword()
+
+      const response = await patch(baseUrl, cookie, { path: 'admin', value: { ...admin, passwordHash: otherHash() } })
+
+      expect(response.status, JSON.stringify(response.data)).to.equal(400)
+      expect(response.data.issues).to.deep.equal([{ path: 'admin.passwordHash', message: 'Path is write-protected' }])
+      expect(storedHash()).to.equal(passwordHash)
+    })
+
+    it('refuses to remove it by replacing the admin object without it', async () => {
+      const { baseUrl, cookie, passwordHash } = await startWithPassword()
+
+      const response = await patch(baseUrl, cookie, {
+        path: 'admin',
+        value: { enabled: true, sessionTtlSeconds: 3600 },
+      })
+
+      expect(response.status).to.equal(400)
+      expect(storedHash()).to.equal(passwordHash)
+    })
+
+    it('refuses to write the redacted placeholder over it', async () => {
+      const { baseUrl, cookie, admin, passwordHash } = await startWithPassword()
+
+      const response = await patch(baseUrl, cookie, { path: 'admin', value: { ...admin, passwordHash: '***' } })
+
+      expect(response.status).to.equal(400)
+      expect(storedHash()).to.equal(passwordHash)
+    })
+
+    it('refuses a batch in which one change replaces the admin object, and saves none of it', async () => {
+      const { baseUrl, cookie, admin, passwordHash } = await startWithPassword()
+      const settingsBefore = fs.readFileSync(getSettingsFilePath(), 'utf-8')
+
+      const response = await patch(baseUrl, cookie, {
+        changes: [
+          { path: 'payments.enabled', value: true },
+          { path: 'admin', value: { ...admin, passwordHash: otherHash() } },
+        ],
+      })
+
+      expect(response.status).to.equal(400)
+      expect(storedHash()).to.equal(passwordHash)
+      // The whole file, so a change of the batch that was saved before the refusal would show too.
+      expect(fs.readFileSync(getSettingsFilePath(), 'utf-8')).to.equal(settingsBefore)
+      expect((yaml.load(settingsBefore) as any).payments?.enabled).not.to.equal(true)
+    })
+
+    it('still lets an admin setting be changed on its own path', async () => {
+      const { baseUrl, cookie, passwordHash } = await startWithPassword()
+
+      const response = await patch(baseUrl, cookie, { path: 'admin.sessionTtlSeconds', value: 7200 })
+
+      expect(response.status, JSON.stringify(response.data)).to.equal(200)
+      expect(storedHash()).to.equal(passwordHash)
+    })
+
+    it('still lets the admin object be replaced when the hash in it is the one stored', async () => {
+      const { baseUrl, cookie, admin, passwordHash } = await startWithPassword()
+
+      const response = await patch(baseUrl, cookie, { path: 'admin', value: { ...admin, sessionTtlSeconds: 7200 } })
+
+      expect(response.status, JSON.stringify(response.data)).to.equal(200)
+      expect(storedHash()).to.equal(passwordHash)
+    })
   })
 
   it('atomically applies staged changes with a backup and audit entry', async () => {

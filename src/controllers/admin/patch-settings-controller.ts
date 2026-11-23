@@ -15,6 +15,7 @@ import {
   withSettingsWriteLock,
 } from '../../utils/settings-config'
 import {
+  changedWriteProtectedSettingsPaths,
   isWriteProtectedSettingsPath,
   redactSettingsValue,
 } from '../../utils/settings-redaction'
@@ -59,10 +60,23 @@ export class PatchAdminSettingsController implements IController {
       | { ok: false; issues: Array<{ path: string; message: string }> }
     >(() => {
       const userSettings = loadUserSettings() as unknown as Record<string, unknown>
+      // Taken before the changes are applied, in case applying them edits this object in place.
+      const protectedBefore = JSON.parse(JSON.stringify(userSettings)) as Record<string, unknown>
       const nextUserSettings = changes.reduce(
         (settings, change) => setByPath(settings, change.path, change.value),
         userSettings,
       )
+
+      // The paths of the request were checked above, but a change to a path that holds a protected value, such as
+      // replacing `admin`, writes that value too. Compare what would be saved with what is stored.
+      const changedProtected = changedWriteProtectedSettingsPaths(protectedBefore, nextUserSettings)
+      if (changedProtected.length > 0) {
+        return {
+          ok: false as const,
+          issues: changedProtected.map((path) => ({ path, message: 'Path is write-protected' })),
+        }
+      }
+
       const merged = loadMergedSettings() as unknown as Record<string, unknown>
       const mergedNext = changes.reduce(
         (settings, change) => setByPath(settings, change.path, getByPath(nextUserSettings, change.path)),
