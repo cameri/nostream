@@ -8,7 +8,7 @@ import { IWebSocketAdapter } from '../@types/adapters'
 import type { IPeeringAttestationRepository } from '../@types/repositories'
 import { Settings } from '../@types/settings'
 import { WebSocketAdapterEvent } from '../constants/adapter'
-import { findConfiguredPeeringPeer, isConfiguredPeeringPeer } from '../utils/peering-auth'
+import { findConfiguredPeeringPeer, isConfiguredPeeringPeer, parsePeeringPeerPubkey } from '../utils/peering-auth'
 import { peeringTermsHash, samePeeringScopes } from '../utils/peering-attestation'
 
 const logger = createLogger('auth-message-handler')
@@ -88,8 +88,15 @@ export class AuthMessageHandler implements IMessageHandler {
       return
     }
 
+    const withhold = (): void => {
+      // A re-AUTH must not leave an earlier peer identity alive after the
+      // agreement stops matching.
+      this.webSocket.clearPeerPubkey()
+    }
+
     if (!this.peeringAttestations) {
       logger('peer %s authenticated but no attestation store is available', pubkey)
+      withhold()
       return
     }
 
@@ -100,26 +107,35 @@ export class AuthMessageHandler implements IMessageHandler {
         // a fresh owner signature before peer treatment resumes.
         const currentTerms = this.settings().peering?.terms ?? []
         const currentScopes = this.settings().peering?.scopes ?? []
-        const configuredOwner = findConfiguredPeeringPeer(this.settings(), pubkey)?.ownerPubkey
+        const configuredOwnerRaw = findConfiguredPeeringPeer(this.settings(), pubkey)?.ownerPubkey
+        const configuredOwner = configuredOwnerRaw ? parsePeeringPeerPubkey(configuredOwnerRaw) : undefined
         const ownerMatches =
-          !configuredOwner || attestation.ownerPubkey?.toLowerCase() === configuredOwner.toLowerCase()
+          !configuredOwnerRaw ||
+          (configuredOwner !== undefined && attestation.ownerPubkey?.toLowerCase() === configuredOwner)
         if (
           ownerMatches &&
           attestation.termsHash?.toLowerCase() === peeringTermsHash(currentTerms) &&
           samePeeringScopes(attestation.scopes ?? [], currentScopes)
         ) {
-          this.webSocket.setPeerPubkey(pubkey)
+          this.webSocket.setPeerPubkey(pubkey, {
+            termsHash: attestation.termsHash,
+            scopes: attestation.scopes ?? [],
+            ownerPubkey: attestation.ownerPubkey,
+          })
           return
         }
         logger('peer %s attestation no longer matches the advertised terms or scopes', pubkey)
+        withhold()
         return
       }
     } catch (error) {
       logger('unable to read peering attestation for %s: %o', pubkey, error)
+      withhold()
       return
     }
 
     logger('peer %s authenticated but has no accepted owner attestation', pubkey)
+    withhold()
   }
 
   private sendResult(eventId: string, success: boolean, message: string): void {

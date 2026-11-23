@@ -84,6 +84,7 @@ describe('AuthMessageHandler', () => {
       addAuthenticatedPubkey: Sinon.stub().returns(true),
       getPeerPubkey: Sinon.stub().returns(undefined),
       setPeerPubkey: Sinon.stub(),
+      clearPeerPubkey: Sinon.stub(),
     } as any as IWebSocketAdapter
 
     settingsFactory = Sinon.stub().returns({

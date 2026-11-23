@@ -27,6 +27,7 @@ export const sendPeeringRequest = (
 ): Promise<PeeringRequestReply> =>
   new Promise((resolve) => {
     let settled = false
+    let acknowledged = false
     let acceptance: Event | undefined
     let finishTimer: NodeJS.Timeout | undefined
 
@@ -41,6 +42,7 @@ export const sendPeeringRequest = (
       clearTimeout(timer)
       socket.off('message', onMessage)
       socket.off('close', onClose)
+      socket.off('error', onError)
       resolve(reply)
     }
 
@@ -51,6 +53,15 @@ export const sendPeeringRequest = (
         ? { acceptance: { event: acceptance, acceptance: acceptancePayload(acceptance) as PeeringAcceptancePayload } }
         : {}),
     })
+
+    const succeedOrWait = (): void => {
+      if (acceptance) {
+        finish(accept())
+        return
+      }
+      // The acceptance may follow the OK; give the relay one frame of grace.
+      finishTimer = setTimeout(() => finish(accept()), 500)
+    }
 
     const onMessage = (data: RawData): void => {
       let message: unknown
@@ -68,8 +79,8 @@ export const sendPeeringRequest = (
           finish({ ok: false, message: typeof message[3] === 'string' ? message[3] : 'request rejected' })
           return
         }
-        // The acceptance may follow the OK; give the relay one frame of grace.
-        finishTimer = setTimeout(() => finish(accept()), 500)
+        acknowledged = true
+        succeedOrWait()
         return
       }
 
@@ -77,15 +88,27 @@ export const sendPeeringRequest = (
         const event = message[2] as Event
         if (event.kind === 28938) {
           acceptance = event
+          if (acknowledged) {
+            finish(accept())
+          }
         }
       }
     }
 
-    const onClose = (): void => finish({ ok: false, message: 'connection closed before the reply' })
-    const timer = setTimeout(() => finish({ ok: false, message: 'timed out waiting for the peer' }), timeoutMs)
+    const onClose = (): void =>
+      finish(acknowledged ? accept() : { ok: false, message: 'connection closed before the reply' })
+    const onError = (error: Error): void =>
+      finish(
+        acknowledged ? accept() : { ok: false, message: error instanceof Error ? error.message : 'connection failed' },
+      )
+    const timer = setTimeout(
+      () => finish(acknowledged ? accept() : { ok: false, message: 'timed out waiting for the peer' }),
+      timeoutMs,
+    )
 
     socket.on('message', onMessage)
     socket.on('close', onClose)
+    socket.on('error', onError)
     socket.send(JSON.stringify(['EVENT', request]))
   })
 
@@ -124,7 +147,6 @@ export const runPeeringRequest = async (
   const loadSettings = dependencies.loadSettings ?? loadMergedSettings
   const fetchAdvertisement = dependencies.fetchAdvertisement ?? fetchPeeringAdvertisement
   const authenticate = dependencies.authenticate ?? authenticateToPeeringRelay
-  const relayPrivateKey = dependencies.relayPrivateKey ?? (() => getRelayPrivateKey())
   const send = dependencies.send ?? sendPeeringRequest
 
   const ownerKey = options.ownerKey ?? process.env.PEERING_OWNER_PRIVATE_KEY
@@ -136,6 +158,7 @@ export const runPeeringRequest = async (
   if (!settings.info?.relay_url) {
     throw new Error('info.relay_url is required to identify this relay')
   }
+  const relayPrivateKey = dependencies.relayPrivateKey ?? (() => getRelayPrivateKey(settings.info.relay_url))
 
   const advertisement: PeeringAdvertisement = await fetchAdvertisement(options.relayUrl)
   if (!advertisement.enabled) {
@@ -174,20 +197,26 @@ export const runPeeringRequest = async (
     }
   }
 
-  if (!reply.ok) {
-    logError(`peer rejected the peering request: ${reply.message}`)
+  const fail = (message: string): number => {
+    if (options.json) {
+      process.stderr.write(`${JSON.stringify({ error: { message, code: 1 } })}\n`)
+    } else {
+      logError(message)
+    }
     return 1
+  }
+
+  if (!reply.ok) {
+    return fail(`peer rejected the peering request: ${reply.message}`)
   }
 
   if (reply.acceptance) {
     const verified = await verifyPeeringAcceptanceEvent(reply.acceptance.event, request)
     if (verified.ok === false) {
-      logError(`peer returned an invalid acceptance: ${verified.reason}`)
-      return 1
+      return fail(`peer returned an invalid acceptance: ${verified.reason}`)
     }
     if (reply.acceptance.event.pubkey.toLowerCase() !== advertisement.self.toLowerCase()) {
-      logError('peer returned an acceptance signed by a different relay key')
-      return 1
+      return fail('peer returned an acceptance signed by a different relay key')
     }
   }
 

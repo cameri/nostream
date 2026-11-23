@@ -30,7 +30,7 @@ export class PeeringRequestEventStrategy implements IEventStrategy<Event, Promis
     private readonly settings: () => Settings,
     private readonly attestations?: IPeeringAttestationRepository,
     private readonly now: () => Date = () => new Date(),
-    private readonly relayPrivateKey: () => string = () => getRelayPrivateKey(),
+    private readonly relayPrivateKey?: () => string,
   ) {}
 
   public async execute(event: Event): Promise<void> {
@@ -55,7 +55,7 @@ export class PeeringRequestEventStrategy implements IEventStrategy<Event, Promis
       return
     }
 
-    const relayPrivateKey = this.relayPrivateKey()
+    const relayPrivateKey = this.relayPrivateKey?.() ?? getRelayPrivateKey(settings.info.relay_url)
     const receiverPubkey = (resolveRelaySelfPubkey(settings) ?? getPublicKey(relayPrivateKey)).toLowerCase()
     const verified = await verifyPeeringRequestEvent(event, {
       authenticatedPubkeys: this.webSocket.getAuthenticatedPubkeys(),
@@ -105,7 +105,11 @@ export class PeeringRequestEventStrategy implements IEventStrategy<Event, Promis
 
     // A required-attestation relay withheld peer treatment at AUTH; the valid
     // request is what unlocks it for this session.
-    this.webSocket.setPeerPubkey(verified.request.relay_pubkey)
+    this.webSocket.setPeerPubkey(verified.request.relay_pubkey, {
+      termsHash: verified.request.terms_hash,
+      scopes: verified.request.scopes,
+      ownerPubkey: event.pubkey,
+    })
 
     try {
       const acceptance = await buildPeeringAcceptanceEvent({

@@ -191,7 +191,7 @@ export class EventMessageHandler implements IMessageHandler {
     // any real work. Note: a duplicate/no-op write still counts here, since
     // dedup is decided later inside the event strategy's own execute().
     const powSettings = this.settings().limits?.event?.pow
-    if (powSettings?.enabled) {
+    if (powSettings?.enabled && event.kind !== EventKinds.PEERING_REQUEST) {
       recordAdaptivePowEvent(powSettings.periodMs)
     }
 

@@ -45,6 +45,8 @@ const adapterFor = (authenticated: string[] = []) => {
   const adapter = {
     emit,
     setPeerPubkey,
+    clearPeerPubkey: Sinon.stub(),
+    getClientId: Sinon.stub().returns('peering-attestation-client'),
     getPeerPubkey: Sinon.stub().returns(undefined),
     getAuthenticatedPubkeys: Sinon.stub().returns(new Set(authenticated)),
     getChallenge: Sinon.stub().returns(challenge),

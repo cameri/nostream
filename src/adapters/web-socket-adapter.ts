@@ -5,6 +5,7 @@ import { EventEmitter } from 'stream'
 import { WebSocket } from 'ws'
 import { ZodError } from 'zod'
 import { IWebSocketAdapter, IWebSocketServerAdapter } from '../@types/adapters'
+import type { PeeringAttestationAgreement } from '../@types/peering'
 import { ContextMetadata, Factory } from '../@types/base'
 import { Event } from '../@types/event'
 import { IAbortable, IMessageHandler } from '../@types/message-handlers'
@@ -32,7 +33,8 @@ import { NegentropySessions } from '../utils/negentropy-sessions'
 import { createReadAuthorizationGuard } from '../utils/nip42'
 import { Nip42SessionManager } from '../utils/nip42-session'
 import { messageLimitsFor } from '../utils/peer-limits'
-import { isConfiguredPeeringPeer } from '../utils/peering-auth'
+import { findConfiguredPeeringPeer, isConfiguredPeeringPeer, parsePeeringPeerPubkey } from '../utils/peering-auth'
+import { peeringTermsHash, samePeeringScopes } from '../utils/peering-attestation'
 import { PeeringRequestStatsStore } from '../utils/peering-request-stats'
 import { attemptValidation } from '../utils/validation'
 
@@ -81,6 +83,8 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
   private readonly session: Nip42SessionManager
   /** Configured peering peer proven by AUTH on this socket, if any. */
   private peerPubkey: string | undefined
+  /** Agreement the peer proved at AUTH; rechecked against live settings on read. */
+  private peerAgreement: PeeringAttestationAgreement | undefined
   // NIP-77
   private readonly negentropySessions: NegentropySessions
 
@@ -227,9 +231,7 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     this.sendMessage(
       createClosedMessage(
         subscriptionId,
-        checkFailed
-          ? 'error: unable to check peering access'
-          : 'payment-required: peering access expired',
+        checkFailed ? 'error: unable to check peering access' : 'payment-required: peering access expired',
       ),
     )
   }
@@ -379,20 +381,44 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     // Peer status lives and dies with its AUTH session, and with the operator's
     // current trust list: disabling or removing the peer revokes it on the next
     // read even if the socket stays authenticated.
+    const settings = this.settings()
     if (
       !this.session.getAuthenticatedPubkeys().has(this.peerPubkey) ||
-      !isConfiguredPeeringPeer(this.settings(), this.peerPubkey)
+      !isConfiguredPeeringPeer(settings, this.peerPubkey)
     ) {
-      this.peerPubkey = undefined
+      this.clearPeerPubkey()
       return undefined
+    }
+
+    if ((settings.peering?.ownerAttestation ?? 'waived') === 'required') {
+      const configuredOwner = parsePeeringPeerPubkey(findConfiguredPeeringPeer(settings, this.peerPubkey)?.ownerPubkey)
+      const agreement = this.peerAgreement
+      const currentTerms = settings.peering?.terms ?? []
+      const currentScopes = settings.peering?.scopes ?? []
+      if (
+        !agreement ||
+        agreement.termsHash?.toLowerCase() !== peeringTermsHash(currentTerms) ||
+        !samePeeringScopes(agreement.scopes, currentScopes) ||
+        (configuredOwner !== undefined && agreement.ownerPubkey.toLowerCase() !== configuredOwner)
+      ) {
+        this.clearPeerPubkey()
+        return undefined
+      }
     }
 
     return this.peerPubkey
   }
 
-  public setPeerPubkey(pubkey: string): void {
+  public setPeerPubkey(pubkey: string, agreement?: PeeringAttestationAgreement): void {
     const authenticated = this.session.getAuthenticatedPubkeys().has(pubkey)
-    this.peerPubkey = authenticated && isConfiguredPeeringPeer(this.settings(), pubkey) ? pubkey : undefined
+    const allowed = authenticated && isConfiguredPeeringPeer(this.settings(), pubkey)
+    this.peerPubkey = allowed ? pubkey : undefined
+    this.peerAgreement = allowed ? agreement : undefined
+  }
+
+  public clearPeerPubkey(): void {
+    this.peerPubkey = undefined
+    this.peerAgreement = undefined
   }
 
   private async onClientMessage(raw: Buffer) {

@@ -6,6 +6,7 @@ import type { Event, UnidentifiedEvent, UnsignedEvent } from '../@types/event'
 import type { PeeringAcceptancePayload, PeeringRequestPayload } from '../@types/peering'
 import type { PeeringScope, PeeringTerm } from '../@types/settings'
 import { EventKinds, EventTags } from '../constants/base'
+import { parsePeeringPeerPubkey } from './peering-auth'
 import {
   getEventProofOfWork,
   getPublicKey,
@@ -71,8 +72,25 @@ const acceptancePayloadSchema = z
 const kindStart = (kind: number | [number, number]): number => (Array.isArray(kind) ? kind[0] : kind)
 const kindEnd = (kind: number | [number, number]): number => (Array.isArray(kind) ? kind[1] : kind)
 
-const canonicalKind = (kind: number | [number, number]): number | [number, number] =>
-  Array.isArray(kind) ? [kind[0], kind[1]] : kind
+const canonicalKind = (kind: number | [number, number]): number | [number, number] => {
+  if (!Array.isArray(kind)) {
+    return kind
+  }
+
+  return kind[0] === kind[1] ? kind[0] : [kind[0], kind[1]]
+}
+
+/** Relay URLs are accepted as http(s) in settings but peering payloads use ws(s). */
+export const normalizePeeringRelayUrl = (value: string): string => {
+  const trimmed = value.trim()
+  if (/^https:\/\//i.test(trimmed)) {
+    return `wss://${trimmed.slice('https://'.length)}`
+  }
+  if (/^http:\/\//i.test(trimmed)) {
+    return `ws://${trimmed.slice('http://'.length)}`
+  }
+  return trimmed
+}
 
 /** Stable terms shape used for hashing and equality checks. */
 export const canonicalPeeringTerms = (terms: PeeringTerm[]): PeeringTerm[] =>
@@ -171,7 +189,7 @@ export const buildPeeringRequestEvent = async (options: BuildPeeringRequestOptio
 
   const payload: PeeringRequestPayload = {
     relay_pubkey: relayPubkey,
-    relay_url: options.relayUrl,
+    relay_url: normalizePeeringRelayUrl(options.relayUrl),
     scopes: canonicalPeeringScopes(options.scopes),
     terms: canonicalPeeringTerms(options.terms),
     terms_hash: peeringTermsHash(options.terms),
@@ -257,8 +275,14 @@ export const verifyPeeringRequestEvent = async (
     return { ok: false, reason: 'auth-required: peering request relay key is not authenticated' }
   }
 
-  if (options.expectedOwnerPubkey && event.pubkey.toLowerCase() !== options.expectedOwnerPubkey.toLowerCase()) {
-    return { ok: false, reason: 'invalid: request owner does not match the configured owner' }
+  if (options.expectedOwnerPubkey) {
+    const expectedOwner = parsePeeringPeerPubkey(options.expectedOwnerPubkey)
+    if (!expectedOwner) {
+      return { ok: false, reason: 'invalid: configured owner pubkey is malformed' }
+    }
+    if (event.pubkey.toLowerCase() !== expectedOwner) {
+      return { ok: false, reason: 'invalid: request owner does not match the configured owner' }
+    }
   }
 
   const target = event.tags.find(
@@ -307,7 +331,7 @@ export const buildPeeringAcceptanceEvent = async (options: BuildPeeringAcceptanc
   const payload: PeeringAcceptancePayload = {
     request_id: options.request.id,
     relay_pubkey: relayPubkey,
-    relay_url: options.relayUrl,
+    relay_url: normalizePeeringRelayUrl(options.relayUrl),
     terms_hash: options.acceptance.terms_hash,
     accepted_at: options.createdAt ?? Math.floor(Date.now() / 1000),
   }

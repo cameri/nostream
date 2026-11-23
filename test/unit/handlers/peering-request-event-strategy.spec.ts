@@ -5,6 +5,7 @@ import sinonChai from 'sinon-chai'
 import type { IWebSocketAdapter } from '../../../src/@types/adapters'
 import type { Settings } from '../../../src/@types/settings'
 import { WebSocketAdapterEvent } from '../../../src/constants/adapter'
+import { PeeringAcceptanceEventStrategy } from '../../../src/handlers/event-strategies/peering-acceptance-event-strategy'
 import { PeeringRequestEventStrategy } from '../../../src/handlers/event-strategies/peering-request-event-strategy'
 import { buildPeeringRequestEvent } from '../../../src/utils/peering-attestation'
 import { getPublicKey } from '../../../src/utils/event'
@@ -114,6 +115,47 @@ describe('PeeringRequestEventStrategy', () => {
     expect(ok?.[3]).to.include('owner')
   })
 
+  it('rejects when the attestation store is unavailable', async () => {
+    const event = await requestFor()
+    const strategy = new PeeringRequestEventStrategy(
+      webSocket,
+      () => settingsFor(),
+      undefined,
+      () => now,
+      () => receiverKey,
+    )
+
+    await strategy.execute(event)
+
+    expect(setPeerPubkey).not.to.have.been.called
+    const ok = emit
+      .getCalls()
+      .map((call) => call.args[1])
+      .find((message) => message[0] === 'OK')
+    expect(ok?.[3]).to.include('unavailable')
+  })
+
+  it('rejects when the attestation cannot be stored', async () => {
+    const event = await requestFor()
+    attestations.save.rejects(new Error('database down'))
+    const strategy = new PeeringRequestEventStrategy(
+      webSocket,
+      () => settingsFor(),
+      attestations,
+      () => now,
+      () => receiverKey,
+    )
+
+    await strategy.execute(event)
+
+    expect(setPeerPubkey).not.to.have.been.called
+    const ok = emit
+      .getCalls()
+      .map((call) => call.args[1])
+      .find((message) => message[0] === 'OK')
+    expect(ok?.[3]).to.include('unable to record')
+  })
+
   it('rejects a valid request from a relay that is not configured', async () => {
     const event = await requestFor()
     const strategy = new PeeringRequestEventStrategy(
@@ -176,5 +218,19 @@ describe('PeeringRequestEventStrategy', () => {
       .map((call) => call.args[1])
       .find((message) => message[0] === 'OK')
     expect(ok?.[3]).to.include('peering is not enabled')
+  })
+})
+
+describe('PeeringAcceptanceEventStrategy', () => {
+  it('rejects a client-published acceptance', async () => {
+    const emit = Sinon.stub()
+    const strategy = new PeeringAcceptanceEventStrategy({ emit } as any)
+
+    await strategy.execute({ id: 'event-1' } as any)
+
+    const ok = emit.firstCall.args[1]
+    expect(ok[0]).to.equal('OK')
+    expect(ok[2]).to.equal(false)
+    expect(ok[3]).to.include('issued by the relay')
   })
 })

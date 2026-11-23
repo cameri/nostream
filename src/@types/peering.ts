@@ -35,6 +35,9 @@ export interface PeeringAcceptancePayload {
   accepted_at: number
 }
 
+/** The agreement a required-policy socket must still match. */
+export type PeeringAttestationAgreement = Pick<PeeringAttestation, 'termsHash' | 'scopes' | 'ownerPubkey'>
+
 /** The latest accepted owner attestation for one relay key. */
 export interface PeeringAttestation {
   relayPubkey: Pubkey
