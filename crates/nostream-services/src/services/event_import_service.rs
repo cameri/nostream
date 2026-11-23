@@ -1,7 +1,8 @@
 //! `event-import-service.ts`: the streaming import, its validation and the batch persister.
 //!
-//! Both readers stream — a JSONL line at a time, and a JSON array element at a time through
-//! `serde_json`'s streaming deserializer — so the file is never materialised as one value.
+//! Both readers stream — a JSONL line at a time, and a JSON array element at a time — so the
+//! file is never materialised as one value. The array reader finds each element's end before
+//! handing it to `serde_json`, so an element spanning many reads is parsed once (#1101).
 
 use std::pin::Pin;
 use std::sync::Arc;
@@ -262,6 +263,141 @@ fn validate(event: Event) -> Result<Event, String> {
     Ok(event)
 }
 
+/// The element size at which an incomplete element is first handed to the parser anyway.
+const FIRST_PROBE: usize = 64 * 1024;
+
+/// Finds where one array element ends, carrying its state across reads, so a growing buffer is
+/// scanned once in total and the element is parsed once its last byte has arrived.
+///
+/// It tracks only what can hide an element's end: string contents (with escapes) and bracket
+/// depth. It does not judge the element's grammar; that is the parser's job. A scan can end too
+/// early, which only means the parser sees and names the fault sooner. It can also end too
+/// late, or never: a malformed element whose brackets do not balance looks unfinished until the
+/// end of input. So the reader also parses an unfinished element each time it has doubled
+/// since the last try (from [`FIRST_PROBE`]). That bounds what a malformed element buffers to
+/// about twice the offset of its fault, and keeps the parsing linear: the tries sum to less
+/// than twice the element.
+#[derive(Debug)]
+struct ElementEnd {
+    /// Bytes of the element already scanned, counted from its first byte.
+    scanned: usize,
+    depth: usize,
+    in_string: bool,
+    escaped: bool,
+    /// The element is a number or a literal, which ends at the first byte that cannot be in one.
+    scalar: bool,
+    /// The element's end has been found.
+    found: bool,
+    /// The element size at which an unfinished element is next handed to the parser.
+    next_probe: usize,
+}
+
+impl Default for ElementEnd {
+    fn default() -> Self {
+        Self {
+            scanned: 0,
+            depth: 0,
+            in_string: false,
+            escaped: false,
+            scalar: false,
+            found: false,
+            next_probe: FIRST_PROBE,
+        }
+    }
+}
+
+impl ElementEnd {
+    /// Scans the bytes of `element` not seen before, and reports whether the element's end is
+    /// among the bytes seen so far. `element` starts at the element's first byte.
+    fn reached(&mut self, element: &[u8]) -> bool {
+        while !self.found {
+            let Some(&byte) = element.get(self.scanned) else {
+                break;
+            };
+
+            if self.scanned == 0 {
+                // The first byte decides the element's kind.
+                match byte {
+                    b'{' | b'[' => self.depth = 1,
+                    b'"' => self.in_string = true,
+                    _ => self.scalar = true,
+                }
+            } else if self.in_string {
+                if self.escaped {
+                    self.escaped = false;
+                } else if byte == b'\\' {
+                    self.escaped = true;
+                } else if byte == b'"' {
+                    self.in_string = false;
+                    self.found = self.depth == 0;
+                }
+            } else if !self.scalar {
+                match byte {
+                    b'"' => self.in_string = true,
+                    b'{' | b'[' => self.depth += 1,
+                    b'}' | b']' => {
+                        // Saturating: a close with nothing open ends the element here, and
+                        // the parser names it.
+                        self.depth = self.depth.saturating_sub(1);
+                        self.found = self.depth == 0;
+                    }
+                    _ => {}
+                }
+            }
+
+            // A scalar ends before the first byte that cannot be in it.
+            if self.scalar && ends_scalar(byte) {
+                self.found = true;
+                break;
+            }
+
+            self.scanned += 1;
+        }
+
+        self.found
+    }
+
+    /// The parser wanted more bytes than the scan expected: keep scanning past this point.
+    ///
+    /// A balanced container or a closed string cannot end early, so in practice this is a
+    /// scalar the parser read past its delimiter. `scanned` sits on that delimiter; step over
+    /// it, or the next scan would stop on it again.
+    fn resume(&mut self) {
+        if !self.found {
+            return;
+        }
+
+        self.found = false;
+
+        if self.scalar {
+            self.scanned += 1;
+        }
+    }
+
+    /// Whether an unfinished element of `len` bytes is due a parse, the try that catches a
+    /// malformed element the scan cannot see the end of. Each try doubles the next threshold.
+    ///
+    /// Scalars are probed too, at a higher price: a prefix of a number parses as a whole value,
+    /// and the separator check then names the byte after it, so a number longer than
+    /// [`FIRST_PROBE`] is refused rather than read forever. Without this probe a scalar made of
+    /// bytes that cannot end one — `[` followed by megabytes of `x` — buffered to the end of
+    /// input before the parser saw its first byte.
+    fn probe_due(&mut self, len: usize) -> bool {
+        if len < self.next_probe {
+            return false;
+        }
+
+        self.next_probe = len.saturating_mul(2);
+
+        true
+    }
+}
+
+/// A byte that cannot continue a number or a literal.
+fn ends_scalar(byte: u8) -> bool {
+    byte.is_ascii_whitespace() || matches!(byte, b',' | b']' | b'}' | b'[' | b'{' | b'"')
+}
+
 /// An incremental JSON-array reader: it parses one element at a time from a growing buffer and
 /// keeps only the unconsumed tail.
 struct ArrayStream<R> {
@@ -272,6 +408,15 @@ struct ArrayStream<R> {
     done: bool,
     /// Set once a comma was consumed: a comma must be followed by an element.
     expect_element: bool,
+    /// Where the current element ends, as far as the bytes read so far show.
+    element_end: ElementEnd,
+    /// How many times an element was handed to the parser, so a test can prove each element
+    /// is parsed once however many reads it spans.
+    #[cfg(test)]
+    parse_attempts: usize,
+    /// The bytes handed to the parser over all its tries, so a test can prove parsing is linear.
+    #[cfg(test)]
+    parsed_bytes: usize,
 }
 
 impl<R: AsyncRead + Unpin> ArrayStream<R> {
@@ -283,6 +428,11 @@ impl<R: AsyncRead + Unpin> ArrayStream<R> {
             opened: false,
             done: false,
             expect_element: false,
+            element_end: ElementEnd::default(),
+            #[cfg(test)]
+            parse_attempts: 0,
+            #[cfg(test)]
+            parsed_bytes: 0,
         }
     }
 
@@ -390,6 +540,27 @@ impl<R: AsyncRead + Unpin> ArrayStream<R> {
                 ));
             }
 
+            // Parse once the element is complete, not after every read: a parse of a partial
+            // element fails at its end, and retrying after every read re-parses the whole
+            // prefix each time. An unfinished element — scalar included — is still tried each
+            // time it doubles, so a malformed one fails without the reader buffering the rest
+            // of the input.
+            let element = &self.buffer[self.position..];
+            let element_len = element.len();
+
+            if !self.element_end.reached(element)
+                && !self.element_end.probe_due(element_len)
+                && self.read_more().await?
+            {
+                continue;
+            }
+
+            #[cfg(test)]
+            {
+                self.parse_attempts += 1;
+                self.parsed_bytes += element_len;
+            }
+
             let rest = &self.buffer[self.position..];
             let mut values =
                 serde_json::Deserializer::from_slice(rest).into_iter::<serde_json::Value>();
@@ -397,6 +568,7 @@ impl<R: AsyncRead + Unpin> ArrayStream<R> {
             match values.next() {
                 Some(Ok(value)) => {
                     self.position += values.byte_offset();
+                    self.element_end = ElementEnd::default();
 
                     // Consume the separator, so the next call starts at the next element.
                     loop {
@@ -435,6 +607,8 @@ impl<R: AsyncRead + Unpin> ArrayStream<R> {
                             "Invalid JSON array input: {error}"
                         )));
                     }
+
+                    self.element_end.resume();
                 }
                 Some(Err(error)) => {
                     return Err(ServicesError::Import(format!(
@@ -566,5 +740,195 @@ impl EventBatchPersister for RepositoryEventPersister {
 
             Ok(inserted as f64)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    use tokio::io::{AsyncRead, ReadBuf};
+
+    use super::ArrayStream;
+
+    /// Hands out its input one byte per read, so every element boundary falls between reads.
+    struct OneByteAtATime<'a>(&'a [u8]);
+
+    impl AsyncRead for OneByteAtATime<'_> {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            if let Some((&first, rest)) = self.0.split_first() {
+                buf.put_slice(&[first]);
+                self.0 = rest;
+            }
+
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    async fn read_all<R: AsyncRead + Unpin>(
+        stream: &mut ArrayStream<R>,
+    ) -> Result<Vec<serde_json::Value>, String> {
+        stream.open().await.map_err(|error| error.to_string())?;
+        let mut values = Vec::new();
+
+        while let Some(value) = stream
+            .next_value()
+            .await
+            .map_err(|error| error.to_string())?
+        {
+            values.push(value);
+        }
+
+        Ok(values)
+    }
+
+    /// An array whose one element is far larger than the 8 KiB read size.
+    fn one_large_element(content_len: usize) -> Vec<u8> {
+        let content = "x".repeat(content_len);
+
+        format!(r#"[{{"content":"{content}"}}]"#).into_bytes()
+    }
+
+    #[tokio::test]
+    async fn an_element_spanning_many_reads_is_parsed_once() {
+        let input = one_large_element(60 * 1024);
+        let mut stream = ArrayStream::new(&input[..]);
+
+        stream.open().await.expect("the input opens with `[`");
+        let value = stream
+            .next_value()
+            .await
+            .expect("the element parses")
+            .expect("one element");
+
+        assert_eq!(value["content"].as_str().map(str::len), Some(60 * 1024));
+        assert!(
+            stream
+                .next_value()
+                .await
+                .expect("the array closes")
+                .is_none()
+        );
+        assert_eq!(stream.parse_attempts, 1);
+    }
+
+    #[tokio::test]
+    async fn byte_at_a_time_reads_find_each_element_end_and_parse_it_once() {
+        // Brackets, braces, quotes and backslashes inside strings must not end an element;
+        // scalars end at the byte after them.
+        let input =
+            br#" [ {"a":"x]}\"\\","b":[1,{"c":"]"}]} , "s\"]" ,12,-3.5e2, true,null,[[]],{} ] "#;
+        let expected: Vec<serde_json::Value> =
+            serde_json::from_slice(input).expect("the fixture is valid JSON");
+        let mut stream = ArrayStream::new(OneByteAtATime(input));
+
+        let values = read_all(&mut stream).await.expect("the array reads");
+
+        assert_eq!(values, expected);
+        assert_eq!(stream.parse_attempts, expected.len());
+    }
+
+    #[tokio::test]
+    async fn a_truncated_element_still_reports_the_parsers_error() {
+        let mut stream = ArrayStream::new(OneByteAtATime(br#"[{"a":1"#));
+
+        assert_eq!(
+            read_all(&mut stream).await,
+            Err(
+                "Invalid JSON array input: EOF while parsing an object at line 1 column 6"
+                    .to_owned()
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn a_scalar_cut_off_by_the_end_of_input_is_an_unexpected_end() {
+        let mut stream = ArrayStream::new(OneByteAtATime(b"[12"));
+
+        assert_eq!(
+            read_all(&mut stream).await,
+            Err("Invalid JSON array input: unexpected end of input".to_owned())
+        );
+    }
+
+    #[tokio::test]
+    async fn a_malformed_element_is_named_by_the_parser() {
+        let mut stream = ArrayStream::new(OneByteAtATime(br#"[{"a" 1}]"#));
+
+        let error = read_all(&mut stream)
+            .await
+            .expect_err("the element is malformed");
+
+        assert!(
+            error.starts_with("Invalid JSON array input: expected `:`"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_large_element_is_parsed_in_linear_time() {
+        let input = one_large_element(4 * 1024 * 1024);
+        let mut stream = ArrayStream::new(&input[..]);
+
+        let values = read_all(&mut stream).await.expect("the array reads");
+
+        assert_eq!(values.len(), 1);
+        // Parsing after every 8 KiB read handed the parser about 1 GiB here; the doubling tries
+        // and the final parse stay under three times the element.
+        assert!(
+            stream.parsed_bytes < 3 * input.len(),
+            "{} bytes parsed for a {}-byte element",
+            stream.parsed_bytes,
+            input.len()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_malformed_scalar_fails_without_buffering_the_rest_of_the_input() {
+        // Greptile's P1 on #1235: a scalar never probes, so `[` followed by bytes that
+        // cannot end a scalar buffers to EOF instead of failing on the first read.
+        let mut input = b"[".to_vec();
+        input.extend(std::iter::repeat_n(b'x', 4 * 1024 * 1024));
+        let mut stream = ArrayStream::new(&input[..]);
+
+        let error = read_all(&mut stream)
+            .await
+            .expect_err("the element is malformed");
+
+        assert!(
+            stream.buffer.len() <= 2 * super::FIRST_PROBE,
+            "{} bytes buffered before the fault was named: {error}",
+            stream.buffer.len()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_malformed_element_fails_without_buffering_the_rest_of_the_input() {
+        // A missing `}` keeps the depth above zero, so the scan never finds the element's end.
+        let mut input = br#"[{"a":1, {"b":2}"#.to_vec();
+        input.extend(std::iter::repeat_n(b' ', 4 * 1024 * 1024));
+        input.push(b']');
+        let mut stream = ArrayStream::new(&input[..]);
+
+        let error = read_all(&mut stream)
+            .await
+            .expect_err("the element is malformed");
+
+        assert_eq!(
+            error,
+            "Invalid JSON array input: key must be a string at line 1 column 9"
+        );
+        assert!(
+            stream.buffer.len() <= 2 * super::FIRST_PROBE,
+            "{} bytes buffered before the fault was named",
+            stream.buffer.len()
+        );
     }
 }

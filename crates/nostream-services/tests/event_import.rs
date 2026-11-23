@@ -146,6 +146,37 @@ async fn a_non_array_input_is_refused() {
 }
 
 #[tokio::test]
+async fn an_event_larger_than_many_reads_imports_from_an_array() {
+    // Long content full of the bytes that could be mistaken for an element's end.
+    let content = r#"]}"\,{["#.repeat(40 * 1024);
+    let large = testing::signed_event(&[1; 32], Kind::TEXT_NOTE, vec![], &content);
+    let small = valid_event();
+    let input = format!("[{},{}]", line(&large), line(&small));
+    assert!(
+        input.len() > 300 * 1024,
+        "the element spans many 8 KiB reads"
+    );
+    let persister = RecordingPersister::new();
+    let service = service(&persister);
+
+    let stats = service
+        .import_json_array(input.as_bytes(), &ImportOptions::default())
+        .await
+        .expect("import");
+
+    assert_eq!(
+        stats,
+        EventImportStats {
+            processed: 2,
+            inserted: 2,
+            skipped: 0,
+            errors: 0,
+        }
+    );
+    assert_eq!(persister.batches(), [vec![large, small]]);
+}
+
+#[tokio::test]
 async fn a_json_array_reports_the_same_counters_as_jsonl() {
     let persister = RecordingPersister::new();
     let service = service(&persister);
