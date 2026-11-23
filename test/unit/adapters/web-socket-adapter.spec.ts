@@ -1262,6 +1262,47 @@ describe('WebSocketAdapter', () => {
       expect(adapter.getPeerPubkey()).to.equal(undefined)
     })
 
+    it('fails closed when a configured owner pin cannot be parsed', () => {
+      const pubkey = 'a'.repeat(64)
+      const terms = [{ amount: 21000, unit: 'msats', period: 2592000 }]
+      const scopes = [{ kinds: [1] }]
+      settingsFactory.returns({
+        peering: {
+          enabled: true,
+          ownerAttestation: 'required',
+          peers: [{ pubkey, relayUrl: 'wss://peer.example.com', ownerPubkey: 'not-a-pubkey' }],
+          terms,
+          scopes,
+        },
+      })
+
+      adapter.addAuthenticatedPubkey(pubkey, '1'.repeat(64))
+      adapter.setPeerPubkey(pubkey, {
+        termsHash: peeringTermsHash(terms),
+        scopes,
+        ownerPubkey: 'b'.repeat(64),
+      })
+
+      expect(adapter.getPeerPubkey()).to.equal(undefined)
+    })
+
+    it('requires an agreement for a required policy', () => {
+      const pubkey = 'a'.repeat(64)
+      settingsFactory.returns({
+        peering: {
+          enabled: true,
+          ownerAttestation: 'required',
+          peers: [{ pubkey, relayUrl: 'wss://peer.example.com' }],
+          terms: [],
+          scopes: [],
+        },
+      })
+
+      adapter.addAuthenticatedPubkey(pubkey, '1'.repeat(64))
+      adapter.setPeerPubkey(pubkey)
+      expect(adapter.getPeerPubkey()).to.equal(undefined)
+    })
+
     it('clears peer status explicitly', () => {
       const pubkey = 'a'.repeat(64)
       settingsFactory.returns({
@@ -1272,7 +1313,10 @@ describe('WebSocketAdapter', () => {
       adapter.setPeerPubkey(pubkey)
       expect(adapter.getPeerPubkey()).to.equal(pubkey)
 
-      adapter.clearPeerPubkey()
+      adapter.clearPeerPubkey('b'.repeat(64))
+      expect(adapter.getPeerPubkey()).to.equal(pubkey)
+
+      adapter.clearPeerPubkey(pubkey)
       expect(adapter.getPeerPubkey()).to.equal(undefined)
     })
 

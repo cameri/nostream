@@ -91,7 +91,7 @@ export class AuthMessageHandler implements IMessageHandler {
     const withhold = (): void => {
       // A re-AUTH must not leave an earlier peer identity alive after the
       // agreement stops matching.
-      this.webSocket.clearPeerPubkey()
+      this.webSocket.clearPeerPubkey(pubkey)
     }
 
     if (!this.peeringAttestations) {

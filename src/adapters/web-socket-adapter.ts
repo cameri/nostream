@@ -391,15 +391,19 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     }
 
     if ((settings.peering?.ownerAttestation ?? 'waived') === 'required') {
-      const configuredOwner = parsePeeringPeerPubkey(findConfiguredPeeringPeer(settings, this.peerPubkey)?.ownerPubkey)
+      const configuredOwnerRaw = findConfiguredPeeringPeer(settings, this.peerPubkey)?.ownerPubkey
+      const configuredOwner = configuredOwnerRaw ? parsePeeringPeerPubkey(configuredOwnerRaw) : undefined
       const agreement = this.peerAgreement
       const currentTerms = settings.peering?.terms ?? []
       const currentScopes = settings.peering?.scopes ?? []
+      const ownerMismatch =
+        configuredOwnerRaw !== undefined &&
+        (configuredOwner === undefined || agreement?.ownerPubkey.toLowerCase() !== configuredOwner)
       if (
         !agreement ||
         agreement.termsHash?.toLowerCase() !== peeringTermsHash(currentTerms) ||
         !samePeeringScopes(agreement.scopes, currentScopes) ||
-        (configuredOwner !== undefined && agreement.ownerPubkey.toLowerCase() !== configuredOwner)
+        ownerMismatch
       ) {
         this.clearPeerPubkey()
         return undefined
@@ -416,7 +420,10 @@ export class WebSocketAdapter extends EventEmitter implements IWebSocketAdapter 
     this.peerAgreement = allowed ? agreement : undefined
   }
 
-  public clearPeerPubkey(): void {
+  public clearPeerPubkey(pubkey?: string): void {
+    if (pubkey && this.peerPubkey !== pubkey) {
+      return
+    }
     this.peerPubkey = undefined
     this.peerAgreement = undefined
   }

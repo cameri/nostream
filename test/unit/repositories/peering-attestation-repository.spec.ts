@@ -50,6 +50,25 @@ describe('PeeringAttestationRepository', () => {
     })
   })
 
+  it('returns undefined when no attestation exists', async () => {
+    const recording = createRecordingKnex()
+    const repository = new PeeringAttestationRepository(recording.db)
+    recording.respondWith([])
+
+    expect(await repository.findByRelayPubkey(peerPubkey)).to.equal(undefined)
+  })
+
+  it('uses the input when an upsert returns no row', async () => {
+    const recording = createRecordingKnex()
+    const repository = new PeeringAttestationRepository(recording.db)
+    recording.respondWith([])
+
+    const result = await repository.save(attestation)
+
+    expect(result.relayPubkey).to.equal(peerPubkey)
+    expect(result.termsHash).to.equal(attestation.termsHash)
+  })
+
   it('upserts the latest accepted request for a relay', async () => {
     const recording = createRecordingKnex()
     const repository = new PeeringAttestationRepository(recording.db)

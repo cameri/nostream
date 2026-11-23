@@ -189,6 +189,27 @@ describe('AuthMessageHandler', () => {
       expect(webSocket.setPeerPubkey as Sinon.SinonStub).not.to.have.been.called
     })
 
+    it('fails closed when the attestation lookup errors', async () => {
+      settingsFactory.returns({
+        info: { relay_url: relayUrl },
+        peering: {
+          enabled: true,
+          ownerAttestation: 'required',
+          peers: [{ pubkey, relayUrl }],
+        },
+      } as Partial<Settings>)
+      const peeringAttestations = {
+        findByRelayPubkey: Sinon.stub().rejects(new Error('database down')),
+      }
+      handler = new AuthMessageHandler(webSocket, settingsFactory, peeringAttestations as any)
+      const message = await createAuthEvent()
+
+      await handler.handleMessage(message)
+
+      expect(webSocket.setPeerPubkey as Sinon.SinonStub).not.to.have.been.called
+      expect(webSocket.clearPeerPubkey as Sinon.SinonStub).to.have.been.calledWith(pubkey)
+    })
+
     it('grants peer treatment when a required attestation exists', async () => {
       settingsFactory.returns({
         info: { relay_url: relayUrl },
