@@ -377,10 +377,13 @@ impl ElementEnd {
     /// Whether an unfinished element of `len` bytes is due a parse, the try that catches a
     /// malformed element the scan cannot see the end of. Each try doubles the next threshold.
     ///
-    /// Never for a scalar: the parser would accept the digits read so far as the whole number,
-    /// and the scan already ends a scalar at its first delimiter.
+    /// Scalars are probed too, at a higher price: a prefix of a number parses as a whole value,
+    /// and the separator check then names the byte after it, so a number longer than
+    /// [`FIRST_PROBE`] is refused rather than read forever. Without this probe a scalar made of
+    /// bytes that cannot end one — `[` followed by megabytes of `x` — buffered to the end of
+    /// input before the parser saw its first byte.
     fn probe_due(&mut self, len: usize) -> bool {
-        if self.scalar || len < self.next_probe {
+        if len < self.next_probe {
             return false;
         }
 
@@ -539,8 +542,9 @@ impl<R: AsyncRead + Unpin> ArrayStream<R> {
 
             // Parse once the element is complete, not after every read: a parse of a partial
             // element fails at its end, and retrying after every read re-parses the whole
-            // prefix each time. An unfinished element is still tried each time it doubles, so a
-            // malformed one fails without the reader buffering the rest of the input.
+            // prefix each time. An unfinished element — scalar included — is still tried each
+            // time it doubles, so a malformed one fails without the reader buffering the rest
+            // of the input.
             let element = &self.buffer[self.position..];
             let element_len = element.len();
 
@@ -883,6 +887,25 @@ mod tests {
             "{} bytes parsed for a {}-byte element",
             stream.parsed_bytes,
             input.len()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_malformed_scalar_fails_without_buffering_the_rest_of_the_input() {
+        // Greptile's P1 on #1235: a scalar never probes, so `[` followed by bytes that
+        // cannot end a scalar buffers to EOF instead of failing on the first read.
+        let mut input = b"[".to_vec();
+        input.extend(std::iter::repeat_n(b'x', 4 * 1024 * 1024));
+        let mut stream = ArrayStream::new(&input[..]);
+
+        let error = read_all(&mut stream)
+            .await
+            .expect_err("the element is malformed");
+
+        assert!(
+            stream.buffer.len() <= 2 * super::FIRST_PROBE,
+            "{} bytes buffered before the fault was named: {error}",
+            stream.buffer.len()
         );
     }
 
