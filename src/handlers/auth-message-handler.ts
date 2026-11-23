@@ -5,9 +5,11 @@ import { createCommandResult } from '../utils/messages'
 import { createLogger } from '../factories/logger-factory'
 import { IMessageHandler } from '../@types/message-handlers'
 import { IWebSocketAdapter } from '../@types/adapters'
+import type { IPeeringAttestationRepository } from '../@types/repositories'
 import { Settings } from '../@types/settings'
 import { WebSocketAdapterEvent } from '../constants/adapter'
-import { isConfiguredPeeringPeer } from '../utils/peering-auth'
+import { findConfiguredPeeringPeer, isConfiguredPeeringPeer } from '../utils/peering-auth'
+import { peeringTermsHash, samePeeringScopes } from '../utils/peering-attestation'
 
 const logger = createLogger('auth-message-handler')
 
@@ -18,6 +20,7 @@ export class AuthMessageHandler implements IMessageHandler {
   public constructor(
     private readonly webSocket: IWebSocketAdapter,
     private readonly settings: () => Settings,
+    private readonly peeringAttestations?: IPeeringAttestationRepository,
   ) {}
 
   public async handleMessage(message: AuthMessage): Promise<void> {
@@ -45,17 +48,13 @@ export class AuthMessageHandler implements IMessageHandler {
       return
     }
 
-    const challengeTag = event.tags.find(
-      (tag) => tag.length >= 2 && tag[0] === EventTags.Challenge,
-    )
+    const challengeTag = event.tags.find((tag) => tag.length >= 2 && tag[0] === EventTags.Challenge)
     if (!challengeTag || challengeTag[1] !== this.webSocket.getChallenge()) {
       this.sendResult(event.id, false, 'invalid: challenge does not match')
       return
     }
 
-    const relayTag = event.tags.find(
-      (tag) => tag.length >= 2 && tag[0] === EventTags.AuthRelay,
-    )
+    const relayTag = event.tags.find((tag) => tag.length >= 2 && tag[0] === EventTags.AuthRelay)
     const relayUrl = this.settings().info.relay_url
     if (!relayTag || !this.isRelayUrlMatch(relayTag[1], relayUrl)) {
       this.sendResult(event.id, false, 'invalid: relay url does not match')
@@ -71,17 +70,60 @@ export class AuthMessageHandler implements IMessageHandler {
     // Peer identity is a verified AUTH from a configured pubkey, never a URL
     // or a self-declared key. Unconfigured pubkeys stay ordinary clients.
     if (isConfiguredPeeringPeer(this.settings(), event.pubkey)) {
-      this.webSocket.setPeerPubkey(event.pubkey)
+      await this.applyOwnerAttestationPolicy(event.pubkey)
     }
 
     this.sendResult(event.id, true, '')
   }
 
+  /**
+   * `required` withholds peer treatment until an accepted owner-signed request
+   * exists for this relay key. A request sent after AUTH unlocks the session;
+   * a failed lookup fails closed.
+   */
+  private async applyOwnerAttestationPolicy(pubkey: string): Promise<void> {
+    const policy = this.settings().peering?.ownerAttestation ?? 'waived'
+    if (policy !== 'required') {
+      this.webSocket.setPeerPubkey(pubkey)
+      return
+    }
+
+    if (!this.peeringAttestations) {
+      logger('peer %s authenticated but no attestation store is available', pubkey)
+      return
+    }
+
+    try {
+      const attestation = await this.peeringAttestations.findByRelayPubkey(pubkey)
+      if (attestation) {
+        // Terms and scopes are part of the agreement. A material change needs
+        // a fresh owner signature before peer treatment resumes.
+        const currentTerms = this.settings().peering?.terms ?? []
+        const currentScopes = this.settings().peering?.scopes ?? []
+        const configuredOwner = findConfiguredPeeringPeer(this.settings(), pubkey)?.ownerPubkey
+        const ownerMatches =
+          !configuredOwner || attestation.ownerPubkey?.toLowerCase() === configuredOwner.toLowerCase()
+        if (
+          ownerMatches &&
+          attestation.termsHash?.toLowerCase() === peeringTermsHash(currentTerms) &&
+          samePeeringScopes(attestation.scopes ?? [], currentScopes)
+        ) {
+          this.webSocket.setPeerPubkey(pubkey)
+          return
+        }
+        logger('peer %s attestation no longer matches the advertised terms or scopes', pubkey)
+        return
+      }
+    } catch (error) {
+      logger('unable to read peering attestation for %s: %o', pubkey, error)
+      return
+    }
+
+    logger('peer %s authenticated but has no accepted owner attestation', pubkey)
+  }
+
   private sendResult(eventId: string, success: boolean, message: string): void {
-    this.webSocket.emit(
-      WebSocketAdapterEvent.Message,
-      createCommandResult(eventId, success, message),
-    )
+    this.webSocket.emit(WebSocketAdapterEvent.Message, createCommandResult(eventId, success, message))
   }
 
   // NIP-42 says domain-match is sufficient for relay URL comparison

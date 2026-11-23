@@ -12,7 +12,7 @@ import {
   NotificationDeliveryStatus,
   OperatorNotificationChannelType,
 } from './operator-notifications'
-import { PeeringBudgetUsage, PeeringInvoice, PeeringInvoiceStatus, PeeringPayment } from './peering'
+import { PeeringAttestation, PeeringBudgetUsage, PeeringInvoice, PeeringInvoiceStatus, PeeringPayment } from './peering'
 import { Report } from './report'
 import { EventKindsRange } from './settings'
 import { SubscriptionFilter } from './subscription'
@@ -100,12 +100,16 @@ export interface IPeeringPaymentRepository {
   findPeriodEnded(now: Date, limit: number, offset: number): Promise<PeeringPayment[]>
 }
 
+export interface IPeeringAttestationRepository {
+  /** Latest accepted owner attestation for this relay key. */
+  findByRelayPubkey(pubkey: Pubkey, client?: DatabaseClient): Promise<PeeringAttestation | undefined>
+  /** Replaces the relay's previous attestation with the accepted request. */
+  save(attestation: PeeringAttestation, client?: DatabaseClient): Promise<PeeringAttestation>
+}
+
 export interface IPeeringInvoiceRepository {
   /** Inserts once per payment hash; returns the stored row and whether it was new. */
-  insertIfNew(
-    invoice: PeeringInvoice,
-    client?: DatabaseClient,
-  ): Promise<{ inserted: boolean; invoice: PeeringInvoice }>
+  insertIfNew(invoice: PeeringInvoice, client?: DatabaseClient): Promise<{ inserted: boolean; invoice: PeeringInvoice }>
   findByHash(paymentHash: string, client?: DatabaseClient): Promise<PeeringInvoice | undefined>
   update(
     paymentHash: string,

@@ -192,9 +192,51 @@ Only the public half of the keypair is ever visible on the wire. Inbound AUTH is
 verified by `AuthMessageHandler`: event id, signature, timestamp, challenge, and
 relay host. Outbound AUTH proves this relay's identity to the peer; it does not
 authenticate the remote relay, because NIP-42 is a client-to-relay proof. The
-remote relay's identity is established separately by the configured
-`peering.peers` pubkey (and, in later phases, by discovery and owner
-attestation).
+remote relay's identity is established by the configured `peering.peers`
+pubkey. When `peering.ownerAttestation` is `required`, an accepted owner-signed
+request must also exist before peer treatment is granted. Discovery remains a
+later phase.
+
+## Owner attestation
+
+A relay keypair is free to mint, so peering can optionally be backed by the
+operator's own key. The relay owner signs a one-time request; the relay key
+proves itself on the same NIP-42 connection. The request names the relay's
+pubkey and URL, the scopes it accepts, and a hash of the advertised terms. The
+receiver checks:
+
+- the owner signature and event id;
+- that the request's relay pubkey is authenticated on this connection;
+- that the request targets this relay and is fresh;
+- that the scopes and terms still match this relay's NIP-11 advertisement;
+- that NIP-13 proof-of-work meets `peering.minRequestPowDifficulty`.
+
+`peering.ownerAttestation` controls the policy:
+
+- `waived` — configured peers are trusted without a request (default).
+- `preferred` — a presented request is recorded, but peers are not blocked.
+- `required` — a configured peer gets no peer treatment until an accepted
+  request exists for its key.
+
+Requests are only accepted from relays already listed in `peering.peers`;
+discovery is a later phase. Add the requesting relay's pubkey on the receiver
+first. Configured peers skip the proof-of-work requirement by default
+(`peering.waiveRequestPowForConfiguredPeers`). Set `peering.peers[].ownerPubkey`
+to require a specific operator key rather than accepting any owner signature
+for that relay.
+
+Produce and send a request from the requesting relay:
+
+```bash
+PEERING_OWNER_PRIVATE_KEY=<owner hex> \
+  nostream peering request wss://peer.example.com --json
+```
+
+The command reads the peer's NIP-11 document, requests its advertised scopes
+and terms, grinds the advertised proof-of-work, authenticates with this relay's
+key, and prints the accepted request and relay-signed acceptance. The owner key
+is used only for this establishment request; invoices, renewals and on-demand
+event requests never ask for it.
 
 ## Paid peering
 

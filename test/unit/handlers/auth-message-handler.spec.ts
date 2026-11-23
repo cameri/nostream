@@ -14,6 +14,7 @@ import { IMessageHandler } from '../../../src/@types/message-handlers'
 import { IWebSocketAdapter } from '../../../src/@types/adapters'
 import { Settings } from '../../../src/@types/settings'
 import { WebSocketAdapterEvent } from '../../../src/constants/adapter'
+import { peeringTermsHash } from '../../../src/utils/peering-attestation'
 
 describe('AuthMessageHandler', () => {
   let handler: IMessageHandler
@@ -26,14 +27,16 @@ describe('AuthMessageHandler', () => {
   const privkey = 'a'.repeat(64)
   const pubkey = getPublicKey(privkey)
 
-  async function createAuthEvent(overrides: {
-    kind?: number
-    challenge?: string
-    relayUrl?: string
-    created_at?: number
-    invalidId?: boolean
-    invalidSig?: boolean
-  } = {}): Promise<AuthMessage> {
+  async function createAuthEvent(
+    overrides: {
+      kind?: number
+      challenge?: string
+      relayUrl?: string
+      created_at?: number
+      invalidId?: boolean
+      invalidSig?: boolean
+    } = {},
+  ): Promise<AuthMessage> {
     const kind = overrides.kind ?? EventKinds.AUTH
     const now = overrides.created_at ?? Math.floor(Date.now() / 1000)
     const tags = [
@@ -53,9 +56,7 @@ describe('AuthMessageHandler', () => {
       identified.id = 'f'.repeat(64)
     }
 
-    const signed = overrides.invalidSig
-      ? { ...identified, sig: '0'.repeat(128) }
-      : await signEvent(privkey)(identified)
+    const signed = overrides.invalidSig ? { ...identified, sig: '0'.repeat(128) } : await signEvent(privkey)(identified)
 
     return [
       MessageType.AUTH,
@@ -102,7 +103,10 @@ describe('AuthMessageHandler', () => {
 
       await handler.handleMessage(message)
 
-      expect((webSocket.addAuthenticatedPubkey as Sinon.SinonStub)).to.have.been.calledOnceWithExactly(pubkey, message[1].id)
+      expect(webSocket.addAuthenticatedPubkey as Sinon.SinonStub).to.have.been.calledOnceWithExactly(
+        pubkey,
+        message[1].id,
+      )
       expect(emitStub).to.have.been.calledOnce
       const args = emitStub.firstCall.args
       expect(args[0]).to.equal(WebSocketAdapterEvent.Message)
@@ -110,12 +114,110 @@ describe('AuthMessageHandler', () => {
       expect(args[1][2]).to.equal(true)
     })
 
+    it('withholds peer treatment when attestation is required and missing', async () => {
+      settingsFactory.returns({
+        info: { relay_url: relayUrl },
+        peering: {
+          enabled: true,
+          ownerAttestation: 'required',
+          peers: [{ pubkey, relayUrl }],
+        },
+      } as Partial<Settings>)
+      const peeringAttestations = {
+        findByRelayPubkey: Sinon.stub().resolves(undefined),
+      }
+      handler = new AuthMessageHandler(webSocket, settingsFactory, peeringAttestations as any)
+      const message = await createAuthEvent()
+
+      await handler.handleMessage(message)
+
+      expect(webSocket.setPeerPubkey as Sinon.SinonStub).not.to.have.been.called
+      expect(emitStub.firstCall.args[1][2]).to.equal(true)
+    })
+
+    it('withholds a required attestation whose terms changed', async () => {
+      settingsFactory.returns({
+        info: { relay_url: relayUrl },
+        peering: {
+          enabled: true,
+          ownerAttestation: 'required',
+          scopes: [{ kinds: [1] }],
+          terms: [{ amount: 21000, unit: 'msats', period: 2592000 }],
+          peers: [{ pubkey, relayUrl }],
+        },
+      } as Partial<Settings>)
+      const peeringAttestations = {
+        findByRelayPubkey: Sinon.stub().resolves({
+          relayPubkey: pubkey,
+          termsHash: peeringTermsHash([{ amount: 22000, unit: 'msats', period: 2592000 }]),
+          scopes: [{ kinds: [1] }],
+        }),
+      }
+      handler = new AuthMessageHandler(webSocket, settingsFactory, peeringAttestations as any)
+      const message = await createAuthEvent()
+
+      await handler.handleMessage(message)
+
+      expect(webSocket.setPeerPubkey as Sinon.SinonStub).not.to.have.been.called
+    })
+
+    it('withholds a required attestation from a different owner', async () => {
+      settingsFactory.returns({
+        info: { relay_url: relayUrl },
+        peering: {
+          enabled: true,
+          ownerAttestation: 'required',
+          scopes: [{ kinds: [1] }],
+          terms: [],
+          peers: [{ pubkey, relayUrl, ownerPubkey: getPublicKey('4'.repeat(64)) }],
+        },
+      } as Partial<Settings>)
+      const peeringAttestations = {
+        findByRelayPubkey: Sinon.stub().resolves({
+          relayPubkey: pubkey,
+          ownerPubkey: getPublicKey('5'.repeat(64)),
+          termsHash: peeringTermsHash([]),
+          scopes: [{ kinds: [1] }],
+        }),
+      }
+      handler = new AuthMessageHandler(webSocket, settingsFactory, peeringAttestations as any)
+      const message = await createAuthEvent()
+
+      await handler.handleMessage(message)
+
+      expect(webSocket.setPeerPubkey as Sinon.SinonStub).not.to.have.been.called
+    })
+
+    it('grants peer treatment when a required attestation exists', async () => {
+      settingsFactory.returns({
+        info: { relay_url: relayUrl },
+        peering: {
+          enabled: true,
+          ownerAttestation: 'required',
+          peers: [{ pubkey, relayUrl }],
+        },
+      } as Partial<Settings>)
+      const peeringAttestations = {
+        findByRelayPubkey: Sinon.stub().resolves({
+          relayPubkey: pubkey,
+          termsHash: peeringTermsHash([]),
+          scopes: [],
+        }),
+      }
+      handler = new AuthMessageHandler(webSocket, settingsFactory, peeringAttestations as any)
+      const message = await createAuthEvent()
+
+      await handler.handleMessage(message)
+
+      expect(webSocket.setPeerPubkey as Sinon.SinonStub).to.have.been.calledWith(pubkey)
+    })
+
     it('rejects when kind is not 22242', async () => {
       const message = await createAuthEvent({ kind: 1 })
 
       await handler.handleMessage(message)
 
-      expect((webSocket.addAuthenticatedPubkey as Sinon.SinonStub)).not.to.have.been.called
+      expect(webSocket.addAuthenticatedPubkey as Sinon.SinonStub).not.to.have.been.called
       expect(emitStub).to.have.been.calledOnce
       const args = emitStub.firstCall.args
       expect(args[1][2]).to.equal(false)
@@ -127,7 +229,7 @@ describe('AuthMessageHandler', () => {
 
       await handler.handleMessage(message)
 
-      expect((webSocket.addAuthenticatedPubkey as Sinon.SinonStub)).not.to.have.been.called
+      expect(webSocket.addAuthenticatedPubkey as Sinon.SinonStub).not.to.have.been.called
       expect(emitStub).to.have.been.calledOnce
       const args = emitStub.firstCall.args
       expect(args[1][2]).to.equal(false)
@@ -139,7 +241,7 @@ describe('AuthMessageHandler', () => {
 
       await handler.handleMessage(message)
 
-      expect((webSocket.addAuthenticatedPubkey as Sinon.SinonStub)).not.to.have.been.called
+      expect(webSocket.addAuthenticatedPubkey as Sinon.SinonStub).not.to.have.been.called
       expect(emitStub).to.have.been.calledOnce
       const args = emitStub.firstCall.args
       expect(args[1][2]).to.equal(false)
@@ -152,7 +254,7 @@ describe('AuthMessageHandler', () => {
 
       await handler.handleMessage(message)
 
-      expect((webSocket.addAuthenticatedPubkey as Sinon.SinonStub)).not.to.have.been.called
+      expect(webSocket.addAuthenticatedPubkey as Sinon.SinonStub).not.to.have.been.called
       expect(emitStub).to.have.been.calledOnce
       const args = emitStub.firstCall.args
       expect(args[1][2]).to.equal(false)
@@ -165,7 +267,7 @@ describe('AuthMessageHandler', () => {
 
       await handler.handleMessage(message)
 
-      expect((webSocket.addAuthenticatedPubkey as Sinon.SinonStub)).not.to.have.been.called
+      expect(webSocket.addAuthenticatedPubkey as Sinon.SinonStub).not.to.have.been.called
       expect(emitStub).to.have.been.calledOnce
       const args = emitStub.firstCall.args
       expect(args[1][2]).to.equal(false)
@@ -177,7 +279,7 @@ describe('AuthMessageHandler', () => {
 
       await handler.handleMessage(message)
 
-      expect((webSocket.addAuthenticatedPubkey as Sinon.SinonStub)).not.to.have.been.called
+      expect(webSocket.addAuthenticatedPubkey as Sinon.SinonStub).not.to.have.been.called
       expect(emitStub).to.have.been.calledOnce
       const args = emitStub.firstCall.args
       expect(args[1][2]).to.equal(false)
@@ -189,7 +291,7 @@ describe('AuthMessageHandler', () => {
 
       await handler.handleMessage(message)
 
-      expect((webSocket.addAuthenticatedPubkey as Sinon.SinonStub)).not.to.have.been.called
+      expect(webSocket.addAuthenticatedPubkey as Sinon.SinonStub).not.to.have.been.called
       expect(emitStub).to.have.been.calledOnce
       const args = emitStub.firstCall.args
       expect(args[1][2]).to.equal(false)
@@ -201,7 +303,7 @@ describe('AuthMessageHandler', () => {
 
       await handler.handleMessage(message)
 
-      expect((webSocket.addAuthenticatedPubkey as Sinon.SinonStub)).not.to.have.been.called
+      expect(webSocket.addAuthenticatedPubkey as Sinon.SinonStub).not.to.have.been.called
       expect(emitStub).to.have.been.calledOnce
       const args = emitStub.firstCall.args
       expect(args[1][2]).to.equal(false)
@@ -213,7 +315,10 @@ describe('AuthMessageHandler', () => {
 
       await handler.handleMessage(message)
 
-      expect((webSocket.addAuthenticatedPubkey as Sinon.SinonStub)).to.have.been.calledOnceWithExactly(pubkey, message[1].id)
+      expect(webSocket.addAuthenticatedPubkey as Sinon.SinonStub).to.have.been.calledOnceWithExactly(
+        pubkey,
+        message[1].id,
+      )
       const args = emitStub.firstCall.args
       expect(args[1][2]).to.equal(true)
     })
@@ -226,7 +331,10 @@ describe('AuthMessageHandler', () => {
 
         await handler.handleMessage(message)
 
-        expect((webSocket.addAuthenticatedPubkey as Sinon.SinonStub)).to.have.been.calledOnceWithExactly(pubkey, message[1].id)
+        expect(webSocket.addAuthenticatedPubkey as Sinon.SinonStub).to.have.been.calledOnceWithExactly(
+          pubkey,
+          message[1].id,
+        )
       } finally {
         clock.restore()
       }
@@ -238,7 +346,10 @@ describe('AuthMessageHandler', () => {
 
       await handler.handleMessage(message)
 
-      expect((webSocket.addAuthenticatedPubkey as Sinon.SinonStub)).to.have.been.calledOnceWithExactly(pubkey, message[1].id)
+      expect(webSocket.addAuthenticatedPubkey as Sinon.SinonStub).to.have.been.calledOnceWithExactly(
+        pubkey,
+        message[1].id,
+      )
       const args = emitStub.firstCall.args
       expect(args[1][2]).to.equal(false)
       expect(args[1][3]).to.include('auth event already used')

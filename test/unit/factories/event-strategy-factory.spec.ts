@@ -24,6 +24,8 @@ import { InviteRequestEventStrategy } from '../../../src/handlers/event-strategi
 import { JoinRequestEventStrategy } from '../../../src/handlers/event-strategies/join-request-event-strategy'
 import { LeaveRequestEventStrategy } from '../../../src/handlers/event-strategies/leave-request-event-strategy'
 import { ParameterizedReplaceableEventStrategy } from '../../../src/handlers/event-strategies/parameterized-replaceable-event-strategy'
+import { PeeringAcceptanceEventStrategy } from '../../../src/handlers/event-strategies/peering-acceptance-event-strategy'
+import { PeeringRequestEventStrategy } from '../../../src/handlers/event-strategies/peering-request-event-strategy'
 import { ReplaceableEventStrategy } from '../../../src/handlers/event-strategies/replaceable-event-strategy'
 import { ReportEventStrategy } from '../../../src/handlers/event-strategies/report-event-strategy'
 import { Settings } from '../../../src/@types/settings'
@@ -82,6 +84,16 @@ describe('eventStrategyFactory', () => {
   it('returns ReplaceableEventStrategy given a relay_list event (NIP-65)', () => {
     event.kind = EventKinds.RELAY_LIST
     expect(factory([event, adapter])).to.be.an.instanceOf(ReplaceableEventStrategy)
+  })
+
+  it('returns PeeringRequestEventStrategy for a peering request', () => {
+    event.kind = EventKinds.PEERING_REQUEST
+    expect(factory([event, adapter])).to.be.an.instanceOf(PeeringRequestEventStrategy)
+  })
+
+  it('returns PeeringAcceptanceEventStrategy for a peering acceptance', () => {
+    event.kind = EventKinds.PEERING_ACCEPTANCE
+    expect(factory([event, adapter])).to.be.an.instanceOf(PeeringAcceptanceEventStrategy)
   })
 
   it('returns EphemeralEventStrategy given an ephemeral event', () => {

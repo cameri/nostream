@@ -152,10 +152,7 @@ const reclaimSettingsWriteLock = (lockPath: string): void => {
   fs.rmSync(reclaimPath, { force: true })
 }
 
-const attemptStealStaleSettingsWriteLock = (
-  lockPath: string,
-  expected: SettingsWriteLockMetadata,
-): boolean => {
+const attemptStealStaleSettingsWriteLock = (lockPath: string, expected: SettingsWriteLockMetadata): boolean => {
   try {
     const current = readSettingsWriteLockMetadata(lockPath)
     if (
@@ -613,14 +610,9 @@ export const filterSettingsAgainstDefaults = (settings: unknown, defaults: unkno
       if (hasOwn(defaults, key) || key === 'passwordHash') {
         // If it's a known non-schema key like passwordHash, we don't have a default schema for its children.
         // We can pass {} to allow it to be preserved.
-        const defaultSubSchema = hasOwn(defaults, key)
-          ? (defaults as Record<string, unknown>)[key]
-          : {}
+        const defaultSubSchema = hasOwn(defaults, key) ? (defaults as Record<string, unknown>)[key] : {}
 
-        filtered[key] = filterSettingsAgainstDefaults(
-          (settings as Record<string, unknown>)[key],
-          defaultSubSchema
-        )
+        filtered[key] = filterSettingsAgainstDefaults((settings as Record<string, unknown>)[key], defaultSubSchema)
       }
     }
     return filtered
@@ -952,7 +944,7 @@ const PEERING_KIND_MAX = 65535
 const PEERING_POW_MAX_BITS = 256
 const PEERING_SCOPE_KEYS = new Set(['kinds', 'since', 'until', 'windowSeconds'])
 const PEERING_TERM_KEYS = new Set(['amount', 'unit', 'period'])
-const PEERING_PEER_KEYS = new Set(['pubkey', 'relayUrl', 'enabled', 'budget'])
+const PEERING_PEER_KEYS = new Set(['pubkey', 'relayUrl', 'enabled', 'budget', 'ownerPubkey'])
 const PEERING_AUTOPAY_KEYS = new Set(['enabled', 'globalBudget'])
 
 const isValidPeeringKindValue = (value: unknown): boolean =>
@@ -1143,6 +1135,10 @@ const validatePeeringPeers = (peers: unknown, issues: ValidationIssue[]): void =
       issues.push({ path: `${prefix}.enabled`, message: 'must be a boolean' })
     }
 
+    if (peer.ownerPubkey !== undefined && parsePeeringPeerPubkey(peer.ownerPubkey) === undefined) {
+      issues.push({ path: `${prefix}.ownerPubkey`, message: 'must be a 32-byte hex pubkey or npub' })
+    }
+
     if (peer.budget !== undefined) {
       validatePeeringTermValue(peer.budget, `${prefix}.budget`, issues, { allowZero: false })
     }
@@ -1165,17 +1161,32 @@ const validatePeering = (settings: Settings, issues: ValidationIssue[]): void =>
 
   if (peering.minRequestPowDifficulty !== undefined) {
     const bits = peering.minRequestPowDifficulty
-    if (
-      typeof bits !== 'number' ||
-      !Number.isInteger(bits) ||
-      bits < 0 ||
-      bits > PEERING_POW_MAX_BITS
-    ) {
+    if (typeof bits !== 'number' || !Number.isInteger(bits) || bits < 0 || bits > PEERING_POW_MAX_BITS) {
       issues.push({
         path: 'peering.minRequestPowDifficulty',
         message: `must be an integer between 0 and ${PEERING_POW_MAX_BITS}`,
       })
     }
+  }
+
+  if (
+    peering.ownerAttestation !== undefined &&
+    !['required', 'preferred', 'waived'].includes(peering.ownerAttestation as string)
+  ) {
+    issues.push({
+      path: 'peering.ownerAttestation',
+      message: 'must be one of required, preferred or waived',
+    })
+  }
+
+  if (
+    peering.waiveRequestPowForConfiguredPeers !== undefined &&
+    typeof peering.waiveRequestPowForConfiguredPeers !== 'boolean'
+  ) {
+    issues.push({
+      path: 'peering.waiveRequestPowForConfiguredPeers',
+      message: 'must be a boolean',
+    })
   }
 
   const endpoint = typeof peering.endpoint === 'string' ? peering.endpoint.trim() : ''
@@ -1238,9 +1249,7 @@ const validatePeering = (settings: Settings, issues: ValidationIssue[]): void =>
   }
 
   const paidTerms = Array.isArray(peering.terms)
-    ? peering.terms.filter(
-        (term) => isPlainObject(term) && typeof term.amount === 'number' && term.amount > 0,
-      )
+    ? peering.terms.filter((term) => isPlainObject(term) && typeof term.amount === 'number' && term.amount > 0)
     : []
 
   if (paidTerms.length > 1) {
@@ -1454,10 +1463,7 @@ const validateAdminNotifications = (settings: Settings): ValidationIssue[] => {
       targetIds.add(target.id)
     }
 
-    if (
-      typeof target.type !== 'string' ||
-      !['http', 'discord', 'slack', 'telegram'].includes(target.type)
-    ) {
+    if (typeof target.type !== 'string' || !['http', 'discord', 'slack', 'telegram'].includes(target.type)) {
       issues.push({ path: `${prefix}.type`, message: 'type must be http, discord, slack, or telegram' })
     }
 

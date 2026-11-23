@@ -5,6 +5,7 @@ import {
   IEventRepository,
   IInviteCodeRepository,
   INip05VerificationRepository,
+  IPeeringAttestationRepository,
   IReportRepository,
   IUserRepository,
 } from '../@types/repositories'
@@ -20,6 +21,7 @@ import { NegMsgMessageHandler } from '../handlers/neg-msg-message-handler'
 import { NegOpenMessageHandler } from '../handlers/neg-open-message-handler'
 import { SubscribeMessageHandler } from '../handlers/subscribe-message-handler'
 import { UnsubscribeMessageHandler } from '../handlers/unsubscribe-message-handler'
+import { PeeringAttestationRepository } from '../repositories/peering-attestation-repository'
 import { UserSubscriptionRepository } from '../repositories/user-subscription-repository'
 import { PeeringRequestStatsStore } from '../utils/peering-request-stats'
 import { eventStrategyFactory } from './event-strategy-factory'
@@ -50,6 +52,14 @@ export const getPeerRequestStatsStore = (): PeeringRequestStatsStore => {
     peerRequestStatsStore = new PeeringRequestStatsStore(getCache())
   }
   return peerRequestStatsStore
+}
+
+let peeringAttestationRepository: IPeeringAttestationRepository | undefined = undefined
+export const getPeeringAttestationRepository = (): IPeeringAttestationRepository => {
+  if (!peeringAttestationRepository) {
+    peeringAttestationRepository = new PeeringAttestationRepository(getMasterDbClient())
+  }
+  return peeringAttestationRepository
 }
 
 let peeringBillingService: IPeeringBillingService | undefined = undefined
@@ -93,6 +103,7 @@ export const messageHandlerFactory =
             reportRepository,
             getCache(),
             createSettings,
+            getPeeringAttestationRepository(),
           ),
           eventRepository,
           userRepository,
@@ -126,7 +137,7 @@ export const messageHandlerFactory =
           peeringBillingServiceFor(adapter),
         )
       case MessageType.AUTH:
-        return new AuthMessageHandler(adapter, createSettings)
+        return new AuthMessageHandler(adapter, createSettings, getPeeringAttestationRepository())
       case MessageType.NEG_OPEN:
         return new NegOpenMessageHandler(
           adapter,
