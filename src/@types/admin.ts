@@ -12,6 +12,7 @@ export interface IAdminAuthProvider {
  * token's session id here, until the token would have expired anyway, and every request checks it.
  */
 export interface IAdminSessionRevocations {
-  revoke(sessionId: string, ttlSeconds: number): Promise<void>
+  /** Resolves true when this call revoked the session, false when it was already revoked (the call changed nothing). */
+  revoke(sessionId: string, ttlSeconds: number): Promise<boolean>
   isRevoked(sessionId: string): Promise<boolean>
 }

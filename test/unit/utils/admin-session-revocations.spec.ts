@@ -14,15 +14,15 @@ const { expect } = chai
 
 describe('CacheAdminSessionRevocations', () => {
   let sandbox: Sinon.SinonSandbox
-  let setKey: Sinon.SinonStub
+  let setKeyIfNotExists: Sinon.SinonStub
   let hasKey: Sinon.SinonStub
   let revocations: CacheAdminSessionRevocations
 
   beforeEach(() => {
     sandbox = Sinon.createSandbox()
-    setKey = sandbox.stub().resolves(true)
+    setKeyIfNotExists = sandbox.stub().resolves(true)
     hasKey = sandbox.stub().resolves(false)
-    revocations = new CacheAdminSessionRevocations(() => ({ setKey, hasKey }) as unknown as ICacheAdapter)
+    revocations = new CacheAdminSessionRevocations(() => ({ setKeyIfNotExists, hasKey }) as unknown as ICacheAdapter)
   })
 
   afterEach(() => {
@@ -32,15 +32,28 @@ describe('CacheAdminSessionRevocations', () => {
   it('keeps a revoked session id until the token would have expired', async () => {
     await revocations.revoke('abc', 3600)
 
-    expect(setKey).to.have.been.calledOnceWithExactly(adminSessionRevocationCacheKey('abc'), '1', 3600)
+    expect(setKeyIfNotExists).to.have.been.calledOnceWithExactly(adminSessionRevocationCacheKey('abc'), '1', 3600)
+  })
+
+  it('tells the call that revoked a session so, and a later call for it that it did not', async () => {
+    setKeyIfNotExists.onFirstCall().resolves(true).onSecondCall().resolves(false)
+
+    expect(await revocations.revoke('abc', 3600)).to.equal(true)
+    expect(await revocations.revoke('abc', 3600)).to.equal(false)
+  })
+
+  it('revokes with a set-if-absent, so that simultaneous revocations of one session cannot both win', async () => {
+    await revocations.revoke('abc', 3600)
+
+    expect(setKeyIfNotExists).to.have.been.calledOnce
   })
 
   it('keeps a revoked session id for at least a second', async () => {
     await revocations.revoke('abc', 0)
     await revocations.revoke('def', Number.NaN)
 
-    expect(setKey.firstCall.args[2]).to.equal(1)
-    expect(setKey.secondCall.args[2]).to.equal(1)
+    expect(setKeyIfNotExists.firstCall.args[2]).to.equal(1)
+    expect(setKeyIfNotExists.secondCall.args[2]).to.equal(1)
   })
 
   it('keys each session separately', () => {
@@ -55,7 +68,7 @@ describe('CacheAdminSessionRevocations', () => {
   })
 
   it('does not hide a cache failure', async () => {
-    setKey.rejects(new Error('redis is down'))
+    setKeyIfNotExists.rejects(new Error('redis is down'))
     hasKey.rejects(new Error('redis is down'))
 
     await revocations.revoke('abc', 60).then(
@@ -72,11 +85,14 @@ describe('CacheAdminSessionRevocations', () => {
     const neverSettles = () => new Promise<never>(() => undefined)
 
     beforeEach(() => {
-      revocations = new CacheAdminSessionRevocations(() => ({ setKey, hasKey }) as unknown as ICacheAdapter, 10)
+      revocations = new CacheAdminSessionRevocations(
+        () => ({ setKeyIfNotExists, hasKey }) as unknown as ICacheAdapter,
+        10,
+      )
     })
 
     it('stops waiting for a revocation that is never stored', async () => {
-      setKey.callsFake(neverSettles)
+      setKeyIfNotExists.callsFake(neverSettles)
 
       await revocations.revoke('abc', 60).then(
         () => expect.fail('revoke should reject'),

@@ -38,11 +38,13 @@ export class CacheAdminSessionRevocations implements IAdminSessionRevocations {
     private readonly timeoutMs: number = ADMIN_SESSION_REVOCATION_TIMEOUT_MS,
   ) {}
 
-  public async revoke(sessionId: string, ttlSeconds: number): Promise<void> {
+  public async revoke(sessionId: string, ttlSeconds: number): Promise<boolean> {
     const expirySeconds = Number.isSafeInteger(ttlSeconds) && ttlSeconds > 0 ? ttlSeconds : 1
 
-    await withTimeout(
-      () => this.cache().setKey(adminSessionRevocationCacheKey(sessionId), '1', expirySeconds),
+    // Set only if absent, in one step, so that of several logouts of the same session at once exactly one is told
+    // that it revoked it. The entry keeps the expiry of the first revocation, which is when the token ends anyway.
+    return withTimeout(
+      () => this.cache().setKeyIfNotExists(adminSessionRevocationCacheKey(sessionId), '1', expirySeconds),
       this.timeoutMs,
       'revoking the admin session',
     )

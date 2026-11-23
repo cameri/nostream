@@ -73,7 +73,9 @@ describe('admin settings API', () => {
     const revokedSessions = new Set<string>()
     revocationStubs = [
       Sinon.stub(CacheAdminSessionRevocations.prototype, 'revoke').callsFake(async (sessionId: string) => {
+        const alreadyRevoked = revokedSessions.has(sessionId)
         revokedSessions.add(sessionId)
+        return !alreadyRevoked
       }),
       Sinon.stub(CacheAdminSessionRevocations.prototype, 'isRevoked').callsFake(async (sessionId: string) =>
         revokedSessions.has(sessionId),
