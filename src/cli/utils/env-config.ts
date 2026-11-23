@@ -70,7 +70,8 @@ const BOOLEAN_KEYS = new Set(['READ_REPLICA_ENABLED'])
 
 const RR_INTEGER_KEY_REGEX = /^RR\d+_DB_(PORT|MIN_POOL_SIZE|MAX_POOL_SIZE|ACQUIRE_CONNECTION_TIMEOUT)$/
 
-const SECRET_KEY_REGEX = /(SECRET|PASSWORD|API_KEY|PRIVATE_KEY)/i
+// A connection URI (DB_URI, REDIS_URI) can carry a password, so it is masked like the other secrets.
+const SECRET_KEY_REGEX = /(SECRET|PASSWORD|API_KEY|PRIVATE_KEY|_URI$)/i
 
 const parseEnvFile = (): { lines: string[]; parsed: ParsedEnvLine[] } => {
   const envPath = getEnvFilePath()
