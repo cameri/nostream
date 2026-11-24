@@ -28,6 +28,7 @@ use nostream_services::testing;
 use nostream_services::unavailable::ServiceStores;
 use nostream_services::workers::maintenance::{
     MaintenanceRunner, MaintenanceTasks, MaintenanceWorker, NIP05_REVERIFICATION_BATCH_SIZE,
+    PassOutcome,
 };
 use nostream_storage::repositories::{
     EventPurgeCounts, EventRepository, NotificationDeliveryLogRepository,
@@ -280,6 +281,91 @@ async fn a_slow_purge_that_outlives_the_timeout_does_not_fail_the_pass() {
         tasks.entries(),
         vec!["purge started", "nip05", "outbox", "invoices"]
     );
+}
+
+fn purge_starts(tasks: &ScriptedTasks) -> usize {
+    tasks
+        .entries()
+        .iter()
+        .filter(|entry| *entry == "purge started")
+        .count()
+}
+
+#[tokio::test]
+async fn a_purge_still_running_is_awaited_by_the_next_pass_not_started_again() {
+    let gate = Arc::new(Semaphore::new(0));
+    let tasks = ScriptedTasks::new(Arc::clone(&gate), None);
+    let worker = MaintenanceWorker::new(
+        Arc::new(testing::settings()),
+        Arc::clone(&tasks) as Arc<dyn MaintenanceTasks>,
+        Duration::from_secs(60),
+        Duration::from_millis(20),
+    );
+
+    let first = worker.run_pass().await;
+    let second = worker.run_pass().await;
+
+    assert!(first.purge_timed_out && first.purge_started);
+    assert!(
+        second.purge_timed_out && !second.purge_started,
+        "the second pass waits on the first purge: {second:?}"
+    );
+    assert_eq!(purge_starts(&tasks), 1, "one purge, however many passes");
+
+    // Released before the third pass polls it: that pass is the one that sees it finish, and
+    // it reports the purge's counts rather than starting another. This relies on the
+    // single-threaded test runtime: the purge cannot run between `add_permits` and the pass's
+    // first check, so the pass finds it unfinished and waits on it.
+    gate.add_permits(1);
+    let third = worker.run_pass().await;
+
+    assert_eq!(
+        third,
+        PassOutcome {
+            purge_started: false,
+            purge_timed_out: false,
+            counts: Some(scripted_counts()),
+        }
+    );
+    assert_eq!(purge_starts(&tasks), 1);
+
+    // With nothing outstanding, the next pass starts a purge of its own.
+    gate.add_permits(1);
+    let fourth = worker.run_pass().await;
+
+    assert!(fourth.purge_started && !fourth.purge_timed_out);
+    assert_eq!(purge_starts(&tasks), 2);
+}
+
+#[tokio::test]
+async fn ticks_during_a_slow_purge_do_not_pile_up_purges() {
+    let gate = Arc::new(Semaphore::new(0));
+    let tasks = ScriptedTasks::new(Arc::clone(&gate), None);
+    let shutdown = ShutdownState::new();
+    let worker = Arc::new(MaintenanceWorker::new(
+        Arc::new(testing::settings()),
+        Arc::clone(&tasks) as Arc<dyn MaintenanceTasks>,
+        Duration::from_millis(20),
+        Duration::from_millis(5),
+    ));
+
+    let task = tokio::spawn(Arc::clone(&worker).run(shutdown.clone()));
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let passes = tasks.passes.load(Ordering::SeqCst);
+    assert!(passes >= 3, "the passes keep running, got {passes}");
+    assert_eq!(
+        purge_starts(&tasks),
+        1,
+        "{passes} passes share the one purge that has not finished"
+    );
+
+    shutdown.begin_draining();
+    tokio::time::timeout(Duration::from_secs(2), task)
+        .await
+        .expect("the worker stops")
+        .expect("join")
+        .expect("Ok");
 }
 
 #[tokio::test]

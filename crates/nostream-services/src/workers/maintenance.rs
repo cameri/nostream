@@ -5,13 +5,22 @@
 //! concurrently and is awaited last, capped at [`CLEAR_OLD_EVENTS_TIMEOUT_MS`]. A pass error
 //! is logged and leaves the loop running; a tick that lands while a pass is still running is
 //! skipped.
+//!
+//! A purge that outlives its cap is kept, not detached (#1103): the next pass waits on it again
+//! rather than starting a second one, so a store whose cleanup is slower than the interval has
+//! one purge running, never one per tick. The capture detaches it (`Promise.race` cannot cancel
+//! the losing promise); this is a deliberate divergence. The cost is that a purge that never
+//! returns holds retention until it does or the relay restarts — nothing aborts it, because
+//! cancelling a store write midway is not a decision for this loop — so every pass that waits on
+//! it logs how many passes it has waited.
 
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use tokio::task::JoinHandle;
 
 use nostream_config::Settings;
 use nostream_config::settings::Nip05Mode;
@@ -52,13 +61,24 @@ pub const DEFAULT_NIP05_MAX_CONSECUTIVE_FAILURES: i32 = 20;
 /// The delivery-log retention when settings omit it (`src/app/maintenance-worker.ts:288`).
 pub const DEFAULT_DELIVERY_LOG_RETENTION_DAYS: i64 = 30;
 
-/// What one pass did, for the loop's log line and for the tests that pin the steps: whether the
-/// purge outlived its cap, and the counts the store answered when it completed. A failed or
-/// timed-out purge has no counts — zeros there would read as a pass that found nothing to do.
+/// What one pass did, for the loop's log line and for the tests that pin the steps: whether it
+/// started a purge or waited on one an earlier pass started, whether that purge outlived the
+/// cap, and the counts the store answered when it completed. A failed or timed-out purge has no
+/// counts — zeros there would read as a pass that found nothing to do.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PassOutcome {
+    pub purge_started: bool,
     pub purge_timed_out: bool,
     pub counts: Option<EventPurgeCounts>,
+}
+
+/// A purge the worker owns, so a timed-out one is still known to be running.
+type PurgeHandle = JoinHandle<Result<EventPurgeCounts, ServicesError>>;
+
+/// A purge that outlived its pass, and how many passes have timed out waiting on it.
+struct OutstandingPurge {
+    handle: PurgeHandle,
+    passes_waited: u64,
 }
 
 /// The four steps, so a test can instrument their order without a store or a network.
@@ -83,6 +103,8 @@ pub struct MaintenanceWorker {
     interval: Duration,
     purge_timeout: Duration,
     running: AtomicBool,
+    /// A purge that outlived its pass's cap and has not been seen to finish.
+    outstanding_purge: Mutex<Option<OutstandingPurge>>,
 }
 
 impl MaintenanceWorker {
@@ -99,13 +121,39 @@ impl MaintenanceWorker {
             interval,
             purge_timeout,
             running: AtomicBool::new(false),
+            outstanding_purge: Mutex::new(None),
         }
     }
 
     /// One pass, in the capture's order.
+    ///
+    /// The purge is the one an earlier pass left running, when there is one; otherwise this
+    /// pass starts it. Passes are not meant to overlap or be cancelled midway — [`Self::run`]
+    /// runs one at a time, to completion — and a pass that overlapped another would not see the
+    /// purge the other is holding.
     pub async fn run_pass(&self) -> PassOutcome {
-        let purge_tasks = Arc::clone(&self.tasks);
-        let purge = tokio::spawn(async move { purge_tasks.clear_old_events().await });
+        let (mut purge, passes_waited) = match self.take_outstanding_purge() {
+            Some(previous) if !previous.handle.is_finished() => {
+                tracing::warn!(
+                    passes_waited = previous.passes_waited,
+                    "the previous retention purge is still running; this pass waits on it instead of starting another"
+                );
+                (previous.handle, previous.passes_waited)
+            }
+            finished => {
+                // It ended between passes: its result is already there and nothing awaits it,
+                // so read it now rather than lose it.
+                if let Some(previous) = finished {
+                    log_late_purge(previous.handle.await);
+                }
+
+                let purge_tasks = Arc::clone(&self.tasks);
+                let purge = tokio::spawn(async move { purge_tasks.clear_old_events().await });
+
+                (purge, 0)
+            }
+        };
+        let purge_started = passes_waited == 0;
 
         // Give the purge its first poll so the order is the capture's: started, then the
         // remaining steps, then awaited.
@@ -125,30 +173,50 @@ impl MaintenanceWorker {
             tracing::error!(error = %error, "Unable to walk pending invoices");
         }
 
-        let (purge_timed_out, counts) = match tokio::time::timeout(self.purge_timeout, purge).await
-        {
-            Ok(Ok(Ok(counts))) => (false, Some(counts)),
-            Ok(Ok(Err(error))) => {
-                tracing::error!(error = %error, "unable to clear old events");
-                (false, None)
-            }
-            Ok(Err(error)) => {
-                tracing::error!(error = %error, "the retention task ended abnormally");
-                (false, None)
-            }
-            Err(_) => {
-                tracing::error!(
-                    timeout_ms = self.purge_timeout.as_millis(),
-                    "unable to clear old events: clearOldEvents timed out"
-                );
-                (true, None)
-            }
-        };
+        let (purge_timed_out, counts) =
+            match tokio::time::timeout(self.purge_timeout, &mut purge).await {
+                Ok(Ok(Ok(counts))) => (false, Some(counts)),
+                Ok(Ok(Err(error))) => {
+                    tracing::error!(error = %error, "unable to clear old events");
+                    (false, None)
+                }
+                Ok(Err(error)) => {
+                    tracing::error!(error = %error, "the retention task ended abnormally");
+                    (false, None)
+                }
+                Err(_) => {
+                    tracing::error!(
+                        timeout_ms = self.purge_timeout.as_millis(),
+                        "unable to clear old events: clearOldEvents timed out"
+                    );
+                    // Keep it: dropping the handle would detach a purge that is still working.
+                    self.store_outstanding_purge(OutstandingPurge {
+                        handle: purge,
+                        passes_waited: passes_waited.saturating_add(1),
+                    });
+                    (true, None)
+                }
+            };
 
         PassOutcome {
+            purge_started,
             purge_timed_out,
             counts,
         }
+    }
+
+    fn take_outstanding_purge(&self) -> Option<OutstandingPurge> {
+        self.outstanding_purge
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+    }
+
+    fn store_outstanding_purge(&self, purge: OutstandingPurge) {
+        *self
+            .outstanding_purge
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(purge);
     }
 
     fn payments_enabled(&self) -> bool {
@@ -175,10 +243,29 @@ impl MaintenanceWorker {
                         continue;
                     }
 
-                    self.run_pass().await;
+                    let outcome = self.run_pass().await;
                     self.running.store(false, Ordering::SeqCst);
+                    tracing::debug!(?outcome, "maintenance pass finished");
                 }
             }
+        }
+    }
+}
+
+/// Logs the result of a purge that finished after its own pass stopped waiting for it.
+fn log_late_purge(result: Result<Result<EventPurgeCounts, ServicesError>, tokio::task::JoinError>) {
+    match result {
+        Ok(Ok(counts)) => tracing::info!(
+            deleted = counts.deleted,
+            expired = counts.expired,
+            retained = counts.retained,
+            "a retention purge that outlived its pass finished"
+        ),
+        Ok(Err(error)) => {
+            tracing::error!(error = %error, "unable to clear old events");
+        }
+        Err(error) => {
+            tracing::error!(error = %error, "the retention task ended abnormally");
         }
     }
 }
