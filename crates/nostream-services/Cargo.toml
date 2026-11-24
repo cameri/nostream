@@ -11,6 +11,7 @@ description = "Services, payment processors, the worker model and the NIP-66 mon
 nostream-config.workspace = true
 nostream-core.workspace = true
 nostream-relay.workspace = true
+nostream-scan.workspace = true
 nostream-storage.workspace = true
 chrono.workspace = true
 futures-util.workspace = true
