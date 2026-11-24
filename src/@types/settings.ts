@@ -585,6 +585,12 @@ export interface PeeringPeer {
   /** Whether this configured peer is active. Defaults to true. */
   enabled?: boolean
   /**
+   * The operator key expected to sign this peer's owner attestation. When set,
+   * a request signed by any other key is rejected, and a stored attestation for
+   * a different owner no longer grants peer treatment.
+   */
+  ownerPubkey?: Pubkey
+  /**
    * Buying side only: how much this relay may auto-pay to this peer per budget
    * period. Absent means invoices from this peer are held for an operator.
    */
@@ -598,6 +604,8 @@ export interface PeeringAutoPaySettings {
   /** Optional cap across every peer, per its own period. */
   globalBudget?: PeeringTerm
 }
+
+export type PeeringOwnerAttestationPolicy = 'required' | 'preferred' | 'waived'
 
 export interface PeeringSettings {
   /**
@@ -620,6 +628,18 @@ export interface PeeringSettings {
    * none. Advertised as `peering.min_pow_difficulty`.
    */
   minRequestPowDifficulty?: number
+  /**
+   * Whether a peer must present a valid owner-signed request before it is
+   * recognized. `required` withholds peer treatment until a valid request is
+   * recorded; `preferred` records one when presented; `waived` ignores
+   * attestation. Defaults to `waived` so configured peers keep working.
+   */
+  ownerAttestation?: PeeringOwnerAttestationPolicy
+  /**
+   * Skip the request proof-of-work requirement for peers already configured by
+   * pubkey. Defaults to true: configured trust is the v1 path.
+   */
+  waiveRequestPowForConfiguredPeers?: boolean
   /**
    * Feeds this relay offers. At least one scope is required when enabled.
    */

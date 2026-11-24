@@ -29,6 +29,21 @@ describe('peering advertisement', () => {
     })
   })
 
+  it('reads owner attestation and request proof-of-work', () => {
+    const advertisement = parsePeeringAdvertisement({
+      peering: {
+        enabled: true,
+        owner_attestation: 'required',
+        min_pow_difficulty: 12,
+        scopes: [{ kinds: [1] }],
+        terms: [],
+      },
+    })
+
+    expect(advertisement.ownerAttestation).to.equal('required')
+    expect(advertisement.minPowDifficulty).to.equal(12)
+  })
+
   it('reports peering as disabled when the section is absent', () => {
     const advertisement = parsePeeringAdvertisement({ supported_nips: [1] })
 

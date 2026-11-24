@@ -186,6 +186,15 @@ peering:
   # NIP-13 proof-of-work bits a peering request must carry. 0 means none.
   # Advertised as peering.min_pow_difficulty.
   minRequestPowDifficulty: 0
+  # Owner attestation for incoming peering requests:
+  #   waived    - configured peers are trusted without a request (default)
+  #   preferred - record a valid request when presented, but do not require it
+  #   required  - withhold peer treatment until a valid owner-signed request is
+  #               accepted on an authenticated connection
+  ownerAttestation: waived
+  # Configured peers are already trusted by pubkey, so their request does not
+  # need to meet minRequestPowDifficulty. Set false to require it anyway.
+  waiveRequestPowForConfiguredPeers: true
   # Feeds this relay is willing to serve. Each scope lists event kinds and,
   # optionally, an absolute time range (unix seconds) or a rolling window.
   # At least one scope is required when peering is enabled.
@@ -213,6 +222,8 @@ peering:
   #     - pubkey: replace-with-peer-relay-pubkey-in-hex
   #       relayUrl: wss://peer.example.com
   #       enabled: true
+  #       # Optional: require this operator key on the owner attestation.
+  #       ownerPubkey: replace-with-peer-owner-pubkey-in-hex
   #       # Buying side: auto-pay this peer's invoices up to this budget.
   #       budget: { amount: 10000, unit: sats, period: 2592000 }
   peers: []

@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:stream'
 import { Event } from './event'
 import { INegentropySessions } from './negentropy'
+import { PeeringAttestationAgreement } from './peering'
 import { SubscriptionFilter } from './subscription'
 
 export interface IWebSocketServerAdapter extends EventEmitter, IWebServerAdapter {
@@ -28,7 +29,13 @@ export type IWebSocketAdapter = EventEmitter & {
    */
   getPeerPubkey(): string | undefined
   /** Mark `pubkey` as the peer identity for this socket. Ignored if it is not authenticated. */
-  setPeerPubkey(pubkey: string): void
+  setPeerPubkey(pubkey: string, agreement?: PeeringAttestationAgreement): void
+  /**
+   * Withdraw peer treatment for the rest of this socket's AUTH session. When
+   * `pubkey` is given, only that identity is cleared, leaving a different
+   * authenticated peer on the same socket intact.
+   */
+  clearPeerPubkey(pubkey?: string): void
   /**
    * Resolves once the previous send has flushed to the underlying socket, or
    * immediately when there is nothing pending. Used to pause a full-feed read

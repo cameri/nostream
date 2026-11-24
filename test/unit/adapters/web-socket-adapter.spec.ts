@@ -15,6 +15,7 @@ import { WebSocketAdapter } from '../../../src/adapters/web-socket-adapter'
 import { WebSocketAdapterEvent, WebSocketServerAdapterEvent } from '../../../src/constants/adapter'
 import { markActionableTarget, resetHiddenContentCache } from '../../../src/utils/hidden-content-cache'
 import { Negentropy, NegentropyStorageVector } from '../../../src/utils/negentropy'
+import { peeringTermsHash } from '../../../src/utils/peering-attestation'
 
 describe('WebSocketAdapter', () => {
   let sandbox: Sinon.SinonSandbox
@@ -204,11 +205,7 @@ describe('WebSocketAdapter', () => {
 
     it('closes the subscription when paid access ends', async () => {
       adapter.onSubscribed('sub-1', [{ kinds: [1] }])
-      adapter.setSubscriptionExpiry(
-        'sub-1',
-        new Date('2026-11-09T12:00:01.000Z'),
-        sandbox.stub().resolves(undefined),
-      )
+      adapter.setSubscriptionExpiry('sub-1', new Date('2026-11-09T12:00:01.000Z'), sandbox.stub().resolves(undefined))
 
       await clock.tickAsync(1000)
 
@@ -237,11 +234,7 @@ describe('WebSocketAdapter', () => {
 
     it('keeps the subscription open when access becomes free', async () => {
       adapter.onSubscribed('sub-1', [{ kinds: [1] }])
-      adapter.setSubscriptionExpiry(
-        'sub-1',
-        new Date('2026-11-09T12:00:01.000Z'),
-        sandbox.stub().resolves(null),
-      )
+      adapter.setSubscriptionExpiry('sub-1', new Date('2026-11-09T12:00:01.000Z'), sandbox.stub().resolves(null))
 
       await clock.tickAsync(1000)
 
@@ -1236,6 +1229,94 @@ describe('WebSocketAdapter', () => {
       expect(adapter.getPeerPubkey()).to.equal(undefined)
 
       settingsFactory.returns({ peering: { enabled: true, peers: [] } })
+      expect(adapter.getPeerPubkey()).to.equal(undefined)
+    })
+
+    it('rechecks a required owner agreement against live settings', () => {
+      const pubkey = 'a'.repeat(64)
+      const terms = [{ amount: 21000, unit: 'msats', period: 2592000 }]
+      const scopes = [{ kinds: [1] }]
+      const settings = {
+        peering: {
+          enabled: true,
+          ownerAttestation: 'required' as const,
+          peers: [{ pubkey, relayUrl: 'wss://peer.example.com' }],
+          terms,
+          scopes,
+        },
+      }
+      settingsFactory.returns(settings)
+
+      adapter.addAuthenticatedPubkey(pubkey, '1'.repeat(64))
+      adapter.setPeerPubkey(pubkey, {
+        termsHash: peeringTermsHash(terms),
+        scopes,
+        ownerPubkey: 'b'.repeat(64),
+      })
+      expect(adapter.getPeerPubkey()).to.equal(pubkey)
+
+      settingsFactory.returns({
+        ...settings,
+        peering: { ...settings.peering, terms: [{ amount: 22000, unit: 'msats', period: 2592000 }] },
+      })
+      expect(adapter.getPeerPubkey()).to.equal(undefined)
+    })
+
+    it('fails closed when a configured owner pin cannot be parsed', () => {
+      const pubkey = 'a'.repeat(64)
+      const terms = [{ amount: 21000, unit: 'msats', period: 2592000 }]
+      const scopes = [{ kinds: [1] }]
+      settingsFactory.returns({
+        peering: {
+          enabled: true,
+          ownerAttestation: 'required',
+          peers: [{ pubkey, relayUrl: 'wss://peer.example.com', ownerPubkey: 'not-a-pubkey' }],
+          terms,
+          scopes,
+        },
+      })
+
+      adapter.addAuthenticatedPubkey(pubkey, '1'.repeat(64))
+      adapter.setPeerPubkey(pubkey, {
+        termsHash: peeringTermsHash(terms),
+        scopes,
+        ownerPubkey: 'b'.repeat(64),
+      })
+
+      expect(adapter.getPeerPubkey()).to.equal(undefined)
+    })
+
+    it('requires an agreement for a required policy', () => {
+      const pubkey = 'a'.repeat(64)
+      settingsFactory.returns({
+        peering: {
+          enabled: true,
+          ownerAttestation: 'required',
+          peers: [{ pubkey, relayUrl: 'wss://peer.example.com' }],
+          terms: [],
+          scopes: [],
+        },
+      })
+
+      adapter.addAuthenticatedPubkey(pubkey, '1'.repeat(64))
+      adapter.setPeerPubkey(pubkey)
+      expect(adapter.getPeerPubkey()).to.equal(undefined)
+    })
+
+    it('clears peer status explicitly', () => {
+      const pubkey = 'a'.repeat(64)
+      settingsFactory.returns({
+        peering: { enabled: true, peers: [{ pubkey, relayUrl: 'wss://peer.example.com' }] },
+      })
+
+      adapter.addAuthenticatedPubkey(pubkey, '1'.repeat(64))
+      adapter.setPeerPubkey(pubkey)
+      expect(adapter.getPeerPubkey()).to.equal(pubkey)
+
+      adapter.clearPeerPubkey('b'.repeat(64))
+      expect(adapter.getPeerPubkey()).to.equal(pubkey)
+
+      adapter.clearPeerPubkey(pubkey)
       expect(adapter.getPeerPubkey()).to.equal(undefined)
     })
 

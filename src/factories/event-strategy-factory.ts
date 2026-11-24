@@ -3,6 +3,7 @@ import {
   IDvmJobRepository,
   IEventRepository,
   IInviteCodeRepository,
+  IPeeringAttestationRepository,
   IReportRepository,
   IUserRepository,
 } from '../@types/repositories'
@@ -19,6 +20,9 @@ import {
   isRequestToVanishEvent,
 } from '../utils/event'
 import { isNip43InviteRequest, isNip43JoinRequest, isNip43LeaveRequest } from '../utils/nip43'
+import { isPeeringAcceptanceEvent, isPeeringRequestEvent } from '../utils/peering-attestation'
+import { PeeringAcceptanceEventStrategy } from '../handlers/event-strategies/peering-acceptance-event-strategy'
+import { PeeringRequestEventStrategy } from '../handlers/event-strategies/peering-request-event-strategy'
 import { isReportEvent } from '../utils/nip56'
 import { isRelayListEvent } from '../utils/nip65'
 import { ContactListEventStrategy } from '../handlers/event-strategies/contact-list-event-strategy'
@@ -52,6 +56,7 @@ export const eventStrategyFactory =
     reportRepository: IReportRepository,
     cache: ICacheAdapter,
     settings: () => Settings,
+    peeringAttestations?: IPeeringAttestationRepository,
   ): Factory<IEventStrategy<Event, Promise<void>>, [Event, IWebSocketAdapter]> =>
   ([event, adapter]: [Event, IWebSocketAdapter]) => {
     if (isRequestToVanishEvent(event)) {
@@ -116,6 +121,10 @@ export const eventStrategyFactory =
       // falling through to DefaultEventStrategy.
     } else if (isDvmJobRequestEvent(event)) {
       return new DvmJobRequestEventStrategy(adapter, eventRepository, dvmJobRepository)
+    } else if (isPeeringRequestEvent(event)) {
+      return new PeeringRequestEventStrategy(adapter, settings, peeringAttestations)
+    } else if (isPeeringAcceptanceEvent(event)) {
+      return new PeeringAcceptanceEventStrategy(adapter)
     } else if (isEphemeralEvent(event)) {
       return new EphemeralEventStrategy(adapter)
     } else if (isDeleteEvent(event)) {

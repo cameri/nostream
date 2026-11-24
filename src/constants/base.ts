@@ -40,6 +40,9 @@ export enum EventKinds {
   // NIP-43: Relay Access Metadata and Requests
   NIP43_ADD_USER = 8000,
   NIP43_REMOVE_USER = 8001,
+  // Relay peering: owner-signed request and relay-signed acceptance (ephemeral).
+  PEERING_REQUEST = 28937,
+  PEERING_ACCEPTANCE = 28938,
   // Lightning zaps
   ZAP_REQUEST = 9734,
   ZAP_RECEIPT = 9735,

@@ -59,6 +59,8 @@ const peeringTermSchema = z.object({
 const peeringDocumentSchema = z
   .object({
     enabled: z.boolean().optional(),
+    owner_attestation: z.enum(['required', 'preferred', 'waived']).optional(),
+    min_pow_difficulty: z.number().int().min(0).max(256).optional(),
     scopes: z.array(advertisedScopeSchema).optional(),
     terms: z.array(peeringTermSchema).optional(),
   })
@@ -94,6 +96,8 @@ export const parsePeeringAdvertisement = (document: unknown): PeeringAdvertiseme
       scopes: [],
       terms: [],
       self: parsed.data.self?.toLowerCase(),
+      ...(peering?.owner_attestation ? { ownerAttestation: peering.owner_attestation } : {}),
+      ...(peering?.min_pow_difficulty !== undefined ? { minPowDifficulty: peering.min_pow_difficulty } : {}),
       supportedNips: parsed.data.supported_nips ?? [],
     }
   }
@@ -123,6 +127,8 @@ export const parsePeeringAdvertisement = (document: unknown): PeeringAdvertiseme
       }),
     ),
     self: parsed.data.self?.toLowerCase(),
+    ...(peering?.owner_attestation ? { ownerAttestation: peering.owner_attestation } : {}),
+    ...(peering?.min_pow_difficulty !== undefined ? { minPowDifficulty: peering.min_pow_difficulty } : {}),
     supportedNips: parsed.data.supported_nips ?? [],
   }
 }

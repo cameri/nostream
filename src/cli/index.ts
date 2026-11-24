@@ -32,6 +32,7 @@ import {
   runDevTestPerfMessage,
 } from './commands/dev'
 import { runInviteCreate } from './commands/invite'
+import { runPeeringRequest } from './commands/peering'
 import { runTui } from './tui/main'
 import { logError, logInfo } from './utils/output'
 
@@ -94,6 +95,11 @@ const configEnvSubHelp: Record<string, string> = {
 
 const inviteSubHelp: Record<string, string> = {
   create: 'Usage: nostream invite create [--uses N] [--expires-in <seconds>] [--json]',
+}
+
+const peeringSubHelp: Record<string, string> = {
+  request:
+    'Usage: nostream peering request <relay-url> [--owner-key <hex>] [--pow <bits>] [--timeout <seconds>] [--json]',
 }
 
 const devSubHelp: Record<string, string> = {
@@ -289,9 +295,45 @@ cli
   )
 
 cli
+  .command('peering [...args]', 'Manage relay peering')
+  .option('--owner-key <hex>', 'Owner private key used to sign the establishment request')
+  .option('--pow <bits>', "Override the peer's advertised proof-of-work difficulty", { type: [Number] })
+  .option('--timeout <seconds>', 'Authentication and reply timeout', { type: [Number] })
+  .option('--json', 'Print machine-readable JSON')
+  .action(
+    withErrorBoundary(async (args: unknown, options: unknown) => {
+      const positional = (args as string[]) ?? []
+      const command = positional[0]
+      const resolved = options as Record<string, unknown>
+
+      if (resolved.help && command && peeringSubHelp[command]) {
+        logInfo(peeringSubHelp[command])
+        return 0
+      }
+
+      if (command !== 'request' || positional.length !== 2) {
+        throw new CliUsageError(peeringSubHelp.request)
+      }
+
+      const timeoutSeconds = Array.isArray(resolved.timeout) ? resolved.timeout[0] : resolved.timeout
+      const pow = Array.isArray(resolved.pow) ? resolved.pow[0] : resolved.pow
+
+      return runPeeringRequest({
+        relayUrl: positional[1],
+        ownerKey: typeof resolved.ownerKey === 'string' ? resolved.ownerKey : undefined,
+        powDifficulty: typeof pow === 'number' ? pow : undefined,
+        timeoutMs: typeof timeoutSeconds === 'number' ? timeoutSeconds * 1000 : undefined,
+        json: Boolean(resolved.json),
+      })
+    }),
+  )
+
+cli
   .command('invite [...args]', 'Mint NIP-43 invite codes')
   .option('--uses <uses>', 'Times the code can be claimed (default: nip43.defaultMaxUses)', { type: [Number] })
-  .option('--expires-in <seconds>', 'Code lifetime in seconds (default: nip43.inviteCodeExpirySeconds)', { type: [Number] })
+  .option('--expires-in <seconds>', 'Code lifetime in seconds (default: nip43.inviteCodeExpirySeconds)', {
+    type: [Number],
+  })
   .option('--json', 'Print machine-readable JSON')
   .action(
     withErrorBoundary(async (args: unknown, options: unknown) => {
@@ -482,6 +524,7 @@ withErrorBoundary(async () => {
     'update',
     'clean',
     'invite',
+    'peering',
   ])
 
   if (userArgs.length >= 2 && userArgs.includes('--help')) {
@@ -507,6 +550,11 @@ withErrorBoundary(async () => {
 
     if (userArgs[0] === 'invite' && inviteSubHelp[userArgs[1]]) {
       logInfo(inviteSubHelp[userArgs[1]])
+      return 0
+    }
+
+    if (userArgs[0] === 'peering' && peeringSubHelp[userArgs[1]]) {
+      logInfo(peeringSubHelp[userArgs[1]])
       return 0
     }
   }

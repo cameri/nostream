@@ -382,6 +382,33 @@ describe('settings-config', () => {
       expect(issues.some((issue) => issue.path === 'peering.minRequestPowDifficulty')).to.equal(true)
     })
 
+    it('rejects an unknown owner attestation policy', () => {
+      const issues = peeringIssues({ ...settlementFreePeering, ownerAttestation: 'sometimes' })
+
+      expect(issues.some((issue) => issue.path === 'peering.ownerAttestation')).to.equal(true)
+    })
+
+    it('rejects a non-boolean configured-peer PoW waiver', () => {
+      const issues = peeringIssues({ ...settlementFreePeering, waiveRequestPowForConfiguredPeers: 'yes' })
+
+      expect(issues.some((issue) => issue.path === 'peering.waiveRequestPowForConfiguredPeers')).to.equal(true)
+    })
+
+    it('validates an optional peer owner pubkey', () => {
+      expect(
+        peeringIssues({
+          ...settlementFreePeering,
+          peers: [{ pubkey: 'a'.repeat(64), relayUrl: 'wss://peer.example.com', ownerPubkey: 'b'.repeat(64) }],
+        }),
+      ).to.deep.equal([])
+
+      const issues = peeringIssues({
+        ...settlementFreePeering,
+        peers: [{ pubkey: 'a'.repeat(64), relayUrl: 'wss://peer.example.com', ownerPubkey: 'nope' }],
+      })
+      expect(issues.some((issue) => issue.path === 'peering.peers[0].ownerPubkey')).to.equal(true)
+    })
+
     it('accepts configured peers by hex or npub', () => {
       expect(
         peeringIssues({

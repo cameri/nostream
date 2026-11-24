@@ -22,9 +22,7 @@ export const hasExplicitNostrJsonAcceptHeader = (request: Request): boolean => {
   const acceptHeaderValue = Array.isArray(acceptHeader) ? acceptHeader.join(',') : acceptHeader
 
   return acceptHeaderValue.split(',').some((token) => {
-    const [mediaType, ...params] = token
-      .split(';')
-      .map((value) => value.trim().toLowerCase())
+    const [mediaType, ...params] = token.split(';').map((value) => value.trim().toLowerCase())
 
     if (mediaType !== 'application/nostr+json') {
       return false
@@ -59,6 +57,7 @@ export const buildPeeringDocument = (peering: PeeringSettings | undefined) => {
     // NIP-11 convention: snake_case in the document, and 0/absent both mean
     // no proof-of-work requirement.
     min_pow_difficulty: peering.minRequestPowDifficulty ?? 0,
+    ...(peering.ownerAttestation ? { owner_attestation: peering.ownerAttestation } : {}),
     scopes: (peering.scopes ?? []).map((scope) => ({
       kinds: scope.kinds,
       ...(scope.since !== undefined ? { since: scope.since } : {}),

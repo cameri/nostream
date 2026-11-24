@@ -1,5 +1,5 @@
 import { Pubkey } from './base'
-import { PeeringScope, PeeringTerm } from './settings'
+import { PeeringOwnerAttestationPolicy, PeeringScope, PeeringTerm } from './settings'
 
 /** One scope advertised by a peer in its NIP-11 `peering` section. */
 export type AdvertisedPeeringScope = PeeringScope
@@ -10,7 +10,61 @@ export interface PeeringAdvertisement {
   terms: PeeringTerm[]
   /** The relay key the peer advertises as `self`, when it publishes one. */
   self?: string
+  /** How the peer treats owner attestation on incoming requests. */
+  ownerAttestation?: PeeringOwnerAttestationPolicy
+  /** NIP-13 bits the peer requires on a peering request. */
+  minPowDifficulty?: number
   supportedNips: number[]
+}
+
+/** An owner-signed peering request, carried in an ephemeral kind 28937 event. */
+export interface PeeringRequestPayload {
+  relay_pubkey: string
+  relay_url: string
+  scopes: PeeringScope[]
+  terms: PeeringTerm[]
+  terms_hash: string
+}
+
+/** A relay-signed acceptance of one specific peering request. */
+export interface PeeringAcceptancePayload {
+  request_id: string
+  relay_pubkey: string
+  relay_url: string
+  terms_hash: string
+  accepted_at: number
+}
+
+/** The agreement a required-policy socket must still match. */
+export type PeeringAttestationAgreement = Pick<PeeringAttestation, 'termsHash' | 'scopes' | 'ownerPubkey'>
+
+/** The latest accepted owner attestation for one relay key. */
+export interface PeeringAttestation {
+  relayPubkey: Pubkey
+  ownerPubkey: Pubkey
+  relayUrl: string
+  requestEventId: string
+  scopes: PeeringScope[]
+  terms: PeeringTerm[]
+  termsHash: string
+  powDifficulty: number
+  acceptedAt?: Date | null
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface DBPeeringAttestation {
+  relay_pubkey: Buffer
+  owner_pubkey: Buffer
+  relay_url: string
+  request_event_id: string
+  scopes: unknown
+  terms: unknown
+  terms_hash: string
+  pow_difficulty: number
+  accepted_at: Date | null
+  created_at: Date
+  updated_at: Date
 }
 
 export type PeeringSyncStatus = 'idle' | 'connecting' | 'reconciling' | 'live' | 'error' | 'stopped'

@@ -76,10 +76,7 @@ import { recordModerationRateLimitHitSafely } from '../utils/moderation-rate-lim
  * must not be announced as `rate-limited`: every client would back off for a
  * backend outage.
  */
-type RateLimitVerdict =
-  | { status: 'allowed' }
-  | { status: 'limited', retryAfterMs: number }
-  | { status: 'unavailable' }
+type RateLimitVerdict = { status: 'allowed' } | { status: 'limited'; retryAfterMs: number } | { status: 'unavailable' }
 
 const logger = createLogger('event-message-handler')
 
@@ -194,7 +191,7 @@ export class EventMessageHandler implements IMessageHandler {
     // any real work. Note: a duplicate/no-op write still counts here, since
     // dedup is decided later inside the event strategy's own execute().
     const powSettings = this.settings().limits?.event?.pow
-    if (powSettings?.enabled) {
+    if (powSettings?.enabled && event.kind !== EventKinds.PEERING_REQUEST) {
       recordAdaptivePowEvent(powSettings.periodMs)
     }
 
@@ -274,7 +271,10 @@ export class EventMessageHandler implements IMessageHandler {
     // respond to relay load the way an event id's mined-per-submission pow can.
     // The static pubkey.minLeadingZeroBits knob is left untouched regardless of
     // pow.enabled -- per maintainer direction on PR #756.
-    if (limits.pow?.enabled) {
+    if (event.kind === EventKinds.PEERING_REQUEST) {
+      // Peering requests carry their own NIP-13 requirement, checked by the
+      // strategy after the owner signature and AUTH identity are known.
+    } else if (limits.pow?.enabled) {
       const computedDifficulty = getAdaptivePowDifficulty(limits.pow)
       // Only consult the WoT graph when thresholds are actually configured --
       // a distance lookup is unnecessary work otherwise, and skipping it also
@@ -295,7 +295,11 @@ export class EventMessageHandler implements IMessageHandler {
       }
     }
 
-    if (typeof limits.pubkey?.minLeadingZeroBits !== 'undefined' && limits.pubkey.minLeadingZeroBits > 0) {
+    if (
+      event.kind !== EventKinds.PEERING_REQUEST &&
+      typeof limits.pubkey?.minLeadingZeroBits !== 'undefined' &&
+      limits.pubkey.minLeadingZeroBits > 0
+    ) {
       const pow = getPubkeyProofOfWork(event.pubkey)
       if (pow < limits.pubkey.minLeadingZeroBits) {
         return `pow: pubkey difficulty ${pow}<${limits.pubkey.minLeadingZeroBits}`
@@ -303,6 +307,7 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     if (
+      event.kind !== EventKinds.PEERING_REQUEST &&
       typeof limits.pubkey?.whitelist !== 'undefined' &&
       limits.pubkey.whitelist.length > 0 &&
       !limits.pubkey.whitelist.includes(event.pubkey)
@@ -319,6 +324,7 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     if (
+      event.kind !== EventKinds.PEERING_REQUEST &&
       typeof limits.kind?.whitelist !== 'undefined' &&
       limits.kind.whitelist.length > 0 &&
       !limits.kind.whitelist.some(isEventKindOrRangeMatch(event))
@@ -327,6 +333,7 @@ export class EventMessageHandler implements IMessageHandler {
     }
 
     if (
+      event.kind !== EventKinds.PEERING_REQUEST &&
       typeof limits.kind?.blacklist !== 'undefined' &&
       limits.kind.blacklist.length > 0 &&
       limits.kind.blacklist.some(isEventKindOrRangeMatch(event))
@@ -337,6 +344,12 @@ export class EventMessageHandler implements IMessageHandler {
 
   protected isAuthenticationRequired(event: Event): string | undefined {
     if (!isAuthRequired(this.settings())) {
+      return
+    }
+
+    // The owner signs the establishment record, but the relay key is the live
+    // identity on the socket. The strategy verifies both.
+    if (event.kind === EventKinds.PEERING_REQUEST) {
       return
     }
 
@@ -610,7 +623,8 @@ export class EventMessageHandler implements IMessageHandler {
     if (
       event.kind === EventKinds.NIP43_JOIN_REQUEST ||
       event.kind === EventKinds.NIP43_LEAVE_REQUEST ||
-      event.kind === EventKinds.NIP43_INVITE_REQUEST
+      event.kind === EventKinds.NIP43_INVITE_REQUEST ||
+      event.kind === EventKinds.PEERING_REQUEST
     ) {
       return
     }
@@ -717,7 +731,11 @@ export class EventMessageHandler implements IMessageHandler {
 
     // NIP-43: join/leave requests bypass NIP-05 — a new user won't have a
     // verification record yet, and requiring one would block the join flow.
-    if (event.kind === EventKinds.NIP43_JOIN_REQUEST || event.kind === EventKinds.NIP43_LEAVE_REQUEST) {
+    if (
+      event.kind === EventKinds.NIP43_JOIN_REQUEST ||
+      event.kind === EventKinds.NIP43_LEAVE_REQUEST ||
+      event.kind === EventKinds.PEERING_REQUEST
+    ) {
       return
     }
 
