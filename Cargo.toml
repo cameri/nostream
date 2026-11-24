@@ -88,6 +88,11 @@ debug = 0
 # (heed 0.20.5, src/env.rs:236) and the storage crate wraps it in exactly one
 # audited `#[allow(unsafe_code)]` call. Every other crate is effect-free unsafe.
 unsafe_code = "deny"
+# `cfg(kani)` is set by the verifier, never by cargo — declared here so every
+# build agrees on the set of known cfg names instead of warning four times per
+# `nostream-scan` target. `cargo kani` is the only thing that can compile the
+# proofs; a normal build compiles the `#[cfg(kani)]` items out.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
 
 [workspace.lints.clippy]
 todo = "deny"
