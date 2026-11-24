@@ -1569,6 +1569,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "nostream-scan"
+version = "0.1.0"
+
+[[package]]
 name = "nostream-services"
 version = "0.1.0"
 dependencies = [
@@ -1579,6 +1583,7 @@ dependencies = [
  "nostream-config",
  "nostream-core",
  "nostream-relay",
+ "nostream-scan",
  "nostream-storage",
  "reqwest",
  "serde_json",

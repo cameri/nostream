@@ -1,0 +1,22 @@
+[package]
+name = "nostream-scan"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The byte scanner that finds where one JSON array element ends, and nothing else"
+
+# No dependencies, deliberately. This crate is the target of the Kani proofs in
+# `proofs.rs`, and a verifier that has to build tokio, secp256k1's C sources and
+# a TLS stack before it can reason about 130 lines of state machine spends its
+# time on the wrong code. Keeping the scanner dependency-free is what makes
+# `cargo kani -p nostream-scan` a minute rather than an hour, and it is also why
+# the scanner cannot drift from what is verified: the reader calls this code.
+
+[dependencies]
+
+[dev-dependencies]
+
+[lints]
+workspace = true

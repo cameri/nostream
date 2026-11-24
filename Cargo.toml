@@ -36,6 +36,7 @@ nostream-config = { path = "crates/nostream-config" }
 nostream-core = { path = "crates/nostream-core" }
 nostream-mcp = { path = "crates/nostream-mcp" }
 nostream-relay = { path = "crates/nostream-relay" }
+nostream-scan = { path = "crates/nostream-scan" }
 nostream-services = { path = "crates/nostream-services" }
 nostream-storage = { path = "crates/nostream-storage" }
 nostreamd = { path = "crates/nostreamd" }
