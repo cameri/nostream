@@ -28,6 +28,11 @@ pub struct ElementEnd {
     found: bool,
     /// The element size at which an unfinished element is next handed to the parser.
     next_probe: usize,
+    /// Bytes examined, counted across every call. Proof-only: it is what turns "a
+    /// second pass finds the same end" into a statement about work done, not about
+    /// the answer, and it is absent from a normal build.
+    #[cfg(kani)]
+    visits: usize,
 }
 
 impl Default for ElementEnd {
@@ -40,6 +45,8 @@ impl Default for ElementEnd {
             scalar: false,
             found: false,
             next_probe: FIRST_PROBE,
+            #[cfg(kani)]
+            visits: 0,
         }
     }
 }
@@ -87,6 +94,11 @@ impl ElementEnd {
             if self.scalar && ends_scalar(byte) {
                 self.found = true;
                 break;
+            }
+
+            #[cfg(kani)]
+            {
+                self.visits += 1;
             }
 
             self.scanned += 1;
@@ -150,6 +162,12 @@ impl ElementEnd {
     #[cfg(kani)]
     pub(crate) fn is_scalar(&self) -> bool {
         self.scalar
+    }
+
+    /// Bytes examined across every call so far.
+    #[cfg(kani)]
+    pub(crate) fn visits(&self) -> usize {
+        self.visits
     }
 }
 

@@ -7,15 +7,22 @@
 //! unit tests, and it is why these live beside the code they prove instead of
 //! in a document.
 //!
-//! Run them with the sidecar: `containers/kani/kn-run cargo kani -p
-//! nostream-scan`. Cargo itself is not enough — `cargo kani setup` must have
-//! run once inside the image, and `RUSTUP_TOOLCHAIN=kani` must be set so the
-//! repository's own `rust-toolchain.toml` pin does not hijack the verifier's
-//! toolchain.
+//! Running them needs nothing but Rust and the verifier:
 //!
-//! A proof that is never seen to fail proves nothing (the same rule the factory
-//! reviewers apply to tests), so each harness here has a recorded broken
-//! variant that produces a counterexample; see `containers/kani/README.md`.
+//! ```text
+//! cargo install --locked kani-verifier --version 0.68.0
+//! cargo kani setup
+//! cargo kani -p nostream-scan
+//! ```
+//!
+//! `cargo kani setup` installs the nightly the verifier was built against, so the
+//! repository's own `rust-toolchain.toml` pin is irrelevant to these runs — that is
+//! also why CI installs the verifier rather than a toolchain. A normal build
+//! compiles none of this file, and `cargo test` proves nothing about it.
+//!
+//! A proof that is never seen to fail proves nothing (the same rule the reviewers
+//! apply to tests). Each harness here has a broken variant that produces a
+//! counterexample, and the way to see it is in the harness's own doc comment.
 
 use super::{ElementEnd, FIRST_PROBE};
 
@@ -88,13 +95,20 @@ fn the_probe_schedule_only_advances() {
         "a probe is due exactly at the threshold",
     );
     if due {
+        // Doubling, not merely "at least this length": a schedule that moved the
+        // threshold to `len` would satisfy a weaker check and re-parse on every
+        // later read, because the next read is never shorter.
         kani::assert(
-            end.next_probe() >= len,
-            "the next threshold is past the length just probed",
+            end.next_probe() >= len.saturating_mul(2),
+            "the next threshold is at least twice the length just probed",
         );
         kani::assert(
             end.next_probe() >= before,
             "the threshold never moves backwards",
+        );
+        kani::assert(
+            !end.probe_due(len),
+            "the same length is not probed twice, so a stalled reader cannot re-parse",
         );
     } else {
         kani::assert(end.next_probe() == before, "no probe, no threshold move");
@@ -137,27 +151,54 @@ fn resume_past_a_scalar_advances() {
     }
 }
 
-/// Scanning the same bytes twice finds the same end, and the second pass never
-/// rescans a byte it has already consumed (that is what makes the reader linear,
-/// not quadratic, in an element that arrives in small reads).
+/// Work is linear in the element's length: bytes examined equal bytes consumed.
+///
+/// The reachable failure is quadratic parsing — a scanner that restarts on every call
+/// still finds the same end and leaves the same offset, so an answer-only check passes
+/// while every read re-walks the element. Two statements pin it down:
+///
+/// - a second pass over a slice already seen examines none of it again, and
+/// - across calls, `visits` never exceeds `scanned` by more than the one byte a
+///   found delimiter re-examines — so the work is bounded by the element, not by
+///   the product of element length and read count.
+///
+/// One honest limit: a variant that wipes the whole scanner (`*self =
+/// Self::default()`) wipes the counter with it, so it defeats a measurement the
+/// struct hosts. That is why the property asserts the relationship between visits
+/// and the offset rather than an absolute count, and why the reader's contract is
+/// one scanner per element — `ArrayStream` constructs one and keeps it for the
+/// element's whole life.
 #[kani::proof]
-#[kani::unwind(7)]
-fn scanning_is_idempotent_and_forward_only() {
-    let len: usize = kani::any();
-    kani::assume(len >= 1 && len <= 4);
+#[kani::unwind(9)]
+fn a_second_pass_examines_nothing_new() {
+    let short: usize = kani::any();
+    let long: usize = kani::any();
+    kani::assume(short <= long && long <= 4);
     let bytes: [u8; 4] = kani::any();
 
     let mut end = ElementEnd::default();
-    let first = end.reached(&bytes[..len]);
-    let scanned_after_first = end.scanned();
-    let second = end.reached(&bytes[..len]);
-
+    let first = end.reached(&bytes[..short]);
+    let visits_after_short = end.visits();
     kani::assert(
-        first == second,
+        visits_after_short <= end.scanned() + 1,
+        "examining a slice costs no more than consuming it",
+    );
+
+    // The reader's second call: the same prefix again, as a growing buffer does.
+    let repeat = end.reached(&bytes[..short]);
+    kani::assert(
+        first == repeat,
         "a second pass cannot find an end the first missed",
     );
     kani::assert(
-        end.scanned() == scanned_after_first,
-        "a second pass over the same bytes consumes nothing new",
+        end.visits() == visits_after_short,
+        "a second pass over bytes already seen examines none of them",
+    );
+
+    // Then the whole slice: the work stays proportional to what has been consumed.
+    let _ = end.reached(&bytes[..long]);
+    kani::assert(
+        end.visits() <= end.scanned() + 1,
+        "every byte is examined at most once, plus at most one delimiter re-check",
     );
 }
