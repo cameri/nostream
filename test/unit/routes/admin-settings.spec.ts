@@ -356,6 +356,46 @@ describe('admin settings API', () => {
     })
   })
 
+  describe('the pubkey blacklist', () => {
+    const bannedPubkey = 'ab'.repeat(32)
+
+    const startAndPatch = async (body: unknown) => {
+      const passwordHash = hashAdminPassword('settings-password')
+      const admin = { enabled: true, passwordHash, sessionTtlSeconds: 3600 }
+      saveSettings({ ...loadDefaults(), admin })
+      const baseUrl = await startServer({ admin })
+      const cookie = await login(baseUrl)
+
+      return axios.patch(`${baseUrl}/settings`, body, {
+        headers: { cookie, 'content-type': 'application/json' },
+        validateStatus: () => true,
+      })
+    }
+
+    const storedBlacklist = () =>
+      (yaml.load(fs.readFileSync(getSettingsFilePath(), 'utf-8')) as any).limits?.event?.pubkey?.blacklist
+
+    it('does not save an uppercase pubkey, which would never match an event', async () => {
+      const response = await startAndPatch({
+        path: 'limits.event.pubkey.blacklist',
+        value: [bannedPubkey.toUpperCase()],
+      })
+
+      expect(response.status, JSON.stringify(response.data)).to.equal(400)
+      expect(response.data.issues).to.deep.equal([
+        { path: 'limits.event.pubkey.blacklist[0]', message: 'must be a 64-character lowercase hex pubkey' },
+      ])
+      expect(storedBlacklist() ?? []).to.deep.equal([])
+    })
+
+    it('saves a lowercase pubkey', async () => {
+      const response = await startAndPatch({ path: 'limits.event.pubkey.blacklist', value: [bannedPubkey] })
+
+      expect(response.status, JSON.stringify(response.data)).to.equal(200)
+      expect(storedBlacklist()).to.deep.equal([bannedPubkey])
+    })
+  })
+
   it('atomically applies staged changes with a backup and audit entry', async () => {
     const passwordHash = hashAdminPassword('settings-password')
     saveSettings({
