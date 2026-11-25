@@ -16,11 +16,16 @@ class FakeRevocations implements IAdminSessionRevocations {
   public failRevoke = false
   public failCheck = false
 
-  public async revoke(sessionId: string, ttlSeconds: number): Promise<void> {
+  public async revoke(sessionId: string, ttlSeconds: number): Promise<boolean> {
     if (this.failRevoke) {
       throw new Error('redis is down')
     }
+    // Check and set in one step, like the cache does with SET NX.
+    if (this.revoked.has(sessionId)) {
+      return false
+    }
     this.revoked.set(sessionId, ttlSeconds)
+    return true
   }
 
   public async isRevoked(sessionId: string): Promise<boolean> {
@@ -91,6 +96,8 @@ describe('PasswordAdminAuthProvider sessions', () => {
     }
     return response
   }
+
+  const sessionIdOf = (token: string): string => token.split('.')[1]
 
   const requestWithToken = (token: string, via: 'cookie' | 'bearer' = 'cookie'): Request =>
     ({
@@ -179,6 +186,127 @@ describe('PasswordAdminAuthProvider sessions', () => {
     expect(none.statusCode).to.equal(200)
     expect(none.headers['Set-Cookie']).to.match(/admin_session=;.*Max-Age=0/)
     expect(revocations.revoked.size).to.equal(0)
+  })
+
+  describe('the audit record of a logout', () => {
+    it('is written for a request that presents a valid session, with that request', async () => {
+      const token = await login()
+      audit.resetHistory()
+      const request = requestWithToken(token)
+
+      await provider.handleLogout(request, mockResponse() as unknown as Response)
+
+      expect(audit).to.have.been.calledOnceWithExactly('logout', request)
+    })
+
+    it('is also written when the session is presented as a Bearer token', async () => {
+      const token = await login()
+      audit.resetHistory()
+
+      await logout(token, 'bearer')
+
+      expect(audit).to.have.been.calledOnceWith('logout')
+    })
+
+    it('is not written for a request without a token', async () => {
+      const response = mockResponse()
+
+      await provider.handleLogout({ headers: {}, socket: {} } as any, response as any)
+
+      expect(response.statusCode).to.equal(200)
+      expect(response.headers['Set-Cookie']).to.match(/admin_session=;.*Max-Age=0/)
+      expect(audit).not.to.have.been.calledWith('logout')
+    })
+
+    it('is not written for a token that was not signed by the relay', async () => {
+      const response = await logout(`${Math.floor(Date.now() / 1000) + 600}.${'0'.repeat(32)}.${'0'.repeat(64)}`)
+
+      expect(response.statusCode).to.equal(200)
+      expect(response.headers['Set-Cookie']).to.match(/admin_session=;.*Max-Age=0/)
+      expect(audit).not.to.have.been.calledWith('logout')
+    })
+
+    it('is not written for a malformed token', async () => {
+      const response = await logout('abc.def')
+
+      expect(response.statusCode).to.equal(200)
+      expect(audit).not.to.have.been.calledWith('logout')
+    })
+
+    it('is not written for a token that has expired', async () => {
+      const response = await logout(createAdminSessionToken(Math.floor(Date.now() / 1000) - 10))
+
+      expect(response.statusCode).to.equal(200)
+      expect(response.headers['Set-Cookie']).to.match(/admin_session=;.*Max-Age=0/)
+      expect(audit).not.to.have.been.calledWith('logout')
+    })
+
+    it('is written once for the logout that ended the session, not again when the token is sent again', async () => {
+      const token = await login()
+      audit.resetHistory()
+
+      const first = await logout(token)
+      const replay = await logout(token)
+      const another = await logout(token, 'bearer')
+
+      expect(first.statusCode).to.equal(200)
+      expect(replay.statusCode).to.equal(200)
+      expect(replay.headers['Set-Cookie']).to.match(/admin_session=;.*Max-Age=0/)
+      expect(another.statusCode).to.equal(200)
+      expect(audit).to.have.been.calledOnceWith('logout')
+    })
+
+    it('is not written for a replay however many times it is sent', async () => {
+      const token = await login()
+      await logout(token)
+      audit.resetHistory()
+
+      for (let i = 0; i < 20; i++) {
+        await logout(token)
+      }
+
+      expect(audit).not.to.have.been.called
+    })
+
+    it('is written once when the same session is logged out by several requests at the same time', async () => {
+      const token = await login()
+      audit.resetHistory()
+
+      const responses = await Promise.all([logout(token), logout(token), logout(token), logout(token)])
+
+      expect(responses.map((response) => response.statusCode)).to.deep.equal([200, 200, 200, 200])
+      expect(audit).to.have.been.calledOnceWith('logout')
+    })
+
+    it('is not written for a session that was revoked elsewhere, for example by another worker', async () => {
+      const token = await login()
+      revocations.revoked.set(sessionIdOf(token), 3600)
+      audit.resetHistory()
+
+      const response = await logout(token)
+
+      expect(response.statusCode).to.equal(200)
+      expect(audit).not.to.have.been.called
+    })
+
+    it('is written again for a new session of the same administrator', async () => {
+      const first = await login()
+      await logout(first)
+      const second = await login()
+      audit.resetHistory()
+
+      await logout(second)
+
+      expect(audit).to.have.been.calledOnceWith('logout')
+    })
+
+    it('is not written once for every anonymous request, however many there are', async () => {
+      for (let i = 0; i < 20; i++) {
+        await provider.handleLogout({ headers: {}, socket: {} } as any, mockResponse() as any)
+      }
+
+      expect(audit).not.to.have.been.calledWith('logout')
+    })
   })
 
   it('reports the logout to the audit hook only once the session is revoked', async () => {

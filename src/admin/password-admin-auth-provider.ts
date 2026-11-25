@@ -67,9 +67,10 @@ export class PasswordAdminAuthProvider implements IAdminAuthProvider {
 
     if (session) {
       // The token is signed, so only a record of its session id can end it before it expires.
+      let revokedNow: boolean
       try {
         const remainingSeconds = session.expiresAt - Math.floor(Date.now() / 1000)
-        await this.sessionRevocations.revoke(session.sessionId, remainingSeconds + 1)
+        revokedNow = await this.sessionRevocations.revoke(session.sessionId, remainingSeconds + 1)
       } catch (error) {
         logger.error('unable to revoke the admin session at logout: %o', error)
         response
@@ -79,9 +80,16 @@ export class PasswordAdminAuthProvider implements IAdminAuthProvider {
           .send({ error: 'Internal Server Error' })
         return
       }
-    }
 
-    void this.auditHook?.('logout', request)
+      // Recorded only by the call that ended the session. The endpoint is public (it has to clear a cookie whoever
+      // sends the request), and a signed token stays well-formed after its session is revoked, so a copy of a token
+      // that was logged out could otherwise be sent again and again, each time adding a record for a logout that did
+      // not happen, until the shared, size-limited audit history held nothing else. A request with no valid token
+      // never gets here, and a replay of a revoked one gets the same 200 and writes nothing.
+      if (revokedNow) {
+        void this.auditHook?.('logout', request)
+      }
+    }
 
     response
       .status(200)
