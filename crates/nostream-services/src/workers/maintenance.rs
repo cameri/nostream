@@ -128,17 +128,29 @@ impl MaintenanceWorker {
     /// One pass, in the capture's order.
     ///
     /// The purge is the one an earlier pass left running, when there is one; otherwise this
-    /// pass starts it. Passes are not meant to overlap or be cancelled midway — [`Self::run`]
-    /// runs one at a time, to completion — and a pass that overlapped another would not see the
-    /// purge the other is holding.
+    /// pass starts it. Passes must not overlap or be cancelled midway — [`Self::run`] runs one
+    /// at a time, to completion. Between taking the held purge and storing it back, its handle
+    /// lives only in this pass: a pass dropped there detaches it again (the purge keeps running,
+    /// untracked, and the next pass starts another), and an overlapping pass finds no held purge
+    /// and starts its own.
     pub async fn run_pass(&self) -> PassOutcome {
-        let (mut purge, passes_waited) = match self.take_outstanding_purge() {
+        let (mut purge, passes_waited, purge_started) = match self.take_outstanding_purge() {
             Some(previous) if !previous.handle.is_finished() => {
-                tracing::warn!(
-                    passes_waited = previous.passes_waited,
-                    "the previous retention purge is still running; this pass waits on it instead of starting another"
-                );
-                (previous.handle, previous.passes_waited)
+                // On the first wait and every tenth after it, so a purge that never returns
+                // does not write a warning every minute; the cap's own error is per pass.
+                if previous.passes_waited == 1 || previous.passes_waited % 10 == 0 {
+                    tracing::warn!(
+                        passes_waited = previous.passes_waited,
+                        "the previous retention purge is still running; this pass waits on it instead of starting another"
+                    );
+                } else {
+                    tracing::debug!(
+                        passes_waited = previous.passes_waited,
+                        "the previous retention purge is still running"
+                    );
+                }
+
+                (previous.handle, previous.passes_waited, false)
             }
             finished => {
                 // It ended between passes: its result is already there and nothing awaits it,
@@ -150,10 +162,9 @@ impl MaintenanceWorker {
                 let purge_tasks = Arc::clone(&self.tasks);
                 let purge = tokio::spawn(async move { purge_tasks.clear_old_events().await });
 
-                (purge, 0)
+                (purge, 0, true)
             }
         };
-        let purge_started = passes_waited == 0;
 
         // Give the purge its first poll so the order is the capture's: started, then the
         // remaining steps, then awaited.
@@ -212,11 +223,26 @@ impl MaintenanceWorker {
             .take()
     }
 
+    /// Holds a timed-out purge. The slot is empty here unless two passes overlapped; then the
+    /// other pass's purge is kept rather than overwritten, since dropping a handle detaches a
+    /// purge that is still working — the defect this slot exists to remove — and this one is
+    /// left untracked instead, loudly.
     fn store_outstanding_purge(&self, purge: OutstandingPurge) {
-        *self
+        let mut slot = self
             .outstanding_purge
             .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(purge);
+            .unwrap_or_else(PoisonError::into_inner);
+
+        debug_assert!(slot.is_none(), "two maintenance passes overlapped");
+
+        if slot.is_some() {
+            tracing::error!(
+                "two maintenance passes overlapped; a timed-out retention purge is no longer tracked"
+            );
+            return;
+        }
+
+        *slot = Some(purge);
     }
 
     fn payments_enabled(&self) -> bool {

@@ -338,6 +338,38 @@ async fn a_purge_still_running_is_awaited_by_the_next_pass_not_started_again() {
 }
 
 #[tokio::test]
+async fn a_purge_that_finished_between_passes_is_read_and_a_new_one_starts() {
+    let gate = Arc::new(Semaphore::new(0));
+    let tasks = ScriptedTasks::new(Arc::clone(&gate), None);
+    let worker = MaintenanceWorker::new(
+        Arc::new(testing::settings()),
+        Arc::clone(&tasks) as Arc<dyn MaintenanceTasks>,
+        Duration::from_secs(60),
+        Duration::from_millis(20),
+    );
+
+    let first = worker.run_pass().await;
+    assert!(first.purge_timed_out && first.purge_started);
+
+    // Let the held purge run to completion before the next pass looks at it.
+    gate.add_permits(1);
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
+    assert!(tasks.entries().contains(&"purge finished".to_owned()));
+
+    gate.add_permits(1);
+    let second = worker.run_pass().await;
+
+    assert!(
+        second.purge_started,
+        "the finished purge is read and a fresh one starts: {second:?}"
+    );
+    assert_eq!(second.counts, Some(scripted_counts()));
+    assert_eq!(purge_starts(&tasks), 2);
+}
+
+#[tokio::test]
 async fn ticks_during_a_slow_purge_do_not_pile_up_purges() {
     let gate = Arc::new(Semaphore::new(0));
     let tasks = ScriptedTasks::new(Arc::clone(&gate), None);

@@ -53,10 +53,15 @@ The alternative — `PassOutcome { counts: EventPurgeCounts }` with zeros on fai
 because a timed-out purge that reports `{0,0,0}` is indistinguishable from a pass that found
 nothing to do, and the operator reading the record would believe the second.
 
-**Cost:** one `Option` the loop still discards — `run_pass`'s outcome is dropped at the tick, so
-the counts are observable only through `run_pass`'s return value and the door's own call. The
-value exists for the tests and for the next reader of the pass; the loop's cadence and its
-four-step order are untouched.
+**Cost:** one `Option` no consumer reads — the loop logs `run_pass`'s outcome at `debug!` and
+keeps nothing of it, so the counts are observable only through `run_pass`'s return value, that
+log line and the door's own call. A log line is not a record: nothing reads it back, which is why
+D3 still needs a writer. The value exists for the tests and for the next reader of the pass; the
+loop's cadence and its four-step order are untouched.
+
+*Amended by #1103:* `PassOutcome` also carries `purge_started` and `purge_timed_out` — a pass may
+wait on a purge an earlier pass left running instead of starting its own, and the outcome says
+which — and the loop's `debug!` line above replaced the bare discard.
 
 ### D2 — `maintenance_run` runs the purge step through `MaintenanceService`, in the answering process, with no cap of its own
 
@@ -89,9 +94,9 @@ The alternatives cost more than the fact is worth here: a file needs a writer in
 `MaintenanceWorker` (which has no clock and no path), a TTL policy and a second writer rule
 beside the audit file's; a sixth key in the published document costs an amendment to ADR 0016's
 five-key shape plus a writer at the loop, which already holds what the key would report —
-`MaintenanceWorker`'s tick calls `run_pass` and discards its `PassOutcome`
-(`crates/nostream-services/src/workers/maintenance.rs:178`), so the counts are produced and
-dropped rather than absent.
+`MaintenanceWorker`'s tick calls `run_pass` and keeps nothing of its `PassOutcome` beyond a
+`debug!` line (`crates/nostream-services/src/workers/maintenance.rs`, `run`), so the counts are
+produced and dropped rather than absent.
 
 **Cost:** the record is **this process's own**. A door run beside a daemon is a supported
 deployment, not an excluded one: the stdio mode is its own process over the same config
