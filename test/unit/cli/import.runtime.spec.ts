@@ -79,8 +79,31 @@ describe('import runtime routing', () => {
     const code = await runImportEvents(['--help'])
 
     expect(code).to.equal(0)
-    const output = logStub.getCalls().map((call) => call.args.join(' ')).join('\n')
+    const output = logStub
+      .getCalls()
+      .map((call) => call.args.join(' '))
+      .join('\n')
     expect(output).to.include('file.jsonl|file.json')
     expect(output).to.include('nostream import ./events.json --batch-size 1000')
+  })
+
+  it('prints a line error with terminal control characters as visible escapes', async () => {
+    const filePath = makeTempFile('events.jsonl', '{"x":1}\n')
+    const warnStub = sinon.stub(console, 'warn')
+
+    sinon.stub(dbClient, 'getMasterDbClient').returns(stubDb())
+    sinon.stub(EventImportService.prototype, 'importFromReadable').callsFake(async (_stream, options) => {
+      options?.onLineError?.({ lineNumber: 7, reason: 'Unexpected token "\u001b]52;c;ZXZpbA\u0007"' })
+      return emptyStats()
+    })
+
+    await runImportEvents([filePath])
+
+    const output = warnStub
+      .getCalls()
+      .map((call) => call.args.join(' '))
+      .join('\n')
+    expect(output).to.include('[line 7] Unexpected token "\\x1b]52;c;ZXZpbA\\x07"')
+    expect(output).to.not.match(/[\u0000-\u001f\u007f-\u009f]/)
   })
 })
