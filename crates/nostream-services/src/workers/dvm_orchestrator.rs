@@ -583,6 +583,7 @@ async fn drive_worker(
     events: mpsc::UnboundedSender<WorkerEvent>,
 ) {
     let mut lines = BufReader::new(stdout).lines();
+    let mut kill_requested = false;
 
     loop {
         tokio::select! {
@@ -598,13 +599,29 @@ async fn drive_worker(
                 }
             }
             _ = &mut killed => {
+                kill_requested = true;
                 let _ = process.kill().await;
                 break;
             }
         }
     }
 
-    let (code, signal) = match process.wait().await {
+    // Once stdout has closed the child may still be running — it finished its output and
+    // hung, or its output went elsewhere — so the kill request stays live while it is awaited
+    // (#1102). A receiver that already fired is not polled again.
+    let status = if kill_requested {
+        process.wait().await
+    } else {
+        tokio::select! {
+            status = process.wait() => status,
+            _ = &mut killed => {
+                let _ = process.kill().await;
+                process.wait().await
+            }
+        }
+    };
+
+    let (code, signal) = match status {
         Ok(status) => exit_parts(status),
         Err(_) => (None, None),
     };
