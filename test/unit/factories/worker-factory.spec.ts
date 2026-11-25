@@ -90,7 +90,7 @@ describe('workerFactory', () => {
       worker.close()
     })
 
-    it('does not start the cache when nip56 is unset', async () => {
+    it('does not read the DB at boot when nip56 is unset', async () => {
       createSettingsStub.returns({
         info: { relay_url: 'url' },
         network: {},
@@ -101,6 +101,31 @@ describe('workerFactory', () => {
 
       expect(findActionableTargetsStub.called).to.be.false
       worker.close()
+    })
+
+    it('picks up hideActionableReports turned on after a boot without nip56', async () => {
+      const clock = Sinon.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+      try {
+        let settings: any = { info: { relay_url: 'url' }, network: {} }
+        createSettingsStub.callsFake(() => settings)
+
+        const worker = workerFactory()
+        await new Promise((resolve) => setImmediate(resolve))
+        expect(findActionableTargetsStub.called).to.be.false
+
+        settings = {
+          ...settings,
+          nip56: { enabled: true, trustedModerators: [], hideActionableReports: true },
+        }
+        clock.tick(30000)
+        await new Promise((resolve) => setImmediate(resolve))
+
+        expect(findActionableTargetsStub.callCount).to.equal(1)
+        worker.close()
+      } finally {
+        stopHiddenContentCache()
+        clock.restore()
+      }
     })
   })
 })
