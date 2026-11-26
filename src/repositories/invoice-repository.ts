@@ -91,6 +91,52 @@ export class InvoiceRepository implements IInvoiceRepository {
     return dbInvoices.map(fromDBInvoice)
   }
 
+  public async recordPeeringSettlementFailure(
+    id: string,
+    error: string,
+    client: DatabaseClient = this.dbClient,
+  ): Promise<{ attempts: number; lastError: string } | undefined> {
+    // Only the completed retry contract is counted. A PENDING row that the
+    // recheck path asked the processor about stays on the pending page.
+    const now = new Date()
+    const [row] = await client<DBInvoice>('invoices')
+      .where({ id, purpose: InvoicePurpose.PEERING, status: InvoiceStatus.COMPLETED })
+      .whereNull('confirmed_at')
+      .update({
+        settlement_attempts: client.raw('settlement_attempts + 1'),
+        last_settlement_error: error,
+        last_settlement_attempt_at: now,
+        updated_at: now,
+      })
+      .returning(['settlement_attempts', 'last_settlement_error'])
+
+    if (!row) {
+      return undefined
+    }
+
+    return {
+      attempts: Number(row.settlement_attempts ?? 0),
+      lastError: row.last_settlement_error ?? error,
+    }
+  }
+
+  public async claimPeeringSettlementAlert(
+    id: string,
+    threshold: number,
+    client: DatabaseClient = this.dbClient,
+  ): Promise<boolean> {
+    const now = new Date()
+    const [claimed] = await client<DBInvoice>('invoices')
+      .where({ id, purpose: InvoicePurpose.PEERING, status: InvoiceStatus.COMPLETED })
+      .whereNull('confirmed_at')
+      .whereNull('settlement_alerted_at')
+      .where('settlement_attempts', '>=', threshold)
+      .update({ settlement_alerted_at: now, updated_at: now })
+      .returning(['id'])
+
+    return Boolean(claimed)
+  }
+
   public updateStatus(invoice: Invoice, client: DatabaseClient = this.dbClient): Promise<Invoice | undefined> {
     logger('updating invoice status: %o', invoice)
 

@@ -266,7 +266,16 @@ The invoice travels over the authenticated relay connection:
 
 An expired invoice is retired and reissued on request after a short cooldown.
 Before denying access, the relay rechecks a pending invoice with the processor,
-so a missed webhook heals on its own. A peer can always authenticate and ask for
+so a missed webhook heals on its own.
+
+A completed peering invoice whose settlement transaction rolled back stays
+retryable. Every failed settlement increments `settlement_attempts` and stores
+`last_settlement_error` on the invoice; the maintenance worker keeps retrying.
+After `peering.settlementFailureThreshold` failures (default 5), the relay
+enqueues one `peering.payment.failed` operator notification and keeps retrying.
+Duplicate callbacks and underpayments are not counted as settlement failures.
+Only completed invoices that are still unconfirmed are counted; a pending row
+checked through the processor recheck path stays on the pending page. A peer can always authenticate and ask for
 its invoice, even while lapsed, but cannot read the feed.
 
 Billing state is stored in `peering_payments`, one row per peer and direction

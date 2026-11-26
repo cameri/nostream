@@ -143,6 +143,10 @@ export const fromDBInvoice = applySpec<Invoice>({
     pipe(prop('term_amount_msats') as () => string, toBigInt),
   ),
   termPeriodSeconds: prop('term_period_seconds'),
+  settlementAttempts: prop('settlement_attempts'),
+  lastSettlementError: prop('last_settlement_error'),
+  lastSettlementAttemptAt: prop('last_settlement_attempt_at'),
+  settlementAlertedAt: prop('settlement_alerted_at'),
 })
 
 export const fromDBPeeringPayment = applySpec<PeeringPayment>({

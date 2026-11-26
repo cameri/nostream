@@ -195,6 +195,10 @@ peering:
   # Configured peers are already trusted by pubkey, so their request does not
   # need to meet minRequestPowDifficulty. Set false to require it anyway.
   waiveRequestPowForConfiguredPeers: true
+  # A completed-but-unconfirmed paid peering invoice is retried by the
+  # maintenance worker. After this many failed settlements, enqueue one
+  # operator alert (peering.payment.failed) and keep retrying.
+  settlementFailureThreshold: 5
   # Feeds this relay is willing to serve. Each scope lists event kinds and,
   # optionally, an absolute time range (unix seconds) or a rolling window.
   # At least one scope is required when peering is enabled.
@@ -494,6 +498,7 @@ admin:
       peering.invoice.created: true
       peering.invoice.paid: true
       peering.invoice.failed: true
+      peering.payment.failed: true
       peering.access.lapsed: true
       settings.changed: true
       relay.restarted: false

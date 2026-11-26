@@ -42,6 +42,12 @@ export interface Invoice {
   termAmountMsats?: bigint | null
   /** Peering period length in seconds for this invoice. */
   termPeriodSeconds?: number | null
+  /** Failed peering settlement attempts for a completed-but-unconfirmed invoice. */
+  settlementAttempts?: number
+  lastSettlementError?: string | null
+  lastSettlementAttemptAt?: Date | null
+  /** Set once the threshold alert has been enqueued. */
+  settlementAlertedAt?: Date | null
 }
 
 export interface LnurlInvoice extends Invoice {
@@ -68,4 +74,8 @@ export interface DBInvoice {
   period_end?: Date | null
   term_amount_msats?: string | null
   term_period_seconds?: number | null
+  settlement_attempts?: number
+  last_settlement_error?: string | null
+  last_settlement_attempt_at?: Date | null
+  settlement_alerted_at?: Date | null
 }

@@ -1189,6 +1189,16 @@ const validatePeering = (settings: Settings, issues: ValidationIssue[]): void =>
     })
   }
 
+  if (peering.settlementFailureThreshold !== undefined) {
+    const threshold = peering.settlementFailureThreshold
+    if (!(typeof threshold === 'number' && Number.isInteger(threshold) && threshold > 0)) {
+      issues.push({
+        path: 'peering.settlementFailureThreshold',
+        message: 'must be a positive integer',
+      })
+    }
+  }
+
   const endpoint = typeof peering.endpoint === 'string' ? peering.endpoint.trim() : ''
   if (endpoint) {
     try {

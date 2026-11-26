@@ -24,6 +24,7 @@ export const adminNotificationsPatchBodySchema = z
         'peering.invoice.created': z.boolean().optional(),
         'peering.invoice.paid': z.boolean().optional(),
         'peering.invoice.failed': z.boolean().optional(),
+        'peering.payment.failed': z.boolean().optional(),
         'peering.access.lapsed': z.boolean().optional(),
         'settings.changed': z.boolean().optional(),
         'relay.restarted': z.boolean().optional(),

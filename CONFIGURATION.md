@@ -304,6 +304,7 @@ The settings below are listed in alphabetical order by name. Please keep this ta
 | peering.scopes[].since                      | Inclusive lower bound of the feed's time range as a unix timestamp in seconds. Omit for no lower bound. Mutually exclusive with `windowSeconds`. |
 | peering.scopes[].until                      | Inclusive upper bound of the feed's time range as a unix timestamp in seconds. Omit for a feed that stays current. Mutually exclusive with `windowSeconds`. |
 | peering.scopes[].windowSeconds              | Rolling window in seconds: the feed covers the most recent `windowSeconds` of events. Mutually exclusive with `since` and `until`. |
+| peering.settlementFailureThreshold          | Failed settlement attempts before one operator alert is enqueued for a completed-but-unconfirmed paid peering invoice. The invoice is still retried. Defaults to 5. |
 | peering.terms[].amount                      | Fee amount charged per peering period, denominated in `unit`. |
 | peering.terms[].period                      | Peering period in seconds. |
 | peering.terms[].unit                        | Fee unit (for example `msats`). An empty `terms` list means settlement-free peering. |

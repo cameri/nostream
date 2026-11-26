@@ -72,6 +72,11 @@ describe('PaymentsService', () => {
       updateStatus: sandbox.stub(),
       confirmInvoice: sandbox.stub().resolves(),
       updatePeriod: sandbox.stub().resolves(),
+      recordPeeringSettlementFailure: sandbox.stub().resolves({
+        attempts: 1,
+        lastError: 'settlement failed',
+      }),
+      claimPeeringSettlementAlert: sandbox.stub().resolves(false),
     }
 
     eventRepository = {
@@ -1159,6 +1164,193 @@ describe('PaymentsService', () => {
         Sinon.match({ reason: 'underpaid' }),
         mockTrx,
       )
+    })
+
+    it('records a failed settlement and rethrows without alerting below the threshold', async () => {
+      settings.returns({
+        payments: { enabled: true, feeSchedules: { admission: [] } },
+        peering: { settlementFailureThreshold: 5 },
+      })
+      invoiceRepository.findById.resolves(
+        stubInvoice({
+          purpose: InvoicePurpose.PEERING,
+          termAmountMsats: 0n,
+          termPeriodSeconds: 2592000,
+        }),
+      )
+
+      await expect(peeringService.confirmInvoice(makeCompletedInvoice())).to.be.rejectedWith('no term snapshot')
+
+      expect(invoiceRepository.recordPeeringSettlementFailure).to.have.been.calledWith(
+        'invoice-id',
+        Sinon.match('no term snapshot'),
+      )
+      expect(invoiceRepository.claimPeeringSettlementAlert).not.to.have.been.called
+      expect(notificationOutboxRepository.enqueue).not.to.have.been.calledWith(
+        OperatorNotificationEventType.PEERING_PAYMENT_FAILED,
+      )
+    })
+
+    it('enqueues one settlement alert when the threshold is reached', async () => {
+      settings.returns({
+        payments: { enabled: true, feeSchedules: { admission: [] } },
+        peering: { settlementFailureThreshold: 5 },
+      })
+      invoiceRepository.findById.resolves(
+        stubInvoice({
+          purpose: InvoicePurpose.PEERING,
+          termAmountMsats: 0n,
+          termPeriodSeconds: 2592000,
+        }),
+      )
+      invoiceRepository.recordPeeringSettlementFailure.resolves({
+        attempts: 5,
+        lastError: 'no term snapshot',
+      })
+      invoiceRepository.claimPeeringSettlementAlert.resolves(true)
+
+      await expect(peeringService.confirmInvoice(makeCompletedInvoice())).to.be.rejectedWith('no term snapshot')
+
+      expect(invoiceRepository.claimPeeringSettlementAlert).to.have.been.calledWith(
+        'invoice-id',
+        5,
+        mockTrx,
+      )
+      expect(notificationOutboxRepository.enqueue).to.have.been.calledWith(
+        OperatorNotificationEventType.PEERING_PAYMENT_FAILED,
+        Sinon.match({
+          invoiceId: 'invoice-id',
+          pubkey: 'pubkey1234',
+          attempts: 5,
+          lastError: 'no term snapshot',
+        }),
+        mockTrx,
+      )
+    })
+
+    it('rolls back the claim when the notification cannot be enqueued', async () => {
+      settings.returns({
+        payments: { enabled: true, feeSchedules: { admission: [] } },
+        peering: { settlementFailureThreshold: 5 },
+      })
+      invoiceRepository.findById.resolves(
+        stubInvoice({
+          purpose: InvoicePurpose.PEERING,
+          termAmountMsats: 0n,
+          termPeriodSeconds: 2592000,
+        }),
+      )
+      invoiceRepository.recordPeeringSettlementFailure.resolves({
+        attempts: 5,
+        lastError: 'no term snapshot',
+      })
+      invoiceRepository.claimPeeringSettlementAlert.resolves(true)
+      notificationOutboxRepository.enqueue.rejects(new Error('outbox down'))
+
+      await expect(peeringService.confirmInvoice(makeCompletedInvoice())).to.be.rejectedWith('no term snapshot')
+
+      expect(mockTrx.rollback).to.have.been.called
+    })
+
+    it('keeps retrying without a second claim when the alert was already sent', async () => {
+      settings.returns({
+        payments: { enabled: true, feeSchedules: { admission: [] } },
+        peering: { settlementFailureThreshold: 5 },
+      })
+      invoiceRepository.findById.resolves(
+        stubInvoice({
+          purpose: InvoicePurpose.PEERING,
+          termAmountMsats: 0n,
+          termPeriodSeconds: 2592000,
+        }),
+      )
+      invoiceRepository.recordPeeringSettlementFailure.resolves({
+        attempts: 6,
+        lastError: 'no term snapshot',
+      })
+      invoiceRepository.claimPeeringSettlementAlert.resolves(false)
+
+      await expect(peeringService.confirmInvoice(makeCompletedInvoice())).to.be.rejectedWith('no term snapshot')
+
+      expect(notificationOutboxRepository.enqueue).not.to.have.been.calledWith(
+        OperatorNotificationEventType.PEERING_PAYMENT_FAILED,
+      )
+    })
+
+    it('counts a confirmation-write failure for an eligible peering invoice', async () => {
+      settings.returns({
+        payments: { enabled: true, feeSchedules: { admission: [] } },
+        peering: { settlementFailureThreshold: 5 },
+      })
+      invoiceRepository.findById.resolves(
+        stubInvoice({
+          purpose: InvoicePurpose.PEERING,
+          termAmountMsats: 21000n,
+          termPeriodSeconds: 2592000,
+        }),
+      )
+      invoiceRepository.confirmInvoice.rejects(new Error('serialization failure'))
+
+      await expect(peeringService.confirmInvoice(makeCompletedInvoice())).to.be.rejectedWith(
+        'serialization failure',
+      )
+
+      expect(invoiceRepository.recordPeeringSettlementFailure).to.have.been.calledWith(
+        'invoice-id',
+        'serialization failure',
+      )
+    })
+
+    it('does not count an underpayment when its notification fails', async () => {
+      settings.returns({
+        payments: { enabled: true, feeSchedules: { admission: [] } },
+        peering: { settlementFailureThreshold: 5 },
+      })
+      invoiceRepository.findById.resolves(
+        stubInvoice({
+          purpose: InvoicePurpose.PEERING,
+          termAmountMsats: 21000n,
+          termPeriodSeconds: 2592000,
+        }),
+      )
+      notificationOutboxRepository.enqueue.rejects(new Error('outbox down'))
+
+      await expect(
+        peeringService.confirmInvoice(makeCompletedInvoice({ amountPaid: 1000n })),
+      ).to.be.rejectedWith('outbox down')
+
+      expect(invoiceRepository.recordPeeringSettlementFailure).not.to.have.been.called
+    })
+
+    it('does not count a duplicate callback as a settlement failure', async () => {
+      settings.returns({ payments: { enabled: true, feeSchedules: { admission: [] } } })
+      invoiceRepository.findById.resolves(
+        stubInvoice({
+          purpose: InvoicePurpose.PEERING,
+          termAmountMsats: 21000n,
+          termPeriodSeconds: 2592000,
+        }),
+      )
+      peeringPaymentRepository.lockByPeer.resolves(peeringRow({ lastSettledInvoiceId: 'invoice-id' }))
+
+      await peeringService.confirmInvoice(makeCompletedInvoice())
+
+      expect(invoiceRepository.recordPeeringSettlementFailure).not.to.have.been.called
+    })
+
+    it('does not count an underpayment as a settlement failure', async () => {
+      settings.returns({ payments: { enabled: true, feeSchedules: { admission: [] } } })
+      invoiceRepository.findById.resolves(
+        stubInvoice({
+          purpose: InvoicePurpose.PEERING,
+          termAmountMsats: 21000n,
+          termPeriodSeconds: 2592000,
+        }),
+      )
+
+      await peeringService.confirmInvoice(makeCompletedInvoice({ amountPaid: 1000n }))
+
+      expect(invoiceRepository.recordPeeringSettlementFailure).not.to.have.been.called
     })
 
     it('publishes peering invoice events with the peering and invoice-id tags', async () => {

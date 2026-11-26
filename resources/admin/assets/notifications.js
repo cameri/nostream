@@ -61,6 +61,7 @@
     'peering.invoice.created': true,
     'peering.invoice.paid': true,
     'peering.invoice.failed': true,
+    'peering.payment.failed': true,
     'peering.access.lapsed': true,
     'settings.changed': true,
     'relay.restarted': false,

@@ -82,6 +82,17 @@ export interface IInvoiceRepository {
    * maintenance worker can retry them instead of stranding a paid peer.
    */
   findUnconfirmedPeeringInvoices(limit?: number, offset?: number, client?: DatabaseClient): Promise<Invoice[]>
+  /** Increments the failed settlement counter for a completed peering invoice. */
+  recordPeeringSettlementFailure(
+    id: string,
+    error: string,
+    client?: DatabaseClient,
+  ): Promise<{ attempts: number; lastError: string } | undefined>
+  /**
+   * Claims the one-time alert for a completed peering invoice at the threshold.
+   * The caller enqueues the outbox row in the same transaction.
+   */
+  claimPeeringSettlementAlert(id: string, threshold: number, client?: DatabaseClient): Promise<boolean>
 }
 
 export interface IPeeringPaymentRepository {
