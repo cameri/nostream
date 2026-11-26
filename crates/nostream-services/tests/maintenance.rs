@@ -7,7 +7,7 @@
 
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use nostream_config::settings::{
@@ -28,6 +28,7 @@ use nostream_services::testing;
 use nostream_services::unavailable::ServiceStores;
 use nostream_services::workers::maintenance::{
     MaintenanceRunner, MaintenanceTasks, MaintenanceWorker, NIP05_REVERIFICATION_BATCH_SIZE,
+    PassOutcome,
 };
 use nostream_storage::repositories::{
     EventPurgeCounts, EventRepository, NotificationDeliveryLogRepository,
@@ -280,6 +281,178 @@ async fn a_slow_purge_that_outlives_the_timeout_does_not_fail_the_pass() {
         tasks.entries(),
         vec!["purge started", "nip05", "outbox", "invoices"]
     );
+}
+
+fn purge_starts(tasks: &ScriptedTasks) -> usize {
+    tasks
+        .entries()
+        .iter()
+        .filter(|entry| *entry == "purge started")
+        .count()
+}
+
+#[tokio::test]
+async fn a_purge_still_running_is_awaited_by_the_next_pass_not_started_again() {
+    let gate = Arc::new(Semaphore::new(0));
+    let tasks = ScriptedTasks::new(Arc::clone(&gate), None);
+    let worker = MaintenanceWorker::new(
+        Arc::new(testing::settings()),
+        Arc::clone(&tasks) as Arc<dyn MaintenanceTasks>,
+        Duration::from_secs(60),
+        Duration::from_millis(20),
+    );
+
+    let first = worker.run_pass().await;
+    let second = worker.run_pass().await;
+
+    assert!(first.purge_timed_out && first.purge_started);
+    assert!(
+        second.purge_timed_out && !second.purge_started,
+        "the second pass waits on the first purge: {second:?}"
+    );
+    assert_eq!(purge_starts(&tasks), 1, "one purge, however many passes");
+
+    // Released before the third pass polls it: that pass is the one that sees it finish, and
+    // it reports the purge's counts rather than starting another. This relies on the
+    // single-threaded test runtime: the purge cannot run between `add_permits` and the pass's
+    // first check, so the pass finds it unfinished and waits on it.
+    gate.add_permits(1);
+    let third = worker.run_pass().await;
+
+    assert_eq!(
+        third,
+        PassOutcome {
+            purge_started: false,
+            purge_timed_out: false,
+            counts: Some(scripted_counts()),
+        }
+    );
+    assert_eq!(purge_starts(&tasks), 1);
+
+    // With nothing outstanding, the next pass starts a purge of its own.
+    gate.add_permits(1);
+    let fourth = worker.run_pass().await;
+
+    assert!(fourth.purge_started && !fourth.purge_timed_out);
+    assert_eq!(purge_starts(&tasks), 2);
+}
+
+/// Captures the formatted log so a test can assert on a line, installing the subscriber once for
+/// the whole binary. Events from the tests running alongside this one land here too; an assertion
+/// names the line it wants rather than the buffer's contents.
+static CAPTURED_LOGS: LazyLock<Arc<Mutex<Vec<u8>>>> = LazyLock::new(|| {
+    let buffer = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&buffer);
+    tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_max_level(tracing::Level::INFO)
+        .with_writer(move || CapturedWriter(Arc::clone(&sink)))
+        .try_init()
+        .ok();
+    buffer
+});
+
+struct CapturedWriter(Arc<Mutex<Vec<u8>>>);
+
+impl std::io::Write for CapturedWriter {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .extend_from_slice(buffer);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn captured_text() -> String {
+    let buffer = CAPTURED_LOGS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    String::from_utf8(buffer).unwrap_or_default()
+}
+
+/// The finished purge's counts are read and logged rather than lost. Deleting the
+/// `log_late_purge(previous.handle.await)` call leaves every other assertion in this file passing;
+/// this one names the line that call writes.
+#[tokio::test]
+async fn a_purge_that_finished_between_passes_is_read_and_a_new_one_starts() {
+    // Installs the capturing subscriber before the first pass, so the late line is captured.
+    let _ = captured_text();
+
+    let gate = Arc::new(Semaphore::new(0));
+    let tasks = ScriptedTasks::new(Arc::clone(&gate), None);
+    let worker = MaintenanceWorker::new(
+        Arc::new(testing::settings()),
+        Arc::clone(&tasks) as Arc<dyn MaintenanceTasks>,
+        Duration::from_secs(60),
+        Duration::from_millis(20),
+    );
+
+    let first = worker.run_pass().await;
+    assert!(first.purge_timed_out && first.purge_started);
+
+    // Let the held purge run to completion before the next pass looks at it.
+    gate.add_permits(1);
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
+    assert!(tasks.entries().contains(&"purge finished".to_owned()));
+
+    gate.add_permits(1);
+    let second = worker.run_pass().await;
+
+    assert!(
+        second.purge_started,
+        "the finished purge is read and a fresh one starts: {second:?}"
+    );
+    assert_eq!(second.counts, Some(scripted_counts()));
+    assert_eq!(purge_starts(&tasks), 2);
+
+    let captured = captured_text();
+    assert!(
+        captured.contains("a retention purge that outlived its pass finished"),
+        "the finished purge's result is logged rather than lost: {captured}"
+    );
+    assert!(
+        captured.contains("deleted=2") && captured.contains("expired=3"),
+        "the line carries the purge's own counts, not the fresh purge's: {captured}"
+    );
+}
+
+#[tokio::test]
+async fn ticks_during_a_slow_purge_do_not_pile_up_purges() {
+    let gate = Arc::new(Semaphore::new(0));
+    let tasks = ScriptedTasks::new(Arc::clone(&gate), None);
+    let shutdown = ShutdownState::new();
+    let worker = Arc::new(MaintenanceWorker::new(
+        Arc::new(testing::settings()),
+        Arc::clone(&tasks) as Arc<dyn MaintenanceTasks>,
+        Duration::from_millis(20),
+        Duration::from_millis(5),
+    ));
+
+    let task = tokio::spawn(Arc::clone(&worker).run(shutdown.clone()));
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let passes = tasks.passes.load(Ordering::SeqCst);
+    assert!(passes >= 3, "the passes keep running, got {passes}");
+    assert_eq!(
+        purge_starts(&tasks),
+        1,
+        "{passes} passes share the one purge that has not finished"
+    );
+
+    shutdown.begin_draining();
+    tokio::time::timeout(Duration::from_secs(2), task)
+        .await
+        .expect("the worker stops")
+        .expect("join")
+        .expect("Ok");
 }
 
 #[tokio::test]
