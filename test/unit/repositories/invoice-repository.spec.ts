@@ -8,6 +8,7 @@ import { DatabaseClient } from '../../../src/@types/base'
 import { Invoice, InvoicePurpose, InvoiceStatus, InvoiceUnit } from '../../../src/@types/invoice'
 import { IInvoiceRepository } from '../../../src/@types/repositories'
 import { InvoiceRepository } from '../../../src/repositories/invoice-repository'
+import { createRecordingKnex } from './recording-knex'
 
 chai.use(sinonChai)
 chai.use(chaiAsPromised)
@@ -412,5 +413,68 @@ describe('InvoiceRepository', () => {
       expect(sql).to.include('"unit"')
       expect(sql).to.include('"description"')
     })
+  })
+})
+
+describe('InvoiceRepository settlement attempts', () => {
+  it('counts a failure below the threshold without claiming an alert', async () => {
+    const recording = createRecordingKnex()
+    const repository = new InvoiceRepository(recording.db as any)
+    recording.respondWith([
+      { settlement_attempts: 2, settlement_alerted_at: null, last_settlement_error: 'missing peer' },
+    ])
+
+    const result = await repository.recordPeeringSettlementFailure('invoice-id', 'missing peer', 5)
+
+    expect(result).to.deep.equal({ attempts: 2, shouldAlert: false, lastError: 'missing peer' })
+    expect(recording.queries[0].sql).to.include('"settlement_attempts"')
+    expect(recording.queries[0].sql).to.include('"last_settlement_error"')
+  })
+
+  it('claims the one-time alert at the threshold', async () => {
+    const recording = createRecordingKnex()
+    const repository = new InvoiceRepository(recording.db as any)
+    recording.respondWith(
+      [{ settlement_attempts: 5, settlement_alerted_at: null, last_settlement_error: 'missing term' }],
+      [{ id: 'invoice-id' }],
+    )
+
+    const result = await repository.recordPeeringSettlementFailure('invoice-id', 'missing term', 5)
+
+    expect(result).to.deep.equal({ attempts: 5, shouldAlert: true, lastError: 'missing term' })
+    expect(recording.queries[1].sql).to.include('"settlement_alerted_at"')
+    expect(recording.queries[1].sql).to.include('"settlement_alerted_at" is null')
+  })
+
+  it('does not claim the alert twice', async () => {
+    const recording = createRecordingKnex()
+    const repository = new InvoiceRepository(recording.db as any)
+    recording.respondWith([
+      { settlement_attempts: 6, settlement_alerted_at: new Date(), last_settlement_error: 'missing term' },
+    ])
+
+    const result = await repository.recordPeeringSettlementFailure('invoice-id', 'missing term', 5)
+
+    expect(result).to.deep.equal({ attempts: 6, shouldAlert: false, lastError: 'missing term' })
+    expect(recording.queries).to.have.length(1)
+  })
+
+  it('returns undefined when the invoice no longer exists', async () => {
+    const recording = createRecordingKnex()
+    const repository = new InvoiceRepository(recording.db as any)
+    recording.respondWith([])
+
+    expect(await repository.recordPeeringSettlementFailure('missing', 'error', 5)).to.equal(undefined)
+  })
+
+  it('releases an alert claim so a later attempt can retry', async () => {
+    const recording = createRecordingKnex()
+    const repository = new InvoiceRepository(recording.db as any)
+    recording.respondWith([{ id: 'invoice-id' }])
+
+    await repository.releasePeeringSettlementAlert('invoice-id')
+
+    expect(recording.queries[0].sql).to.include('"settlement_alerted_at"')
+    expect(recording.queries[0].bindings).to.include(null)
   })
 })

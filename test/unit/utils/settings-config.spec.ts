@@ -409,6 +409,13 @@ describe('settings-config', () => {
       expect(issues.some((issue) => issue.path === 'peering.peers[0].ownerPubkey')).to.equal(true)
     })
 
+    it('requires a positive settlement failure threshold', () => {
+      expect(peeringIssues({ ...settlementFreePeering, settlementFailureThreshold: 3 })).to.deep.equal([])
+
+      const issues = peeringIssues({ ...settlementFreePeering, settlementFailureThreshold: 0 })
+      expect(issues.some((issue) => issue.path === 'peering.settlementFailureThreshold')).to.equal(true)
+    })
+
     it('accepts configured peers by hex or npub', () => {
       expect(
         peeringIssues({

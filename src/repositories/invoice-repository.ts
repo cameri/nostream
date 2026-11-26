@@ -91,6 +91,50 @@ export class InvoiceRepository implements IInvoiceRepository {
     return dbInvoices.map(fromDBInvoice)
   }
 
+  public async recordPeeringSettlementFailure(
+    id: string,
+    error: string,
+    threshold: number,
+    client: DatabaseClient = this.dbClient,
+  ): Promise<{ attempts: number; shouldAlert: boolean; lastError: string } | undefined> {
+    const now = new Date()
+    const [row] = await client<DBInvoice>('invoices')
+      .where({ id, purpose: InvoicePurpose.PEERING })
+      .whereNull('confirmed_at')
+      .update({
+        settlement_attempts: client.raw('settlement_attempts + 1'),
+        last_settlement_error: error,
+        last_settlement_attempt_at: now,
+        updated_at: now,
+      })
+      .returning(['settlement_attempts', 'settlement_alerted_at', 'last_settlement_error'])
+
+    if (!row) {
+      return undefined
+    }
+
+    const attempts = Number(row.settlement_attempts ?? 0)
+    const lastError = row.last_settlement_error ?? error
+    if (attempts < threshold || row.settlement_alerted_at) {
+      return { attempts, shouldAlert: false, lastError }
+    }
+
+    // Concurrent callbacks can reach the threshold together. Only the caller
+    // that flips the null marker enqueues the alert.
+    const [claimed] = await client<DBInvoice>('invoices')
+      .where({ id, purpose: InvoicePurpose.PEERING })
+      .whereNull('confirmed_at')
+      .whereNull('settlement_alerted_at')
+      .update({ settlement_alerted_at: now, updated_at: now })
+      .returning(['id'])
+
+    return { attempts, shouldAlert: Boolean(claimed), lastError }
+  }
+
+  public async releasePeeringSettlementAlert(id: string, client: DatabaseClient = this.dbClient): Promise<void> {
+    await client<DBInvoice>('invoices').where('id', id).update({ settlement_alerted_at: null, updated_at: new Date() })
+  }
+
   public updateStatus(invoice: Invoice, client: DatabaseClient = this.dbClient): Promise<Invoice | undefined> {
     logger('updating invoice status: %o', invoice)
 

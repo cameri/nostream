@@ -641,6 +641,11 @@ export interface PeeringSettings {
    */
   waiveRequestPowForConfiguredPeers?: boolean
   /**
+   * Failed settlement attempts before an operator alert is enqueued for a
+   * completed-but-unconfirmed peering invoice. Defaults to 5.
+   */
+  settlementFailureThreshold?: number
+  /**
    * Feeds this relay offers. At least one scope is required when enabled.
    */
   scopes?: PeeringScope[]

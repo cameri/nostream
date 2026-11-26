@@ -5,6 +5,7 @@ export enum OperatorNotificationEventType {
   PEERING_INVOICE_CREATED = 'peering.invoice.created',
   PEERING_INVOICE_PAID = 'peering.invoice.paid',
   PEERING_INVOICE_FAILED = 'peering.invoice.failed',
+  PEERING_PAYMENT_FAILED = 'peering.payment.failed',
   PEERING_ACCESS_LAPSED = 'peering.access.lapsed',
   SETTINGS_CHANGED = 'settings.changed',
   RELAY_RESTARTED = 'relay.restarted',
@@ -33,6 +34,7 @@ export interface OperatorNotificationEventToggles {
   'peering.invoice.created'?: boolean
   'peering.invoice.paid'?: boolean
   'peering.invoice.failed'?: boolean
+  'peering.payment.failed'?: boolean
   'peering.access.lapsed'?: boolean
   'settings.changed'?: boolean
   'relay.restarted'?: boolean

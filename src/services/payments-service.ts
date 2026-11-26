@@ -305,6 +305,8 @@ export class PaymentsService implements IPaymentsService {
     logger('confirm invoice %s: %O', invoice.id, invoice)
 
     const transaction = new Transaction(this.dbClient)
+    let stored: Invoice | undefined
+    let peeringSettlementStarted = false
 
     try {
       if (!invoice.confirmedAt) {
@@ -325,7 +327,7 @@ export class PaymentsService implements IPaymentsService {
       // whether the invoice was already confirmed come from the stored invoice. This read must
       // happen before confirmation and must not be gated on subscriptions: peering invoices
       // need it even when subscription plans are off.
-      const stored = await this.invoiceRepository.findById(invoice.id, transaction.transaction)
+      stored = await this.invoiceRepository.findById(invoice.id, transaction.transaction)
 
       await this.invoiceRepository.confirmInvoice(
         invoice.id,
@@ -352,6 +354,7 @@ export class PaymentsService implements IPaymentsService {
           return
         }
 
+        peeringSettlementStarted = true
         const result = await this.settlePeeringInvoice(invoice, stored, amountPaidMsat, transaction.transaction)
 
         if (result.duplicate) {
@@ -427,7 +430,49 @@ export class PaymentsService implements IPaymentsService {
       logger.error('Unable to confirm invoice. Reason:', error)
       await transaction.rollback()
 
+      if (peeringSettlementStarted && stored) {
+        await this.recordPeeringSettlementFailure(stored, error)
+      }
+
       throw error
+    }
+  }
+
+  /**
+   * A completed peering invoice can keep failing settlement (missing term
+   * snapshot, missing peer row, a database error). Record every failure outside
+   * the rolled-back settlement transaction and alert the operator once when the
+   * configured threshold is reached. The invoice stays in the retry set.
+   */
+  private async recordPeeringSettlementFailure(invoice: Invoice, error: unknown): Promise<void> {
+    const message = error instanceof Error ? error.message : String(error)
+    const threshold = this.settings().peering?.settlementFailureThreshold ?? 5
+
+    try {
+      const result = await this.invoiceRepository.recordPeeringSettlementFailure(invoice.id, message, threshold)
+      if (!result?.shouldAlert) {
+        return
+      }
+
+      try {
+        await this.notificationOutboxRepository.enqueue(OperatorNotificationEventType.PEERING_PAYMENT_FAILED, {
+          invoiceId: invoice.id,
+          pubkey: invoice.pubkey,
+          attempts: result.attempts,
+          lastError: result.lastError,
+          amountRequested: invoice.amountRequested.toString(),
+          unit: invoice.unit,
+        })
+      } catch (enqueueError) {
+        logger.error('Unable to enqueue peering.payment.failed notification for %s: %o', invoice.id, enqueueError)
+        try {
+          await this.invoiceRepository.releasePeeringSettlementAlert(invoice.id)
+        } catch (releaseError) {
+          logger.error('Unable to release peering settlement alert for %s: %o', invoice.id, releaseError)
+        }
+      }
+    } catch (recordError) {
+      logger.error('Unable to record peering settlement failure for %s: %o', invoice.id, recordError)
     }
   }
 
