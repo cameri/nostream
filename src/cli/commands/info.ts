@@ -4,7 +4,7 @@ import { Client } from 'pg'
 import packageJson from '../../../package.json'
 import { loadMergedSettings } from '../utils/config'
 import { tryGetRelayNip43Pubkey } from '../../utils/nip43'
-import { logError, logInfo } from '../utils/output'
+import { escapeForTerminal, logError, logInfo } from '../utils/output'
 import { getOnionKeyPath, getTorHostnamePath } from '../utils/bootstrap'
 import { getProjectPath } from '../utils/paths'
 import { runCommandWithOutput } from '../utils/process'
@@ -161,7 +161,7 @@ export const runInfo = async (options: InfoOptions): Promise<number> => {
         return 0
       }
 
-      logInfo(payload.tor.hostname)
+      logInfo(escapeForTerminal(payload.tor.hostname))
       return 0
     }
 
@@ -244,12 +244,16 @@ export const runInfo = async (options: InfoOptions): Promise<number> => {
   }
 
   logInfo(`Nostream v${payload.version}`)
-  logInfo(`Relay: ${payload.relay.name ?? 'n/a'} (${payload.relay.url ?? 'n/a'})`)
-  logInfo(`Pubkey: ${payload.relay.pubkey ?? 'n/a'}`)
-  logInfo(`Signing pubkey (NIP-11 self): ${payload.relay.signingPubkey ?? 'unavailable (SECRET not set)'}`)
-  logInfo(`Payments: ${payload.relay.paymentsEnabled ? `enabled (${payload.relay.paymentProcessor})` : 'disabled'}`)
-  logInfo(`Tor hostname: ${payload.tor.hostname ?? 'not found'}`)
-  logInfo(`Onion key path: ${payload.tor.onionPrivateKeyPath}`)
+  const text = (value: unknown, fallback: string): string => escapeForTerminal(value ?? fallback)
+
+  logInfo(`Relay: ${text(payload.relay.name, 'n/a')} (${text(payload.relay.url, 'n/a')})`)
+  logInfo(`Pubkey: ${text(payload.relay.pubkey, 'n/a')}`)
+  logInfo(`Signing pubkey (NIP-11 self): ${text(payload.relay.signingPubkey, 'unavailable (SECRET not set)')}`)
+  logInfo(
+    `Payments: ${payload.relay.paymentsEnabled ? `enabled (${text(payload.relay.paymentProcessor, 'n/a')})` : 'disabled'}`,
+  )
+  logInfo(`Tor hostname: ${text(payload.tor.hostname, 'not found')}`)
+  logInfo(`Onion key path: ${escapeForTerminal(payload.tor.onionPrivateKeyPath)}`)
   logInfo(`Events: ${payload.runtime.eventCount ?? 'unavailable'}`)
   logInfo(`Uptime: ${formatUptime(payload.runtime.uptimeSeconds)}`)
 
