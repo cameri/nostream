@@ -1279,6 +1279,24 @@ const validatePeering = (settings: Settings, issues: ValidationIssue[]): void =>
   }
 }
 
+const LOWERCASE_HEX_PUBKEY = /^[0-9a-f]{64}$/
+
+// An event's pubkey is always 64 lowercase hex characters, and the lists below are compared with it as they are.
+// An entry written any other way, such as uppercase hex or an npub, is accepted by nothing but never matches, so a
+// blacklist holding one would not ban anybody. Refuse it, instead of saving a list that cannot do what it says.
+const validatePubkeyList = (list: unknown, path: string, issues: ValidationIssue[]): void => {
+  // A value that is not a list is reported by the check of the settings' shape.
+  if (!Array.isArray(list)) {
+    return
+  }
+
+  list.forEach((entry, index) => {
+    if (typeof entry !== 'string' || !LOWERCASE_HEX_PUBKEY.test(entry)) {
+      issues.push({ path: `${path}[${index}]`, message: 'must be a 64-character lowercase hex pubkey' })
+    }
+  })
+}
+
 export const validateSettings = (settings: Settings): ValidationIssue[] => {
   const issues: ValidationIssue[] = []
 
@@ -1317,6 +1335,11 @@ export const validateSettings = (settings: Settings): ValidationIssue[] => {
   if (strategy && strategy !== 'ewma' && strategy !== 'sliding_window') {
     issues.push({ path: 'limits.rateLimiter.strategy', message: 'strategy must be ewma or sliding_window' })
   }
+
+  const eventLimits = settings.limits?.event
+  validatePubkeyList(eventLimits?.pubkey?.blacklist, 'limits.event.pubkey.blacklist', issues)
+  validatePubkeyList(eventLimits?.pubkey?.whitelist, 'limits.event.pubkey.whitelist', issues)
+  validatePubkeyList(eventLimits?.whitelists?.pubkeys, 'limits.event.whitelists.pubkeys', issues)
 
   const eventStoreBackend = settings.eventStore?.backend
   if (!isNil(eventStoreBackend) && !isEventStoreBackend(eventStoreBackend)) {

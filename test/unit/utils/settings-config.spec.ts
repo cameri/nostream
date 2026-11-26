@@ -542,6 +542,46 @@ describe('settings-config', () => {
     }
   })
 
+  describe('pubkey lists', () => {
+    const hex = 'ab'.repeat(32)
+    const withLimits = (event: Record<string, unknown>) =>
+      validateSettings({
+        info: { relay_url: 'wss://relay.example.com', name: 'Test Relay' },
+        network: { maxPayloadSize: 1024 },
+        limits: { event },
+      } as any).filter((issue) => issue.path.startsWith('limits.event'))
+
+    it('accepts lists of 64-character lowercase hex pubkeys, and settings without lists', () => {
+      expect(
+        withLimits({ pubkey: { blacklist: [hex], whitelist: [hex] }, whitelists: { pubkeys: [hex] } }),
+      ).to.deep.equal([])
+      expect(withLimits({})).to.deep.equal([])
+      expect(withLimits({ pubkey: { blacklist: [] } })).to.deep.equal([])
+    })
+
+    it('rejects an uppercase pubkey, which would never match an event and so would not ban anybody', () => {
+      const issues = withLimits({ pubkey: { blacklist: [hex, hex.toUpperCase()] } })
+
+      expect(issues).to.have.length(1)
+      expect(issues[0].path).to.equal('limits.event.pubkey.blacklist[1]')
+      expect(issues[0].message).to.include('lowercase hex')
+    })
+
+    it('rejects entries that are not 64 hex characters, such as an npub, a short key or a number', () => {
+      const issues = withLimits({
+        pubkey: { whitelist: ['npub1' + 'q'.repeat(58), 'ab'.repeat(31)] },
+        whitelists: { pubkeys: [123, ` ${hex}`] },
+      })
+
+      expect(issues.map((issue) => issue.path)).to.have.members([
+        'limits.event.pubkey.whitelist[0]',
+        'limits.event.pubkey.whitelist[1]',
+        'limits.event.whitelists.pubkeys[0]',
+        'limits.event.whitelists.pubkeys[1]',
+      ])
+    })
+  })
+
   describe('rate limit period validation', () => {
     const baseSettings = () =>
       ({
