@@ -7,7 +7,7 @@
 
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use nostream_config::settings::{
@@ -337,8 +337,53 @@ async fn a_purge_still_running_is_awaited_by_the_next_pass_not_started_again() {
     assert_eq!(purge_starts(&tasks), 2);
 }
 
+/// Captures the formatted log so a test can assert on a line, installing the subscriber once for
+/// the whole binary. Events from the tests running alongside this one land here too; an assertion
+/// names the line it wants rather than the buffer's contents.
+static CAPTURED_LOGS: LazyLock<Arc<Mutex<Vec<u8>>>> = LazyLock::new(|| {
+    let buffer = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&buffer);
+    tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_max_level(tracing::Level::INFO)
+        .with_writer(move || CapturedWriter(Arc::clone(&sink)))
+        .try_init()
+        .ok();
+    buffer
+});
+
+struct CapturedWriter(Arc<Mutex<Vec<u8>>>);
+
+impl std::io::Write for CapturedWriter {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .extend_from_slice(buffer);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn captured_text() -> String {
+    let buffer = CAPTURED_LOGS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    String::from_utf8(buffer).unwrap_or_default()
+}
+
+/// The finished purge's counts are read and logged rather than lost. Deleting the
+/// `log_late_purge(previous.handle.await)` call leaves every other assertion in this file passing;
+/// this one names the line that call writes.
 #[tokio::test]
 async fn a_purge_that_finished_between_passes_is_read_and_a_new_one_starts() {
+    // Installs the capturing subscriber before the first pass, so the late line is captured.
+    let _ = captured_text();
+
     let gate = Arc::new(Semaphore::new(0));
     let tasks = ScriptedTasks::new(Arc::clone(&gate), None);
     let worker = MaintenanceWorker::new(
@@ -367,6 +412,16 @@ async fn a_purge_that_finished_between_passes_is_read_and_a_new_one_starts() {
     );
     assert_eq!(second.counts, Some(scripted_counts()));
     assert_eq!(purge_starts(&tasks), 2);
+
+    let captured = captured_text();
+    assert!(
+        captured.contains("a retention purge that outlived its pass finished"),
+        "the finished purge's result is logged rather than lost: {captured}"
+    );
+    assert!(
+        captured.contains("deleted=2") && captured.contains("expired=3"),
+        "the line carries the purge's own counts, not the fresh purge's: {captured}"
+    );
 }
 
 #[tokio::test]
