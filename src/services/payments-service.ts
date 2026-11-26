@@ -329,6 +329,13 @@ export class PaymentsService implements IPaymentsService {
       // need it even when subscription plans are off.
       stored = await this.invoiceRepository.findById(invoice.id, transaction.transaction)
 
+      // A completed, unconfirmed peering invoice is the retry contract. A
+      // recheck-path PENDING row is excluded again by the repository status
+      // filter, so it cannot consume the alert.
+      if (stored?.purpose === InvoicePurpose.PEERING && !stored.confirmedAt) {
+        peeringSettlementStarted = true
+      }
+
       await this.invoiceRepository.confirmInvoice(
         invoice.id,
         invoice.amountPaid,
@@ -350,16 +357,23 @@ export class PaymentsService implements IPaymentsService {
         // a redelivered older callback must not buy another period even if the peer has
         // since settled a newer invoice.
         if (stored.confirmedAt) {
+          peeringSettlementStarted = false
           await transaction.commit()
           return
         }
 
-        peeringSettlementStarted = true
         const result = await this.settlePeeringInvoice(invoice, stored, amountPaidMsat, transaction.transaction)
 
         if (result.duplicate) {
+          peeringSettlementStarted = false
           await transaction.commit()
           return
+        }
+
+        if (!result.activated) {
+          // Underpayments are a deterministic business outcome, not a failed
+          // settlement. A later enqueue/commit error must not count them.
+          peeringSettlementStarted = false
         }
 
         await this.notificationOutboxRepository.enqueue(
@@ -448,31 +462,54 @@ export class PaymentsService implements IPaymentsService {
     const message = error instanceof Error ? error.message : String(error)
     const threshold = this.settings().peering?.settlementFailureThreshold ?? 5
 
+    let attempt: { attempts: number; lastError: string } | undefined
     try {
-      const result = await this.invoiceRepository.recordPeeringSettlementFailure(invoice.id, message, threshold)
-      if (!result?.shouldAlert) {
+      attempt = await this.invoiceRepository.recordPeeringSettlementFailure(invoice.id, message)
+    } catch (recordError) {
+      logger.error('Unable to record peering settlement failure for %s: %o', invoice.id, recordError)
+      return
+    }
+
+    if (!attempt || attempt.attempts < threshold) {
+      return
+    }
+
+    // The claim and the outbox row commit together: a crash between the two
+    // cannot leave a marker without an alert. A failed transaction rolls the
+    // claim back, so the next attempt retries it.
+    const transaction = new Transaction(this.dbClient)
+    try {
+      await transaction.begin()
+      const claimed = await this.invoiceRepository.claimPeeringSettlementAlert(
+        invoice.id,
+        threshold,
+        transaction.transaction,
+      )
+      if (!claimed) {
+        await transaction.rollback()
         return
       }
 
-      try {
-        await this.notificationOutboxRepository.enqueue(OperatorNotificationEventType.PEERING_PAYMENT_FAILED, {
+      await this.notificationOutboxRepository.enqueue(
+        OperatorNotificationEventType.PEERING_PAYMENT_FAILED,
+        {
           invoiceId: invoice.id,
           pubkey: invoice.pubkey,
-          attempts: result.attempts,
-          lastError: result.lastError,
+          attempts: attempt.attempts,
+          lastError: attempt.lastError,
           amountRequested: invoice.amountRequested.toString(),
           unit: invoice.unit,
-        })
-      } catch (enqueueError) {
-        logger.error('Unable to enqueue peering.payment.failed notification for %s: %o', invoice.id, enqueueError)
-        try {
-          await this.invoiceRepository.releasePeeringSettlementAlert(invoice.id)
-        } catch (releaseError) {
-          logger.error('Unable to release peering settlement alert for %s: %o', invoice.id, releaseError)
-        }
+        },
+        transaction.transaction,
+      )
+      await transaction.commit()
+    } catch (alertError) {
+      try {
+        await transaction.rollback()
+      } catch (rollbackError) {
+        logger.error('Unable to roll back peering settlement alert for %s: %o', invoice.id, rollbackError)
       }
-    } catch (recordError) {
-      logger.error('Unable to record peering settlement failure for %s: %o', invoice.id, recordError)
+      logger.error('Unable to enqueue peering.payment.failed notification for %s: %o', invoice.id, alertError)
     }
   }
 

@@ -273,7 +273,9 @@ retryable. Every failed settlement increments `settlement_attempts` and stores
 `last_settlement_error` on the invoice; the maintenance worker keeps retrying.
 After `peering.settlementFailureThreshold` failures (default 5), the relay
 enqueues one `peering.payment.failed` operator notification and keeps retrying.
-Duplicate callbacks and underpayments are not counted as settlement failures. A peer can always authenticate and ask for
+Duplicate callbacks and underpayments are not counted as settlement failures.
+Only completed invoices that are still unconfirmed are counted; a pending row
+checked through the processor recheck path stays on the pending page. A peer can always authenticate and ask for
 its invoice, even while lapsed, but cannot read the feed.
 
 Billing state is stored in `peering_payments`, one row per peer and direction
