@@ -55,7 +55,7 @@
       "name": "invoices_get"
     },
     {
-      "description": "List the pending invoices, oldest first, paged by `offset` and `limit` — the store's own pending walk, so a completed or expired invoice is not here and `invoices_get` is how to read one whatever its status. `limit` is 1 to 500 rows, absent 500; `offset` skips that many. A confirmed invoice stays in this list while its status reads `pending`",
+      "description": "List the pending invoices, oldest first, paged by `offset` and `limit` — the store's own pending walk, so a completed or expired invoice is not here and `invoices_get` is how to read one whatever its status. `limit` is 1 to 500 rows, absent 500; `offset` skips that many, and at most 5000. A confirmed invoice stays in this list while its status reads `pending`",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -71,8 +71,9 @@
             ]
           },
           "offset": {
-            "description": "Rows to skip, oldest first; absent skips none.",
+            "description": "Rows to skip, oldest first; absent skips none; at most 5000.",
             "format": "uint64",
+            "maximum": 5000,
             "minimum": 0,
             "type": [
               "integer",

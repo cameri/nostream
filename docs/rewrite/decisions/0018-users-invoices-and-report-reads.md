@@ -113,7 +113,8 @@ paged past 500. Paid for: zero storage code in this slice.
 `invoices_list` takes `offset` and `limit`, passes them to `find_pending_invoices`, and answers
 `{"invoices": [...]}` with no re-sort and no `truncated` marker: a caller pages with `offset`, and
 the store's own `(offset, limit)` is the whole protocol. A marker no repository state can decide
-would be a guess.
+would be a guess. ADR 0020 caps the skip this paragraph leaves open, at the door rather than in
+the protocol.
 
 `invoices_get` takes the id verbatim — no hex prefix, no length rule, no normalisation — because
 `invoice.id` is opaque text by migration, and an id that happens to be 64 hex characters is a
@@ -137,7 +138,8 @@ page, and `invoices_list`'s offset walks a live index, so a pending row that lea
 between two pages — its status moving off `Pending`, which the payments worker's expiry does —
 shifts the walk, and a row can be skipped or answered twice. Insertion cannot: the index is
 `created_at ‖ id` ascending, so a new invoice lands after the cursor. Paid for: one number and
-one message for the three tools that page.
+one message for the three tools that page. ADR 0020 is the record for capping how far that offset
+may skip.
 
 ### D7 — The absent-name example moves to `maintenance_run`, and five audit names land
 

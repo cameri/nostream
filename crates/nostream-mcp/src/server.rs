@@ -105,6 +105,21 @@ pub const MAX_FILTER_TERMS: usize = 64;
 /// takes a direction from `limit`.
 pub const MAX_ROWS_PER_PAGE: u64 = nostream_storage::DEFAULT_PAGE_ROWS;
 
+/// The most rows an `invoices_list` call may skip: this door's own ceiling, 5,000 rows.
+///
+/// The skip is linear in the rows it passes and then saturates at the pending set, so an
+/// arbitrarily large offset costs a whole index walk for an answer that may be empty. Over 20,000
+/// pending rows it measured 0.941 ms at `offset: 5_000` with `limit: 0` (the skip loop alone,
+/// best of five), against 7.936 ms for the 500-row page at offset 0 and 1.562 ms at `u64::MAX`.
+/// A ceiling at this door's own page ([`MAX_ROWS_PER_PAGE`]) was rejected because at `limit: 500`
+/// it leaves a caller two pages deep; 5,000 leaves eleven.
+///
+/// The magnitude matches [`nostream_storage::MAX_PAGE_ROWS`], the relay's largest event page —
+/// the largest single page the tree already asks a backend to answer — and it is measured against
+/// that clamp rather than derived from it: the invoice read has no page bound of its own, and a
+/// relocation of the relay's event page must not move this door's published `maximum`.
+pub const MAX_ROWS_PER_SKIP: u64 = 5_000;
+
 /// The refusal for a credential whose document is absent, unreadable or no longer a document this
 /// door accepts — the HTTP gate's `401`.
 pub const UNAUTHORIZED: &str = "Unauthorized";
@@ -497,7 +512,8 @@ pub struct UserGetArgs {
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct InvoicesListArgs {
-    /// Rows to skip, oldest first; absent skips none.
+    /// Rows to skip, oldest first; absent skips none; at most 5000.
+    #[schemars(range(min = 0, max = MAX_ROWS_PER_SKIP))]
     pub offset: Option<u64>,
     /// Page size: 1 to 500 rows, oldest first; absent uses 500.
     #[schemars(range(min = 1, max = 500))]
@@ -793,7 +809,8 @@ the relay has not cached and the door has never written reads as absent. Changes
         description = "List the pending invoices, oldest first, paged by `offset` and `limit` — \
 the store's own pending walk, so a completed or expired invoice is not here and `invoices_get` \
 is how to read one whatever its status. `limit` is 1 to 500 rows, absent 500; `offset` skips \
-that many. A confirmed invoice stays in this list while its status reads `pending`"
+that many, and at most 5000. A confirmed invoice stays in this list while its status reads \
+`pending`"
     )]
     async fn invoices_list(
         &self,
@@ -981,11 +998,12 @@ maintenance worker runs in another process and its passes are not visible here"
     /// decide either (R12).
     async fn pending_invoices(&self, arguments: &InvoicesListArgs) -> Result<Value, McpError> {
         let limit = page_bound(arguments.limit)?;
+        let offset = offset_bound(arguments.offset)?;
         let invoices = self
             .state
             .stores()
             .invoices
-            .find_pending_invoices(arguments.offset.unwrap_or(0), limit)
+            .find_pending_invoices(offset, limit)
             .await?;
         Ok(json!({ "invoices": invoices }))
     }
@@ -1170,6 +1188,21 @@ fn page_bound(limit: Option<u64>) -> Result<u64, McpError> {
         .ok_or_else(|| {
             McpError::Criterion(format!(
                 "limit: a page holds between 1 and {MAX_ROWS_PER_PAGE} rows, {limit} was given"
+            ))
+        })
+}
+
+/// The skip a call asks for, checked against the bound its `inputSchema` states (R12, D3).
+///
+/// An absent offset skips none. Anything past [`MAX_ROWS_PER_SKIP`] is refused here, before the
+/// repository call, so the walk's cost is bounded at the door rather than by the pending set.
+fn offset_bound(offset: Option<u64>) -> Result<u64, McpError> {
+    let offset = offset.unwrap_or(0);
+    (offset <= MAX_ROWS_PER_SKIP)
+        .then_some(offset)
+        .ok_or_else(|| {
+            McpError::Criterion(format!(
+                "offset: a walk skips at most {MAX_ROWS_PER_SKIP} rows, {offset} was given"
             ))
         })
 }
