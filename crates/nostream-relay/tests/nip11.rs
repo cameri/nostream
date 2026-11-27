@@ -5,6 +5,7 @@
 //! | `the_key_set_is_the_decided_one` | the nine always-present keys, the four kept-when-set keys, and every dropped key absent |
 //! | `supported_nips_is_the_advertised_set_filtered_by_what_runs` | 43/50 follow their switches, 77 never appears, and the order is `SUPPORTED_NIPS`'s |
 //! | `the_limitation_block_reports_the_enforced_limits` | the enforced numbers, and a configured `0` omitted |
+//! | `the_advertised_difficulty_is_the_shared_functions_answer` | `min_pow_difficulty` is `required_difficulty`'s answer at a zero rate and no distance, over six settings rows |
 //! | `restricted_writes_folds_the_arms_the_event_handler_enforces` | each arm alone flips it; the all-off fixture is false; a subscription plan alone does not |
 //! | `fees_reports_enabled_schedules_in_msats` | enabled schedules only, `publication` only when configured, empty under `payments.enabled: false` |
 //! | `self_is_the_published_identity_or_absent` | the published key wins over `info.self`; no key means no `self` |
@@ -18,10 +19,12 @@
 use std::path::Path;
 
 use nostream_config::settings::{
-    EventIdLimits, FeeSchedule, Settings, SubscriptionPlan, WotPowThreshold,
+    AdaptivePowSettings, EventIdLimits, EventLimits, FeeSchedule, Settings, SubscriptionPlan,
+    WotPowThreshold,
 };
 use nostream_core::constants::SUPPORTED_NIPS;
 use nostream_core::{Kind, KindSelector, Pubkey, SettingsPubkey};
+use nostream_relay::handlers::event::required_difficulty;
 use nostream_relay::nip11;
 use serde_json::{Value, json};
 
@@ -230,6 +233,157 @@ fn the_limitation_block_reports_the_enforced_limits() {
         document["limitation"]["min_pow_difficulty"],
         json!(16),
         "the floor the handler enforces, not the capture's 8: {document}"
+    );
+}
+
+/// The document's `limitation.min_pow_difficulty` for `limits.event = event`: the key's value,
+/// or `None` when it is absent.
+fn advertised_floor(event: Option<&EventLimits>) -> Option<Value> {
+    let mut settings = shipped();
+    settings.limits.as_mut().expect("the shipped limits").event = event.cloned();
+    let document = value(&settings, "0.1.0", None);
+    document["limitation"].get("min_pow_difficulty").cloned()
+}
+
+/// The advertised floor is the shared derivation's answer, not a second reading of the same
+/// settings: each row is one `EventLimits` value, the function is asked directly, and the
+/// document is its answer at a zero rate and no distance, folded to an absent key when nothing
+/// is required. M5's and M6's extra answers pin the distance and rate arms, which the document
+/// deliberately does not take.
+#[test]
+fn the_advertised_difficulty_is_the_shared_functions_answer() {
+    // M1 — no `limits.event`: nothing is required and nothing is advertised.
+    assert_eq!(required_difficulty(None, 0.0, None), 0, "M1: the function");
+    assert_eq!(
+        advertised_floor(None),
+        None,
+        "M1: the document omits the key"
+    );
+
+    // M2 — pow present and disabled: the static event-id floor is the enforced one.
+    let m2 = EventLimits {
+        pow: Some(AdaptivePowSettings {
+            enabled: false,
+            floor_bits: 16,
+            ceiling_bits: 32,
+            target_events_per_second: 50.0,
+            period_ms: 60_000,
+            wot_thresholds: None,
+        }),
+        event_id: Some(EventIdLimits {
+            min_leading_zero_bits: Some(20),
+        }),
+        ..Default::default()
+    };
+    assert_eq!(
+        required_difficulty(Some(&m2), 0.0, None),
+        20,
+        "M2: the static floor"
+    );
+    assert_eq!(
+        advertised_floor(Some(&m2)),
+        Some(json!(20)),
+        "M2: the document"
+    );
+
+    // M3 — pow enabled with a zero floor wins over the static floor: nothing is required.
+    let m3 = EventLimits {
+        pow: Some(AdaptivePowSettings {
+            enabled: true,
+            floor_bits: 0,
+            ceiling_bits: 32,
+            target_events_per_second: 50.0,
+            period_ms: 60_000,
+            wot_thresholds: None,
+        }),
+        event_id: Some(EventIdLimits {
+            min_leading_zero_bits: Some(20),
+        }),
+        ..Default::default()
+    };
+    assert_eq!(
+        required_difficulty(Some(&m3), 0.0, None),
+        0,
+        "M3: the adaptive floor wins"
+    );
+    assert_eq!(
+        advertised_floor(Some(&m3)),
+        None,
+        "M3: the document omits the key"
+    );
+
+    // M4 — pow enabled with a 16-bit floor and no thresholds: the floor is both ends' answer.
+    let m4 = EventLimits {
+        pow: Some(AdaptivePowSettings {
+            enabled: true,
+            floor_bits: 16,
+            ceiling_bits: 32,
+            target_events_per_second: 50.0,
+            period_ms: 60_000,
+            wot_thresholds: None,
+        }),
+        ..Default::default()
+    };
+    assert_eq!(
+        required_difficulty(Some(&m4), 0.0, None),
+        16,
+        "M4: the floor at rest"
+    );
+    assert_eq!(
+        advertised_floor(Some(&m4)),
+        Some(json!(16)),
+        "M4: the document"
+    );
+
+    // M5 — the same floor with a `maxDistance: 2, difficultyFactor: 0.5` threshold: the policy
+    // would discount an eligible distance to 8, but no distance reaches the handler, so both
+    // ends answer 16 and the document advertises it.
+    let m5 = EventLimits {
+        pow: Some(AdaptivePowSettings {
+            enabled: true,
+            floor_bits: 16,
+            ceiling_bits: 32,
+            target_events_per_second: 50.0,
+            period_ms: 60_000,
+            wot_thresholds: Some(vec![WotPowThreshold {
+                max_distance: 2,
+                difficulty_factor: 0.5,
+            }]),
+        }),
+        ..Default::default()
+    };
+    assert_eq!(
+        required_difficulty(Some(&m5), 0.0, None),
+        16,
+        "M5: no distance, no discount"
+    );
+    assert_eq!(
+        required_difficulty(Some(&m5), 0.0, Some(2)),
+        8,
+        "M5: the distance arm"
+    );
+    assert_eq!(
+        advertised_floor(Some(&m5)),
+        Some(json!(16)),
+        "M5: the document keeps the floor"
+    );
+
+    // M6 — M5's settings under a 100/s rate scale to the 32-bit ceiling; the document, asked at
+    // a zero rate, still advertises the 16 the lowest rate requires.
+    assert_eq!(
+        required_difficulty(Some(&m5), 100.0, None),
+        32,
+        "M6: the rate arm"
+    );
+    assert_eq!(
+        required_difficulty(Some(&m5), 0.0, None),
+        16,
+        "M6: the floor at rest"
+    );
+    assert_eq!(
+        advertised_floor(Some(&m5)),
+        Some(json!(16)),
+        "M6: the document"
     );
 }
 

@@ -14,7 +14,7 @@
 //! `supported_mips` and `fees.subscription` have no Rust source at all, and `payments_url` and
 //! `peering` name surfaces this relay does not serve.
 
-use nostream_config::settings::{ContentLimitsOrVec, EventLimits, FeeSchedule, Settings};
+use nostream_config::settings::{ContentLimitsOrVec, FeeSchedule, Settings};
 use nostream_core::Pubkey;
 use nostream_core::constants::SUPPORTED_NIPS;
 use nostream_storage::DEFAULT_PAGE_ROWS;
@@ -261,6 +261,10 @@ fn limitation(settings: &Settings) -> Limitation {
         .and_then(|limits| limits.client.as_ref())
         .and_then(|client| client.subscription.as_ref());
 
+    // The document answers the enforced derivation at a zero rate and no distance — the lowest
+    // difficulty any client may be accepted at (`handlers::event::required_difficulty`).
+    let required = crate::handlers::event::required_difficulty(event, 0.0, None);
+
     Limitation {
         max_message_length: u64::try_from(crate::transport::max_payload_size(settings))
             .unwrap_or(u64::MAX),
@@ -272,7 +276,7 @@ fn limitation(settings: &Settings) -> Limitation {
             subscription.and_then(|limits| limits.max_subscription_id_length),
         ),
         max_content_length: content_length(event.and_then(|event| event.content.as_ref())),
-        min_pow_difficulty: min_pow_difficulty(event),
+        min_pow_difficulty: (required > 0).then_some(u64::from(required)),
         auth_required: false,
         payment_required: settings.payments.as_ref().map(|payments| payments.enabled),
         created_at_lower_limit: event
@@ -302,32 +306,6 @@ fn content_length(content: Option<&ContentLimitsOrVec>) -> Option<u64> {
         ContentLimitsOrVec::One(limit) => limit.max_length,
         ContentLimitsOrVec::Many(limits) => limits.first().and_then(|limit| limit.max_length),
     }
-}
-
-/// The lowest difficulty any client may be accepted at: what `required_difficulty` enforces.
-///
-/// That function passes `None` as the WoT distance (`handlers/event.rs:371`) because the graph is
-/// `nostream-services`' and no crate supplies one yet, and with no distance
-/// `apply_wot_pow_policy` answers the computed difficulty unchanged
-/// (`nostream_core::adaptive_pow`), which is `floor_bits` at rest. The capture's
-/// `ceil(floor_bits × difficulty_factor)` discount is therefore granted to nobody here: it only
-/// applies once a distance exists, so advertising it would promise a bound the handler rejects.
-/// With the adaptive check off, the static event-id floor is the enforced one.
-fn min_pow_difficulty(event: Option<&EventLimits>) -> Option<u64> {
-    let pow = event
-        .and_then(|event| event.pow.as_ref())
-        .filter(|pow| pow.enabled);
-    let difficulty = match pow {
-        Some(pow) => u64::from(pow.floor_bits),
-        None => u64::from(
-            event
-                .and_then(|event| event.event_id.as_ref())
-                .and_then(|event_id| event_id.min_leading_zero_bits)
-                .unwrap_or(0),
-        ),
-    };
-
-    (difficulty > 0).then_some(difficulty)
 }
 
 /// The enabled fee schedules, and only while payments are on — the predicate the admission
