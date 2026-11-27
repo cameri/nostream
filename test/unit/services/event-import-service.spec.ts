@@ -12,6 +12,7 @@ import {
   EventImportLineError,
   EventImportService,
   EventImportStats,
+  MAX_IMPORTED_DELETION_TARGETS,
 } from '../../../src/services/event-import-service'
 import { getPublicKey, identifyEvent, signEvent } from '../../../src/utils/event'
 import { getEvents } from '../data/events'
@@ -593,7 +594,7 @@ describe('EventImportService', () => {
   })
 
   describe('deletion requests', () => {
-    const limit = 65_533
+    const limit = MAX_IMPORTED_DELETION_TARGETS
     const privateKey = 'a'.repeat(64)
     const pubkey = getPublicKey(privateKey)
     const toEventId = (index: number) => index.toString(16).padStart(64, '0')
@@ -690,7 +691,7 @@ describe('EventImportService', () => {
       )
 
       expect(lineErrors).to.deep.equal([
-        { lineNumber: 1, reason: 'invalid: a deletion request may name at most 65533 events' },
+        { lineNumber: 1, reason: `invalid: a deletion request may name at most ${limit} events` },
       ])
       expect(stats).to.deep.equal({ errors: 1, inserted: 1, processed: 2, skipped: 0 })
       expect(deletions).to.deep.equal([])
