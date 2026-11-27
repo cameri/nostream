@@ -14,6 +14,7 @@ const { expect } = chai
 import { ContextMetadataKey, EventDeduplicationMetadataKey, EventTags } from '../../../src/constants/base'
 import { DatabaseClient } from '../../../src/@types/base'
 import { EventRepository } from '../../../src/repositories/event-repository'
+import { MAX_IMPORTED_DELETION_TARGETS } from '../../../src/services/event-import-service'
 
 describe('EventRepository', () => {
   let repository: IEventRepository
@@ -1095,6 +1096,17 @@ describe('EventRepository', () => {
       expect(query).to.equal(
         'update "events" set "deleted_at" = now() where "event_pubkey" = X\'001122\' and "event_id" in (X\'aabbcc\', X\'ddeeff\') and not "event_kind" = 62 and "deleted_at" is null',
       )
+    })
+
+    it('binds exactly the 65,535 parameters PostgreSQL allows at the import limit for deletion targets', () => {
+      const ids = Array.from({ length: MAX_IMPORTED_DELETION_TARGETS }, (_, index) =>
+        index.toString(16).padStart(64, '0'),
+      )
+
+      const { bindings } = (repository.deleteByPubkeyAndIds('00'.repeat(32), ids) as any).toSQL()
+
+      // If this statement changes, MAX_IMPORTED_DELETION_TARGETS has to change with it.
+      expect(bindings).to.have.length(65_535)
     })
   })
 

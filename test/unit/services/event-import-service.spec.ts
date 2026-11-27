@@ -4,6 +4,7 @@ import fs from 'fs'
 import os from 'os'
 import { join } from 'path'
 import { Readable } from 'stream'
+import { Tag } from '../../../src/@types/base'
 import { Event } from '../../../src/@types/event'
 import { EventDeduplicationMetadataKey, EventKinds, EventTags } from '../../../src/constants/base'
 import {
@@ -12,6 +13,7 @@ import {
   EventImportService,
   EventImportStats,
 } from '../../../src/services/event-import-service'
+import { getPublicKey, identifyEvent, signEvent } from '../../../src/utils/event'
 import { getEvents } from '../data/events'
 
 describe('EventImportService', () => {
@@ -588,5 +590,126 @@ describe('EventImportService', () => {
 
     expect(inserted).to.equal(0)
     expect(createdManyCalls).to.equal(0)
+  })
+
+  describe('deletion requests', () => {
+    const limit = 65_533
+    const privateKey = 'a'.repeat(64)
+    const pubkey = getPublicKey(privateKey)
+    const toEventId = (index: number) => index.toString(16).padStart(64, '0')
+    const toETags = (ids: string[]): Tag[] => ids.map((id): Tag => [EventTags.Event, id])
+
+    const signEventWithTags = async (kind: number, tags: Tag[]): Promise<Event> =>
+      signEvent(privateKey)(await identifyEvent({ pubkey, created_at: 1700000000, kind, tags, content: '' }))
+
+    const createRecordingRepository = () => {
+      const inserted: Event[] = []
+      const deletions: string[][] = []
+      const eventRepository = {
+        create: async (event: Event) => {
+          inserted.push(event)
+          return 1
+        },
+        createMany: async (events: Event[]) => {
+          inserted.push(...events)
+          return events.length
+        },
+        upsertMany: async (events: Event[]) => events.length,
+        deleteByPubkeyAndIds: async (_pubkey: string, ids: string[]) => {
+          deletions.push(ids)
+          return ids.length
+        },
+      } as any
+
+      return { deletions, eventRepository, inserted }
+    }
+
+    it('asks for each id once, in the order it first appears, and ignores tags that are not e tags', async () => {
+      const [a, b, c] = ['a', 'b', 'c'].map((char) => char.repeat(64))
+      const deletion: Event = {
+        id: 'd'.repeat(64),
+        pubkey: 'e'.repeat(64),
+        created_at: 1,
+        kind: EventKinds.DELETE,
+        tags: [
+          [EventTags.Event, b],
+          [EventTags.Pubkey, 'f'.repeat(64)],
+          [EventTags.Event, a],
+          [EventTags.Event] as any,
+          [EventTags.Event, 'not-an-id'],
+          [EventTags.Event, 'a'.repeat(63)],
+          [EventTags.Event, 'a'.repeat(65)],
+          [EventTags.Event, b],
+          [EventTags.Event, 'C'.repeat(64)],
+          [EventTags.Event, c, 'wss://relay.example'],
+          [EventTags.Event, a],
+        ],
+        content: '',
+        sig: '0'.repeat(128),
+      }
+      const { deletions, eventRepository } = createRecordingRepository()
+
+      await createEventBatchPersister(eventRepository)([deletion])
+
+      expect(deletions).to.deep.equal([[b, a, c]])
+    })
+
+    it('imports a request naming 65,533 distinct ids, counting a repeated id once and no other tag', async () => {
+      const ids = Array.from({ length: limit }, (_, index) => toEventId(index))
+      const deletion = await signEventWithTags(EventKinds.DELETE, [
+        ...toETags([...ids, ids[0]]),
+        [EventTags.Pubkey, getEvents()[1].pubkey],
+        [EventTags.Address, `30023:${pubkey}:post`],
+      ])
+      const { deletions, eventRepository, inserted } = createRecordingRepository()
+      const lineErrors: EventImportLineError[] = []
+
+      const stats = await new EventImportService(createEventBatchPersister(eventRepository)).importFromJsonl(
+        createJsonlFile([JSON.stringify(deletion)]),
+        { onLineError: (lineError) => lineErrors.push(lineError) },
+      )
+
+      expect(lineErrors).to.deep.equal([])
+      expect(stats).to.deep.equal({ errors: 0, inserted: 1, processed: 1, skipped: 0 })
+      expect(deletions).to.deep.equal([ids])
+      expect(inserted.map(({ id }) => id)).to.deep.equal([deletion.id])
+    })
+
+    it('refuses a request naming 65,534 distinct ids as a line error and keeps importing', async () => {
+      const deletion = await signEventWithTags(
+        EventKinds.DELETE,
+        toETags(Array.from({ length: limit + 1 }, (_, index) => toEventId(index))),
+      )
+      const note = getEvents()[1]
+      const { deletions, eventRepository, inserted } = createRecordingRepository()
+      const lineErrors: EventImportLineError[] = []
+
+      const stats = await new EventImportService(createEventBatchPersister(eventRepository)).importFromJsonl(
+        createJsonlFile([JSON.stringify(deletion), JSON.stringify(note)]),
+        { onLineError: (lineError) => lineErrors.push(lineError) },
+      )
+
+      expect(lineErrors).to.deep.equal([
+        { lineNumber: 1, reason: 'invalid: a deletion request may name at most 65533 events' },
+      ])
+      expect(stats).to.deep.equal({ errors: 1, inserted: 1, processed: 2, skipped: 0 })
+      expect(deletions).to.deep.equal([])
+      expect(inserted.map(({ id }) => id)).to.deep.equal([note.id])
+    })
+
+    it('does not limit the e tags of an event that is not a deletion request', async () => {
+      const note = await signEventWithTags(
+        EventKinds.TEXT_NOTE,
+        toETags(Array.from({ length: limit + 1 }, (_, index) => toEventId(index))),
+      )
+      const { eventRepository, inserted } = createRecordingRepository()
+
+      const stats = await new EventImportService(createEventBatchPersister(eventRepository)).importFromJsonl(
+        createJsonlFile([JSON.stringify(note)]),
+      )
+
+      expect(stats).to.deep.equal({ errors: 0, inserted: 1, processed: 1, skipped: 0 })
+      expect(inserted.map(({ id }) => id)).to.deep.equal([note.id])
+    })
   })
 })

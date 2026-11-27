@@ -6,6 +6,7 @@ const streamArrayModule = require('stream-json/streamers/stream-array.js') as {
 }
 const streamArray = streamArrayModule.default
 
+import { Tag } from '../@types/base'
 import { Event } from '../@types/event'
 import { IEventRepository, IUserRepository } from '../@types/repositories'
 
@@ -48,6 +49,38 @@ const enrichEventMetadata = (event: Event): Event => {
 }
 
 const DEFAULT_BATCH_SIZE = 1000
+
+// The delete binds these ids plus the author and the excluded kind, and PostgreSQL allows 65,535 bind parameters, so
+// no v3 relay can apply a deletion request naming more. The event repository spec pins this count.
+export const MAX_IMPORTED_DELETION_TARGETS = 65_533
+
+const isDeletionTargetTag = (tag: Tag): boolean =>
+  tag.length >= 2 && tag[0] === EventTags.Event && /^[0-9a-f]{64}$/.test(tag[1])
+
+const getDeletionTargetIds = (event: Event): string[] => {
+  const ids = new Set<string>()
+  for (const tag of event.tags) {
+    if (isDeletionTargetTag(tag)) {
+      ids.add(tag[1])
+    }
+  }
+
+  return [...ids]
+}
+
+const namesTooManyDeletionTargets = (event: Event): boolean => {
+  const ids = new Set<string>()
+  for (const tag of event.tags) {
+    if (isDeletionTargetTag(tag)) {
+      ids.add(tag[1])
+      if (ids.size > MAX_IMPORTED_DELETION_TARGETS) {
+        return true
+      }
+    }
+  }
+
+  return false
+}
 
 export interface EventImportStats {
   errors: number
@@ -157,11 +190,7 @@ export const createEventBatchPersister =
         // flush pending batches before applying deletes
         await flush()
 
-        const eventIdsToDelete = event.tags.reduce(
-          (ids, tag) =>
-            tag.length >= 2 && tag[0] === EventTags.Event && /^[0-9a-f]{64}$/.test(tag[1]) ? [...ids, tag[1]] : ids,
-          [] as string[],
-        )
+        const eventIdsToDelete = getDeletionTargetIds(event)
 
         if (eventIdsToDelete.length) {
           await eventRepository.deleteByPubkeyAndIds(event.pubkey, eventIdsToDelete)
@@ -331,6 +360,10 @@ export class EventImportService {
 
         if (!(await isEventSignatureValid(event))) {
           throw new Error('invalid: event signature verification failed')
+        }
+
+        if (isDeleteEvent(event) && namesTooManyDeletionTargets(event)) {
+          throw new Error(`invalid: a deletion request may name at most ${MAX_IMPORTED_DELETION_TARGETS} events`)
         }
       } catch (error) {
         stats.errors += 1
