@@ -613,6 +613,30 @@ describe('MaintenanceWorker', () => {
       expect(confirmArg.amountPaid).to.equal(1500n)
     })
 
+    it('does not downgrade a completed peering settlement when the processor reports expired', async () => {
+      const completedUnconfirmed = {
+        ...pendingInvoice,
+        status: InvoiceStatus.COMPLETED,
+        confirmedAt: null,
+        purpose: InvoicePurpose.PEERING,
+      }
+      settingsState.payments = { enabled: true } as any
+      paymentsService.getUnconfirmedPeeringInvoices.resolves([completedUnconfirmed])
+      paymentsService.getPendingInvoices.resolves([])
+      paymentsService.getInvoiceFromPaymentsProcessor.resolves({
+        id: 'inv-1',
+        status: InvoiceStatus.EXPIRED,
+      })
+
+      await (worker as any).onSchedule()
+
+      expect(paymentsService.updateInvoiceStatus).not.to.have.been.calledWith({
+        id: 'inv-1',
+        status: InvoiceStatus.EXPIRED,
+      })
+      expect(paymentsService.confirmInvoice).not.to.have.been.called
+    })
+
     it('retries a failed peering settlement on the next pass', async () => {
       const confirmedAt = new Date()
       const completedUnconfirmed = {
