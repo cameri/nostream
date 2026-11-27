@@ -1277,6 +1277,119 @@ describe('PaymentsService', () => {
       )
     })
 
+    it('retries a serialization conflict for a non-peering invoice and succeeds', async () => {
+      const serializationFailure = Object.assign(new Error('could not serialize access'), {
+        code: '40001',
+      })
+      settings.returns({ payments: { enabled: true, feeSchedules: { admission: [] } } })
+      invoiceRepository.findById.resolves(stubInvoice())
+      invoiceRepository.confirmInvoice.onFirstCall().rejects(serializationFailure)
+      invoiceRepository.confirmInvoice.onSecondCall().resolves()
+
+      await service.confirmInvoice(makeCompletedInvoice())
+
+      expect(invoiceRepository.confirmInvoice).to.have.been.calledTwice
+      expect(mockTrx.rollback).to.have.been.calledOnce
+      expect(mockTrx.commit).to.have.been.calledOnce
+    })
+
+    it('stops after the bounded serialization retries', async () => {
+      const serializationFailure = Object.assign(new Error('could not serialize access'), {
+        code: '40001',
+      })
+      settings.returns({ payments: { enabled: true, feeSchedules: { admission: [] } } })
+      invoiceRepository.findById.resolves(stubInvoice())
+      invoiceRepository.confirmInvoice.rejects(serializationFailure)
+
+      await expect(service.confirmInvoice(makeCompletedInvoice())).to.be.rejectedWith(
+        'could not serialize access',
+      )
+
+      expect(invoiceRepository.confirmInvoice).to.have.been.calledThrice
+    })
+
+    it('retries a serialization conflict during peering settlement and commits once', async () => {
+      const serializationFailure = Object.assign(new Error('could not serialize access'), {
+        code: '40001',
+      })
+      const transactions: Array<{ commit: Sinon.SinonStub; rollback: Sinon.SinonStub }> = []
+      dbClient.transaction.callsFake(async () => {
+        const trx = {
+          commit: sandbox.stub().resolves([]),
+          rollback: sandbox.stub().resolves([]),
+        }
+        transactions.push(trx)
+        return trx
+      })
+      settings.returns({
+        payments: { enabled: true, feeSchedules: { admission: [] } },
+        peering: { settlementFailureThreshold: 5 },
+      })
+      invoiceRepository.findById.resolves(
+        stubInvoice({
+          purpose: InvoicePurpose.PEERING,
+          termAmountMsats: 21000n,
+          termPeriodSeconds: 2592000,
+          unit: InvoiceUnit.MSATS,
+        }),
+      )
+      peeringPaymentRepository.lockByPeer
+        .onFirstCall()
+        .rejects(serializationFailure)
+        .onSecondCall()
+        .resolves(peeringRow())
+
+      await peeringService.confirmInvoice(makeCompletedInvoice())
+
+      expect(transactions).to.have.length(2)
+      expect(transactions[0].rollback).to.have.been.calledOnce
+      expect(transactions[1].commit).to.have.been.calledOnce
+      expect(peeringPaymentRepository.lockByPeer).to.have.been.calledTwice
+      expect(peeringPaymentRepository.save).to.have.been.calledOnceWith(
+        Sinon.match({
+          status: 'active',
+          lastSettledInvoiceId: 'invoice-id',
+        }),
+        transactions[1],
+      )
+      expect(invoiceRepository.updatePeriod).to.have.been.calledOnceWith(
+        'invoice-id',
+        Sinon.match.instanceOf(Date),
+        Sinon.match.instanceOf(Date),
+        transactions[1],
+      )
+      expect(notificationOutboxRepository.enqueue).to.have.been.calledOnceWith(
+        OperatorNotificationEventType.PEERING_INVOICE_PAID,
+        Sinon.match({ invoiceId: 'invoice-id' }),
+        transactions[1],
+      )
+      expect(invoiceRepository.recordPeeringSettlementFailure).not.to.have.been.called
+    })
+
+    it('does not count a serialization conflict as a peering settlement failure', async () => {
+      const serializationFailure = Object.assign(new Error('could not serialize access'), {
+        code: '40001',
+      })
+      settings.returns({
+        payments: { enabled: true, feeSchedules: { admission: [] } },
+        peering: { settlementFailureThreshold: 5 },
+      })
+      invoiceRepository.findById.resolves(
+        stubInvoice({
+          purpose: InvoicePurpose.PEERING,
+          termAmountMsats: 21000n,
+          termPeriodSeconds: 2592000,
+        }),
+      )
+      invoiceRepository.confirmInvoice.rejects(serializationFailure)
+
+      await expect(peeringService.confirmInvoice(makeCompletedInvoice())).to.be.rejectedWith(
+        'could not serialize access',
+      )
+
+      expect(invoiceRepository.recordPeeringSettlementFailure).not.to.have.been.called
+    })
+
     it('counts a confirmation-write failure for an eligible peering invoice', async () => {
       settings.returns({
         payments: { enabled: true, feeSchedules: { admission: [] } },

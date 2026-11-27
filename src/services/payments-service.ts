@@ -24,6 +24,8 @@ import {
 import { IPaymentsService } from '../@types/services'
 import { PeeringPaymentStatus } from '../@types/peering'
 import { Transaction } from '../database/transaction'
+import { isSerializationFailure } from '../utils/database-errors'
+import { delayMs } from '../utils/misc'
 import { applyPayment, findSubscriptionPlan } from '../utils/subscription'
 import { resolveInvoiceExpiry } from '../utils/invoice'
 import {
@@ -36,6 +38,10 @@ const logger = createLogger('payments-service')
 
 /** Invoices per maintenance pass. Small because each one is a processor round trip. */
 export const PENDING_INVOICE_PAGE_SIZE = 10
+
+/** A serializable settlement can lose a race; retry the whole transaction a few times. */
+const INVOICE_CONFIRM_SERIALIZATION_ATTEMPTS = 3
+const INVOICE_CONFIRM_SERIALIZATION_DELAY_MS = 10
 
 export class PaymentsService implements IPaymentsService {
   public constructor(
@@ -302,6 +308,10 @@ export class PaymentsService implements IPaymentsService {
   }
 
   public async confirmInvoice(invoice: Invoice): Promise<void> {
+    await this.withSerializationRetry(() => this.confirmInvoiceOnce(invoice))
+  }
+
+  private async confirmInvoiceOnce(invoice: Invoice): Promise<void> {
     logger('confirm invoice %s: %O', invoice.id, invoice)
 
     const transaction = new Transaction(this.dbClient)
@@ -444,12 +454,39 @@ export class PaymentsService implements IPaymentsService {
       logger.error('Unable to confirm invoice. Reason:', error)
       await transaction.rollback()
 
-      if (peeringSettlementStarted && stored) {
+      if (peeringSettlementStarted && stored && !isSerializationFailure(error)) {
         await this.recordPeeringSettlementFailure(stored, error)
       }
 
       throw error
     }
+  }
+
+  /**
+   * Serialization conflicts are transient: the transaction rolled back, so the
+   * whole confirmation is safe to replay. Deterministic failures propagate
+   * immediately and are not retried.
+   */
+  private async withSerializationRetry(operation: () => Promise<void>): Promise<void> {
+    for (let attempt = 1; attempt <= INVOICE_CONFIRM_SERIALIZATION_ATTEMPTS; attempt += 1) {
+      try {
+        await operation()
+        return
+      } catch (error) {
+        if (!isSerializationFailure(error) || attempt === INVOICE_CONFIRM_SERIALIZATION_ATTEMPTS) {
+          throw error
+        }
+
+        logger.warn(
+          'retrying invoice confirmation after serialization failure (%d/%d)',
+          attempt,
+          INVOICE_CONFIRM_SERIALIZATION_ATTEMPTS,
+        )
+        await delayMs(INVOICE_CONFIRM_SERIALIZATION_DELAY_MS * attempt)
+      }
+    }
+
+    throw new Error('invoice confirmation retry exhausted')
   }
 
   /**

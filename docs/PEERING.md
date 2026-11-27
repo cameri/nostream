@@ -278,7 +278,9 @@ Only completed invoices that are still unconfirmed are counted; a pending row
 checked through the processor recheck path stays on the pending page. If the
 processor later reports a non-completed status for a completed but unconfirmed
 peering invoice, the worker ignores the downgrade and keeps the completed
-marker so settlement remains retryable.
+marker so settlement remains retryable. A serialization conflict (SQLSTATE
+40001) replays the whole settlement transaction a bounded number of times;
+deterministic failures and underpayments are not retried.
 
 The worker pages through unconfirmed settlements with an offset cursor. A full
 page advances the cursor so one repeatedly failing invoice cannot starve later
