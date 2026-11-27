@@ -43,11 +43,15 @@ export const workerFactory = (): AppWorker => {
   // subscriber could see unfiltered content in the brief window before this
   // resolves) self-heals on the cache's own periodic refresh, not a
   // dedicated retry path.
-  if (settings.nip56?.enabled) {
-    startHiddenContentCache(reportRepository, createSettings).catch((error) =>
-      logger.error('failed to start hidden content cache: %o', error),
-    )
-  }
+  //
+  // Started on every worker whatever nip56.enabled says at boot: each tick
+  // reads the settings fresh and only queries the database while
+  // hideActionableReports is on, so a relay that turns reporting on later
+  // (settings reload or backup restore) is picked up within one interval
+  // instead of hiding nothing until the next restart.
+  startHiddenContentCache(reportRepository, createSettings).catch((error) =>
+    logger.error('failed to start hidden content cache: %o', error),
+  )
 
   // Constructs the WoT graph singleton (and starts warming it up, if enabled)
   // right at worker boot -- before this call, the singleton was only ever
