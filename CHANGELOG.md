@@ -1,5 +1,148 @@
 # nostream
 
+## 3.17.0
+
+### Minor Changes
+
+- [#1199](https://github.com/cameri/nostream/pull/1199) [`cce55b6`](https://github.com/cameri/nostream/commit/cce55b6a06f83555f7fe287cecd041943be3bad6) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - feat(nip43): publish the kind 13534 membership list
+
+  With the new `nip43.publishMembershipList` setting (off by default) the relay publishes a replaceable kind 13534 event, signed by its own key, with the NIP-70 `-` tag and one `member` tag per admitted pubkey, and refreshes it after every successful join or leave, and when a member's request to vanish is accepted, so that pubkey is taken out of it. Joins and leaves that are rejected or change nothing do not refresh it. Nothing is published when `info.self` does not match the relay's signing pubkey, since NIP-43 requires that signer. The list makes every member's pubkey public to anyone who can read the relay, which is why the setting defaults to off. It is a convenience for clients, not the source of truth for who may publish, and it holds at most the first 10,000 members. Users who asked to vanish are left out. Admissions made another way, for example a paid admission, do not refresh it.
+
+- [#1216](https://github.com/cameri/nostream/pull/1216) [`36ce4d5`](https://github.com/cameri/nostream/commit/36ce4d58507d84c835ce8d50be49e9d57ac1f5d6) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(peering): show relationship state, terms and traffic split in admin
+
+  The Peering console now shows each peer's relationship state and current terms,
+  reconciliation and peer-request activity, and the existing budget and
+  held-invoice panels in one place. Relationship state follows the same access
+  window as the relay, so an ended period no longer appears active.
+
+- [#1169](https://github.com/cameri/nostream/pull/1169) [`cbc9c1d`](https://github.com/cameri/nostream/commit/cbc9c1da68309f2b7214d4b0c78ab215a1e6843c) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(peering): surface buyer invoices and budgets in the admin console
+
+  Watches the peer's signed kind 402 invoice stream over the authenticated sync
+  connection, pays through LNbits or NWC, and exposes held invoices with
+  operator approve/reject actions, budget spend/remaining, and invoice counts.
+
+- [#1167](https://github.com/cameri/nostream/pull/1167) [`be2aba4`](https://github.com/cameri/nostream/commit/be2aba440a06d42f030886bec6ce411c95b733b6) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(peering): add the buyer invoice ledger and budget primitives
+
+  Adds the storage and decoding foundation for buying peering: a
+  `peering_invoices` ledger deduped by BOLT11 payment hash, per-peer/global
+  `peering_budgets` counters, a narrow BOLT11 decoder, and the buyer settings
+  contracts. Automatic payment and admin approval ship in the follow-up slices.
+
+- [#1168](https://github.com/cameri/nostream/pull/1168) [`9c5917d`](https://github.com/cameri/nostream/commit/9c5917da350c17b6642008d4b609b8712d28be42) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(peering): enforce buyer budgets before paying peer invoices
+
+  Adds the buying-side policy: verify a peer invoice against its advertised
+  NIP-11 term, dedupe on the payment hash, reserve per-peer and global budget
+  counters atomically, pay through the configured wallet, and hold anything
+  outside the envelope for operator approval.
+
+- [#1233](https://github.com/cameri/nostream/pull/1233) [`7bbf889`](https://github.com/cameri/nostream/commit/7bbf889cb3cfea5a6cc46242afad9a4ba938acc5) Thanks [@Ferryx349](https://github.com/Ferryx349)! - feat(peering): add owner-attested peering requests
+
+  Peers can present a one-time, owner-signed request over their authenticated
+  NIP-42 connection. The receiving relay verifies the owner signature, the AUTH
+  relay key, the requested scopes, the current terms snapshot and NIP-13
+  proof-of-work, stores the accepted attestation, and returns a relay-signed
+  acceptance. Operators choose `required`, `preferred` or `waived`; configured
+  peers keep working without proof-of-work by default. `nostream peering request`
+  produces and sends the request using an owner key supplied outside settings.
+  Operational traffic never requires the owner's key.
+
+### Patch Changes
+
+- [#1234](https://github.com/cameri/nostream/pull/1234) [`bef8c4a`](https://github.com/cameri/nostream/commit/bef8c4a13eeb1d1819002cd00da0dd489f6eccbd) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix(admin): record a logout in the audit history only when it ends a session
+
+  `POST /admin/logout` is public, because it has to clear the session cookie whoever sends the request, and it wrote an `admin.logout` record to the audit history for every request, with or without a session. Anyone who could reach the admin routes could post to it repeatedly and fill the shared, size-limited audit history in Redis with logouts that never happened, pushing real administrator records out of it. The record is now written only by the logout that ends a session: a request with a valid session (as a cookie or a Bearer token) whose session had not been revoked yet. Revoking a session now tells the caller whether it was this call that did it, in one atomic step, so a copy of a token that was already logged out, or several logouts of the same session at once, write nothing more. Every such request still gets the cookie cleared and a 200.
+
+- [#1231](https://github.com/cameri/nostream/pull/1231) [`593ad2d`](https://github.com/cameri/nostream/commit/593ad2d2a80b7bd3e23281ec10b9aa08d3f9301d) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix(admin): the settings API cannot change the admin password hash through a parent path
+
+  `PATCH /admin/settings` refused a change to `admin.passwordHash`, but it only looked at the path of the request. A request for the path `admin` with a new `admin` object, alone or inside a batch of changes, replaced the object and so wrote or removed `admin.passwordHash` without being refused. Anyone holding a valid admin session, or a copy of its token, could set a password hash they chose, or delete it, without knowing the current password, and the change outlived the session. The API now compares every write-protected value in the settings it is about to save with the stored ones and refuses the whole request when one differs (changed, added or removed), whichever path or batch caused it. Replacing the `admin` object with the same hash in it, and changing any other admin setting, still work.
+
+- [#1200](https://github.com/cameri/nostream/pull/1200) [`49dd6f8`](https://github.com/cameri/nostream/commit/49dd6f8bd356c203f7f63413fba9a264de8d98e1) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix(cli): do not shadow settings.json with the defaults
+
+  `nostream start` and `nostream setup` copy the default settings to `.nostr/settings.yaml` when that file is missing. The relay reads `settings.yaml` first and falls back to the deprecated `settings.json` only when there is no yaml, so on a deployment that still had only a `settings.json` the copy replaced every override in it with the defaults: an admission policy such as `nip43.enabled`, payment settings and limits stopped applying, silently. The defaults are now copied only when neither file exists, so a `settings.json` keeps working until the admin console or `nostream config` writes a `settings.yaml`.
+
+- [#1236](https://github.com/cameri/nostream/pull/1236) [`1ab0404`](https://github.com/cameri/nostream/commit/1ab0404d4680c257801cf069c155da93b1ab3efd) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix(cli): keep the .env file private to its owner
+
+  `nostream setup` and `nostream config env set` wrote `.env` with the default file mode, which under the usual umask makes it readable by every local account that can reach the project directory. The file holds `SECRET`, which signs the admin session tokens, and other credentials. The CLI now creates `.env` readable by its owner only (mode 0600), including when it starts from `.env.example`, and restricts an existing `.env` to the owner whenever it writes to it. An existing `.env` that setup does not need to change is left as it is. Where the permissions cannot be changed, for example on a file system without Unix permissions, the write still succeeds.
+
+- [#1237](https://github.com/cameri/nostream/pull/1237) [`65d5455`](https://github.com/cameri/nostream/commit/65d5455a3921682c2971c0491fb941e457c739c4) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix(cli): mask DB_URI and REDIS_URI in `nostream config env` output
+
+  `nostream config env list` and `config env get` hide the value of secret keys unless `--show-secrets` is given, but they only recognised keys with SECRET, PASSWORD, API_KEY or PRIVATE_KEY in the name. `DB_URI` and `REDIS_URI` can carry a password (`postgresql://user:password@host/db`), so it was printed as it was. These two keys are now masked like the other secrets, and shown in full with `--show-secrets`.
+
+- [#1239](https://github.com/cameri/nostream/pull/1239) [`baa1c81`](https://github.com/cameri/nostream/commit/baa1c81e5c46d15ef9e94768098c35ba3700f048) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix(cli): show control characters in `nostream info` output as escapes
+
+  `nostream info` printed the relay name, URL and other settings values as they are. These can be changed through the admin settings, so a value containing a newline or terminal escape sequence could add forged lines to the output or send commands to the operator's terminal, such as replacing the clipboard where the terminal allows it. The text output now shows control characters as visible escapes (for example `\x0a`). `nostream info --json` is unchanged.
+
+- [#1160](https://github.com/cameri/nostream/pull/1160) [`1267cec`](https://github.com/cameri/nostream/commit/1267cec935fac56b325711f5de54ec201ed340a6) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix(nip42): require auth to COUNT a filter that names no kinds when restricted reads are on
+
+  With `nip42.restrictedReads` enabled, a COUNT filter that named a restricted kind (4, 1059, ...) had to be scoped to the client's own pubkeys, but a filter that named no kinds was not checked, and the count still included the restricted events. An unauthenticated client could count, for example, `{"#p": [pubkey]}` and learn how many private messages a pubkey had received. A COUNT filter without `kinds` is now treated like one that names a restricted kind, the same rule NIP-77 reconciliation already follows: it must be scoped with `authors` or `#p` to the authenticated client's own pubkeys. Relays that do not enable `nip42.restrictedReads` are not affected.
+
+- [#1232](https://github.com/cameri/nostream/pull/1232) [`63bb7b5`](https://github.com/cameri/nostream/commit/63bb7b5da8f3bfca73d04ed3e092cd5ea7a92488) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix(nip09): collect the ids of a deletion request in one pass
+
+  `DeleteEventStrategy` built the list of event ids from the `e` tags of a kind-5 event with `[...eventIds, tag[1]]` inside a `reduce`, which copies everything collected so far for each tag. An event with several thousand `e` tags (a message can hold about 7,000) therefore blocked the worker for tens of milliseconds before a single id was looked up, and it did so on every such event. The ids are now collected in one pass, and an id that appears more than once is asked for once. Which events are deleted is unchanged.
+
+- [#1269](https://github.com/cameri/nostream/pull/1269) [`616c16e`](https://github.com/cameri/nostream/commit/616c16e9d2d4d4fd03feb9540b23a43629a9ed89) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - fix(import): collect the ids of a deletion request in one loop and cap them at 65,533
+
+  The importer collected the ids a kind-5 deletion request names by copying the list for every `e` tag, so a request with 50,000 tags held the import for seconds, and one with more than 65,533 valid `e` tags overflowed PostgreSQL's bind parameters and ended the whole import. The ids are now collected in one loop, and a repeated id is asked for once. A request whose `e` tags name more than 65,533 distinct event ids, the most one delete statement can carry, is refused: nothing is deleted or stored, it counts as an error, and the import goes on. No request a v3 relay could have applied is over this limit. Peering sync, which writes through the same code, gets the faster collection but no cap; its frames are already limited to 2 MiB.
+
+- [#1172](https://github.com/cameri/nostream/pull/1172) [`dddbcc0`](https://github.com/cameri/nostream/commit/dddbcc08d6ef008618baf6d8d8a8465fc5c3fb7c) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix(nip05): a changed NIP-05 identifier does not inherit the earlier verification
+
+  When an author published a kind-0 profile with a different `nip05` and the lookup failed with a transient error (a timeout, a 5xx), the new identifier and domain were saved with the previous identifier's `isVerified` and `lastVerifiedAt`. With NIP-05 mode `enabled` that treated the new domain as verified, so an author could keep publishing under a domain the relay's allow or block list now rejected, or under an identifier they had not proven, without ever passing a lookup. The earlier verification is now kept after a transient error only when the identifier and domain are the same (ignoring letter case); a changed identifier starts unverified until a lookup succeeds.
+
+- [#1174](https://github.com/cameri/nostream/pull/1174) [`98d2359`](https://github.com/cameri/nostream/commit/98d23593fd6c14569b34f4e9727822949041358c) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix(nip05): a replaced kind-0 profile no longer changes the author's NIP-05 verification
+
+  A relay accepts an older kind-0 profile for an author who has already published a newer one (the replace is a no-op and the client is answered `duplicate:`), but the NIP-05 handling ran for it anyway. Anyone could take a public, validly signed older profile of an author, one without a `nip05` field or with another identifier, and publish it again to delete the author's current verification, or replace it with the older identifier, which with NIP-05 mode `enabled` blocked the author from publishing. The NIP-05 handling now runs only for a profile that is the author's current one (the later `created_at`, and the lower id on a tie, which is the one the replaceable upsert keeps). The stored profile is read the way the upsert sees it, so a current profile that subscriptions hide (a NIP-56 reported or a deleted one) still counts. If the check itself fails the profile is processed as before.
+
+- [#1169](https://github.com/cameri/nostream/pull/1169) [`b5789fb`](https://github.com/cameri/nostream/commit/b5789fb3ebf873a02f8e7a57385c7d61dc005189) Thanks [@Ferryx349](https://github.com/Ferryx349)! - fix(peering): keep wallet payments recoverable and request invoices before the feed
+
+  Subscribe to the seller's invoice stream before opening a paid feed, so a feed
+  rejected until payment no longer closes the connection first. Wallet submits
+  now report whether they settled; pending, unknown and ambiguous transport
+  outcomes keep their reservation and stay `PAYING` for recovery, while outgoing
+  LNbits expiry no longer counts as a failed payment. Each payment attempt owns
+  its row, may only leave `PAYING` once, and serializes submission against
+  recovery, so a stale lookup cannot release a charge that is still in flight.
+  Renewal invoices are only offered inside the period-relative renewal window, so
+  ordinary reconnects cannot buy extra periods.
+
+- [#1261](https://github.com/cameri/nostream/pull/1261) [`42ed600`](https://github.com/cameri/nostream/commit/42ed600f7bad57911ea97a52053a54d48084c96f) Thanks [@Ferryx349](https://github.com/Ferryx349)! - fix(peering): retry serialization conflicts in invoice settlement
+
+  A serializable peering settlement that loses a concurrent race now retries the
+  whole confirmation transaction up to three times. Deterministic failures
+  (missing peer, missing term snapshot) and underpayments are not retried.
+
+- [#1248](https://github.com/cameri/nostream/pull/1248) [`14010af`](https://github.com/cameri/nostream/commit/14010afc398c1566cde47b5b305b476f343ab294) Thanks [@Ferryx349](https://github.com/Ferryx349)! - fix(peering): count failed invoice settlements and alert once
+
+  A paid peering invoice whose settlement rolls back is now retried with a
+  persisted attempt counter and last error. After
+  `peering.settlementFailureThreshold` failures (default 5), one
+  `peering.payment.failed` notification is enqueued for the operator, and the
+  invoice stays in the retry set. Duplicate callbacks and underpayments are not
+  counted.
+
+- [#1260](https://github.com/cameri/nostream/pull/1260) [`55987d8`](https://github.com/cameri/nostream/commit/55987d86429a8faae43a170a53a3d0ee153dfcfb) Thanks [@Ferryx349](https://github.com/Ferryx349)! - docs(peering): explain the unconfirmed-settlement cursor
+
+  The maintenance worker's retry offset can skip an invoice until a short page
+  resets it. Document that this is a starvation guard, not an exact resume point,
+  and that it delays a retry without losing it.
+
+- [#1259](https://github.com/cameri/nostream/pull/1259) [`fb4a892`](https://github.com/cameri/nostream/commit/fb4a892cd458a178f2f39b9961bfd33b0ef405a1) Thanks [@Ferryx349](https://github.com/Ferryx349)! - fix(peering): keep unconfirmed settlements in the retry set
+
+  A processor report that downgrades a completed peering invoice with
+  `confirmed_at` still null no longer overwrites the stored `COMPLETED` status.
+  The invoice remains in the settlement retry set until the period is committed.
+
+- [#1159](https://github.com/cameri/nostream/pull/1159) [`8f39038`](https://github.com/cameri/nostream/commit/8f390382ba19d48283ab58d46c4a3a8e2f68cfac) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix(ops): retry a probe alert that could not be saved
+
+  When a probe run changed status (ok to failed, or back to ok), the new status was stored first and the alert was written to the notification outbox afterwards. If the database was unavailable at that moment the alert was lost: the next run saw the same status and sent nothing, so an operator never heard about that outage or recovery. The status is now recorded only after the alert has been stored, and a short claim keeps two runs from sending the same alert, so a failed save is tried again by the next run that observes the same change.
+
+- [`bbf014e`](https://github.com/cameri/nostream/commit/bbf014e4b356615fc10374b95a9f0614dd8af03f) Thanks [@Priyanshubhartistm](https://github.com/Priyanshubhartistm)! - fix(admin): refuse pubkeys in the settings lists that cannot match an event
+
+  The pubkey blacklist, the pubkey whitelist and the rate-limit bypass list (`limits.event.pubkey.blacklist`, `limits.event.pubkey.whitelist` and `limits.event.whitelists.pubkeys`) are compared with the pubkey of each event as they are written, and an event's pubkey is always 64 lowercase hex characters. The settings API saved any value in them, so a blacklist entry written in uppercase hex was stored and then never matched, and the pubkey it was meant to ban could still publish. Settings validation now rejects an entry that is not a 64-character lowercase hex pubkey, and says which entry, for the settings API, the CLI, backup restore and the validate endpoint. Pubkeys added through the moderation endpoints are already normalized and are not affected. A settings file that already holds an entry written another way is not rejected at startup, but the next settings change made through those paths is refused until the entry is fixed.
+
+- [#1175](https://github.com/cameri/nostream/pull/1175) [`470d3f9`](https://github.com/cameri/nostream/commit/470d3f9a2de0ccecb79f3d8694243c70863113a9) Thanks [@chappie-daemon](https://github.com/chappie-daemon)! - docs: split the README into a landing page and reference guides
+
+  The README had grown to 731 lines and carried a full payments walkthrough, an operations manual and a duplicate of the standalone setup steps. It is now 264 lines: what the relay is, the supported NIPs, requirements, the Docker quick start, and a table pointing at the guide for each task. The payments and operations material moved to `docs/PAYMENTS.md` and `docs/OPERATIONS.md` verbatim, and the standalone setup points at the development quick start in `CONTRIBUTING.md` instead of repeating it. `docs/SETUP.md` now links its payments pointer at the new file. The moved instructions were then checked against the code: the importer write semantics, the admission-fee sum, the knex fallback database name, the LNURL `/callback` convention, and the standalone database and Redis steps. `docker-compose.yml` now forwards `NWC_URL`, and `.env.example` names it correctly.
+
 ## 3.16.0
 
 ### Minor Changes
