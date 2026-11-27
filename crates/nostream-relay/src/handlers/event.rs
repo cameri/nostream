@@ -5,7 +5,7 @@
 //! validity → expiry → event rate limit → acceptance gate → authentication → protected
 //! events → request-to-vanish → admission → NIP-05 → adaptive-PoW sample → strategy dispatch.
 
-use nostream_config::settings::{ContentLimits, ContentLimitsOrVec, Settings};
+use nostream_config::settings::{ContentLimits, ContentLimitsOrVec, EventLimits, Settings};
 use nostream_core::adaptive_pow::{self, AdaptivePowConfig, WotPowThreshold};
 use nostream_core::constants::ALL_RELAYS;
 use nostream_core::nip05;
@@ -228,24 +228,20 @@ fn can_accept_event(
             return Some(error.to_string());
         }
 
-        if let Some(pow_settings) = limits.pow.as_ref().filter(|pow| pow.enabled) {
-            let required = required_difficulty(pow_settings, context, event);
-            let observed = pow::leading_zero_bits(event.id.as_bytes());
+        let rate = limits.pow.as_ref().map_or(0.0, |pow| {
+            context
+                .pow
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .current_events_per_second(pow.period_ms)
+        });
+        // The graph's lookup is asynchronous and this gate is synchronous, so no WoT distance
+        // reaches the policy yet (`wot.rs`, ADR 0004): the reduction is granted to nobody.
+        let required = required_difficulty(Some(limits), rate, None);
+        let observed = pow::leading_zero_bits(event.id.as_bytes());
 
-            if observed < required {
-                return Some(format!("pow: difficulty {observed}<{required}"));
-            }
-        } else if let Some(minimum) = limits
-            .event_id
-            .as_ref()
-            .and_then(|event_id| event_id.min_leading_zero_bits)
-            .filter(|minimum| *minimum > 0)
-        {
-            let observed = pow::leading_zero_bits(event.id.as_bytes());
-
-            if observed < minimum {
-                return Some(format!("pow: difficulty {observed}<{minimum}"));
-            }
+        if observed < required {
+            return Some(format!("pow: difficulty {observed}<{required}"));
         }
 
         if let Some(minimum) = limits
@@ -330,35 +326,47 @@ fn check_content_limit(event: &Event, limit: &ContentLimits) -> Option<String> {
     applies.then(|| format!("rejected: content is longer than {max_length} bytes"))
 }
 
-/// The adaptive difficulty after the WoT reduction (`getCurrentDifficulty` +
-/// `applyWotPowPolicy`).
+/// The required proof-of-work difficulty: the floor enforced at `events_per_second`, reduced by
+/// the WoT policy for a publisher's `distance`.
 ///
-/// The WoT distance is `nostream-services`' graph, which no crate implements yet, so the
-/// lookup yields `None` — the capture's own treatment of a pubkey outside the trust graph.
-fn required_difficulty(
-    settings: &nostream_config::settings::AdaptivePowSettings,
-    context: &HandlerContext,
-    _event: &Event,
+/// The adaptive arm scales `floor_bits` up to `ceiling_bits` with the measured rate
+/// (`getCurrentDifficulty`) and then applies the closest eligible threshold (`applyWotPowPolicy`);
+/// otherwise the static event-id floor answers. `0` means no requirement.
+///
+/// The NIP-11 document answers this with a zero rate and no distance, which is the lowest
+/// difficulty any client may be accepted at. The capture's
+/// `ceil(floor_bits × difficulty_factor)` discount is therefore not advertised while no
+/// distance reaches the handler: the graph's lookup resolves asynchronously and the event gate
+/// is synchronous, so nothing supplies one yet.
+pub fn required_difficulty(
+    event: Option<&EventLimits>,
+    events_per_second: f64,
+    distance: Option<u32>,
 ) -> u32 {
-    let config = AdaptivePowConfig {
-        enabled: settings.enabled,
-        floor_bits: settings.floor_bits,
-        ceiling_bits: settings.ceiling_bits,
-        target_events_per_second: settings.target_events_per_second,
-        period_ms: settings.period_ms,
+    let Some(event) = event else {
+        return 0;
+    };
+    let Some(adaptive) = event.pow.as_ref().filter(|pow| pow.enabled) else {
+        return event
+            .event_id
+            .as_ref()
+            .and_then(|event_id| event_id.min_leading_zero_bits)
+            .unwrap_or(0);
     };
 
-    let observed = context
-        .pow
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .current_events_per_second(settings.period_ms);
+    let config = AdaptivePowConfig {
+        enabled: adaptive.enabled,
+        floor_bits: adaptive.floor_bits,
+        ceiling_bits: adaptive.ceiling_bits,
+        target_events_per_second: adaptive.target_events_per_second,
+        period_ms: adaptive.period_ms,
+    };
 
     let computed =
-        adaptive_pow::compute_difficulty(&config, observed).unwrap_or(settings.floor_bits);
+        adaptive_pow::compute_difficulty(&config, events_per_second).unwrap_or(adaptive.floor_bits);
 
     let thresholds: Option<Vec<WotPowThreshold>> =
-        settings.wot_thresholds.as_ref().map(|thresholds| {
+        adaptive.wot_thresholds.as_ref().map(|thresholds| {
             thresholds
                 .iter()
                 .map(|threshold| WotPowThreshold {
@@ -368,7 +376,7 @@ fn required_difficulty(
                 .collect()
         });
 
-    adaptive_pow::apply_wot_pow_policy(computed, None, thresholds.as_deref())
+    adaptive_pow::apply_wot_pow_policy(computed, distance, thresholds.as_deref())
 }
 
 /// `isAuthenticationRequired` (`:285-297`).
