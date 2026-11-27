@@ -214,7 +214,10 @@ export class MaintenanceWorker implements IRunnable {
 
     // A short page means we reached the end, so start over next pass. A full
     // page advances the retry cursor so the same failing invoices cannot starve
-    // the ones behind them.
+    // the ones behind them. This offset is a starvation guard, not an exact
+    // resume point: a successful retry shrinks the result set, so an invoice can
+    // shift into a page already passed. It is revisited when a short page resets
+    // the offset to 0. That can delay a retry, but never lose it.
     this.pendingInvoiceOffset =
       pending.length < PENDING_INVOICE_PAGE_SIZE ? 0 : this.pendingInvoiceOffset + PENDING_INVOICE_PAGE_SIZE
     this.retryPeeringInvoiceOffset =
