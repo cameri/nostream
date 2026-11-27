@@ -30,33 +30,42 @@ The two candidates were a ceiling and a keyset cursor. Both are priced below.
 
 The ceiling is enforced in `pending_invoices` before the repository call, and the store's
 `(offset, limit)` protocol, both backend bodies and the trait are unchanged. The cursor would have
-removed the cost rather than capped it, and its price in this tree is measured: `find_pending_invoices`
-on six implementors, a new `repository-parity.json` step and its replay arm in
-`crates/nostream-storage/tests/common/mod.rs`, and a Postgres `ORDER BY created_at, id` tie-break
-that no test here can run, because this sandbox has no database. ADR 0018's consequences rule out
-a storage move for these reads, and this door does not need one: the note recorded no disclosure
-and no write, so what is being bounded is a read's cost.
+removed the cost rather than capped it, and its price in this tree is counted where it can be:
+`find_pending_invoices` on six implementors, a new `repository-parity.json` step and its replay arm
+in `crates/nostream-storage/tests/common/mod.rs`, and a Postgres `ORDER BY created_at, id` tie-break
+that no test here can run, because this sandbox has no database. Its door-side price is not in that
+count and would be paid too: `offset: u64` becomes an opaque cursor in the published schema and
+description, its `(created_at, id)` encoding has to be defined and refused when malformed, and a
+caller loses random access to a page. ADR 0018's consequences rule out a storage move for these
+reads, and this door does not need one: the note recorded no disclosure and no write, so what is
+being bounded is a read's cost.
 
 **Cost:** paging stops at the ceiling, where a cursor would have removed the cost instead of
 capping it. The ceiling is one constant, one function, one schema attribute, one snapshot and two
 cases; the cursor is six implementors plus the parity harness, and its Postgres ordering cannot be
-verified in this sandbox.
+verified in this sandbox. It would also remove a cost this design keeps: a pending row that leaves
+the queue between two pages shifts the walk, so a row can be skipped or answered twice, and a cursor
+keyed on `(created_at, id)` would not shift.
 
-### D2 — The ceiling is `MAX_ROWS_PER_SKIP` = `nostream_storage::MAX_PAGE_ROWS` = 5,000
+### D2 — The ceiling is `MAX_ROWS_PER_SKIP` = 5,000 rows, this door's own number
 
-Chosen on the measurement rather than on a round figure. At 5,000 keys the skip costs 0.941 ms
-against the 7.936 ms page the store already serves, so the ceiling bounds the walk at about a
-tenth of the answer it precedes. A ceiling at the page bound (500) was rejected because at
-`limit: 500` it leaves a caller two pages deep; 5,000 leaves eleven. The number is the tree's one
-statement of what one answer may cost — the relay's clamp on event pages — so the API gains no new
-number, and `MAX_ROWS_PER_SKIP` is a named constant beside `MAX_ROWS_PER_PAGE` so one place
-decides both bounds a page has: the page itself and the walk that reaches it.
+Chosen on the measurement rather than on a round figure, and held here rather than borrowed:
+`offset` is this door's argument, the invoice read has no page bound of its own
+(`find_pending_invoices` takes any `limit`), and the page bound the door does state is 500. At 5,000
+keys the skip costs 0.941 ms against the 7.936 ms page the store already serves, so the ceiling
+bounds the walk at about a tenth of the answer it precedes. A ceiling at the page bound (500) was
+rejected because at `limit: 500` it leaves a caller two pages deep; 5,000 leaves eleven. The
+magnitude matches `nostream_storage::MAX_PAGE_ROWS`, the relay's largest event page — the largest
+single page the tree already asks a backend to answer — and it is measured against that clamp
+rather than derived from it: a change to the relay's event page is a decision about `REQ`, and it
+must not move an MCP schema.
 
-**Cost:** the ceiling's value aliases the relay's clamp, so the two move together unless a test
-pins it — `tests/tools_list.rs` asserts `MAX_ROWS_PER_SKIP == 5_000`, which turns a silent move
-into a failing case. A pending set deeper than 5,500 rows at `limit: 500` is unreachable through
-MCP; that reach is what the bounded skip trades away, and nothing in the tree measures how deep a
-real deployment's pending set is.
+**Cost:** the ceiling is the door's own number, so the day the walk is re-measured it moves here and
+nowhere else — at the price of a second 5,000 in the tree, where `MAX_PAGE_ROWS` already carries
+one. A pending set deeper than 5,500 rows at `limit: 500` is unreachable through MCP; that reach is
+what the bounded skip trades away, and nothing in the tree measures how deep a real deployment's
+pending set is. Paid for: no cross-crate coupling — a relay or storage change cannot move this
+door's published `maximum`, fail its snapshot, or leave its prose stale.
 
 ### D3 — The refusal is the door's, with one fixed text
 

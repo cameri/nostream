@@ -105,8 +105,7 @@ pub const MAX_FILTER_TERMS: usize = 64;
 /// takes a direction from `limit`.
 pub const MAX_ROWS_PER_PAGE: u64 = nostream_storage::DEFAULT_PAGE_ROWS;
 
-/// The most rows an `invoices_list` call may skip: the store's own longest page
-/// ([`nostream_storage::MAX_PAGE_ROWS`]).
+/// The most rows an `invoices_list` call may skip: this door's own ceiling, 5,000 rows.
 ///
 /// The skip is linear in the rows it passes and then saturates at the pending set, so an
 /// arbitrarily large offset costs a whole index walk for an answer that may be empty. Over 20,000
@@ -115,9 +114,11 @@ pub const MAX_ROWS_PER_PAGE: u64 = nostream_storage::DEFAULT_PAGE_ROWS;
 /// A ceiling at this door's own page ([`MAX_ROWS_PER_PAGE`]) was rejected because at `limit: 500`
 /// it leaves a caller two pages deep; 5,000 leaves eleven.
 ///
-/// The number is the tree's one statement of what one answer may cost, so no new number enters
-/// the API.
-pub const MAX_ROWS_PER_SKIP: u64 = nostream_storage::MAX_PAGE_ROWS;
+/// The magnitude matches [`nostream_storage::MAX_PAGE_ROWS`], the relay's largest event page —
+/// the largest single page the tree already asks a backend to answer — and it is measured against
+/// that clamp rather than derived from it: the invoice read has no page bound of its own, and a
+/// relocation of the relay's event page must not move this door's published `maximum`.
+pub const MAX_ROWS_PER_SKIP: u64 = 5_000;
 
 /// The refusal for a credential whose document is absent, unreadable or no longer a document this
 /// door accepts — the HTTP gate's `401`.
