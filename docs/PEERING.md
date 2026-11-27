@@ -275,8 +275,11 @@ After `peering.settlementFailureThreshold` failures (default 5), the relay
 enqueues one `peering.payment.failed` operator notification and keeps retrying.
 Duplicate callbacks and underpayments are not counted as settlement failures.
 Only completed invoices that are still unconfirmed are counted; a pending row
-checked through the processor recheck path stays on the pending page. A peer can always authenticate and ask for
-its invoice, even while lapsed, but cannot read the feed.
+checked through the processor recheck path stays on the pending page. If the
+processor later reports a non-completed status for a completed but unconfirmed
+peering invoice, the worker ignores the downgrade and keeps the completed
+marker so settlement remains retryable. A peer can always authenticate and ask
+for its invoice, even while lapsed, but cannot read the feed.
 
 Billing state is stored in `peering_payments`, one row per peer and direction
 (`sell` here; `buy` is reserved for the paying side). `GET /admin/peering`

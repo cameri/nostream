@@ -249,7 +249,19 @@ export class MaintenanceWorker implements IRunnable {
         }
         const { id, status } = updatedInvoice
 
-        await this.paymentsService.updateInvoiceStatus({ id, status })
+        // A completed peering invoice with no confirmation is in the retry set
+        // because its settlement rolled back. The processor may later report a
+        // non-completed status (for example, an expired invoice), but downgrading
+        // it would drop the row out of the retry set while confirmed_at stays
+        // null. Keep the completed marker until the settlement commits.
+        const retryingPeeringSettlement =
+          invoice.purpose === InvoicePurpose.PEERING &&
+          invoice.status === InvoiceStatus.COMPLETED &&
+          invoice.confirmedAt == null
+
+        if (!retryingPeeringSettlement || status === InvoiceStatus.COMPLETED) {
+          await this.paymentsService.updateInvoiceStatus({ id, status })
+        }
 
         const needsConfirmation =
           updatedInvoice.status === InvoiceStatus.COMPLETED &&
