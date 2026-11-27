@@ -253,11 +253,15 @@ async fn a_worker_that_closed_stdout_is_still_killed_on_timeout() {
         "exec >&-; echo $$ > '{}.tmp' && mv '{0}.tmp' '{0}'; exec sleep 60",
         pid_file.display()
     );
-    let fixture = build(worker(vec!["-c", &script], 500), true);
+    // The job timeout is generous on purpose: the pid must be observed *before* it fires, and
+    // writing it is subject to process spawn on a loaded runner. At 500 ms a child that took
+    // 600 ms to start failed the test with the fix in place (measured), so the window here is
+    // the spawn latency's, not the kill's — the kill is still what the assertions below test.
+    let fixture = build(worker(vec!["-c", &script], 3_000), true);
     let shutdown = ShutdownState::new();
     let running = tokio::spawn(Arc::clone(&fixture.orchestrator).run(shutdown.clone()));
 
-    // Written by rename, so it is never read half-written; awaited before the 500 ms timeout.
+    // Written by rename, so it is never read half-written; awaited inside the job timeout.
     let pid = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             if let Ok(pid) = std::fs::read_to_string(&pid_file) {
