@@ -278,8 +278,15 @@ Only completed invoices that are still unconfirmed are counted; a pending row
 checked through the processor recheck path stays on the pending page. If the
 processor later reports a non-completed status for a completed but unconfirmed
 peering invoice, the worker ignores the downgrade and keeps the completed
-marker so settlement remains retryable. A peer can always authenticate and ask
-for its invoice, even while lapsed, but cannot read the feed.
+marker so settlement remains retryable.
+
+The worker pages through unconfirmed settlements with an offset cursor. A full
+page advances the cursor so one repeatedly failing invoice cannot starve later
+ones. Because successful retries shrink the result set, an invoice can shift
+into a page the cursor has already passed; it is revisited when a short page
+resets the offset to zero. This is a delay, never a loss, and the cursor is not
+an exact resume point. A peer can always authenticate and ask for its invoice,
+even while lapsed, but cannot read the feed.
 
 Billing state is stored in `peering_payments`, one row per peer and direction
 (`sell` here; `buy` is reserved for the paying side). `GET /admin/peering`
