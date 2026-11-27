@@ -231,6 +231,68 @@ async fn a_job_that_outlives_its_timeout_is_timed_out_and_the_worker_killed() {
     let _ = tokio::time::timeout(Duration::from_secs(5), running).await;
 }
 
+/// Whether a process with this pid is still there (a reaped child no longer is).
+fn alive(pid: &str) -> bool {
+    std::process::Command::new("kill")
+        .args(["-0", pid])
+        .stderr(std::process::Stdio::null())
+        .status()
+        .expect("kill runs")
+        .success()
+}
+
+#[tokio::test]
+async fn a_worker_that_closed_stdout_is_still_killed_on_timeout() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let pid_file = directory.path().join("pid");
+    // Close stdout, then record the pid, then sleep in the same process: the orchestrator sees
+    // the stream end while the child lives on, and the job's timeout must still kill it. The
+    // pid is written after stdout closes, so a pid on disk means the kill below can only reach
+    // the child through the post-stdout path.
+    let script = format!(
+        "exec >&-; echo $$ > '{}.tmp' && mv '{0}.tmp' '{0}'; exec sleep 60",
+        pid_file.display()
+    );
+    // The job timeout is generous on purpose: the pid must be observed *before* it fires, and
+    // writing it is subject to process spawn on a loaded runner. At 500 ms a child that took
+    // 600 ms to start failed the test with the fix in place (measured), so the window here is
+    // the spawn latency's, not the kill's — the kill is still what the assertions below test.
+    let fixture = build(worker(vec!["-c", &script], 3_000), true);
+    let shutdown = ShutdownState::new();
+    let running = tokio::spawn(Arc::clone(&fixture.orchestrator).run(shutdown.clone()));
+
+    // Written by rename, so it is never read half-written; awaited inside the job timeout.
+    let pid = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Ok(pid) = std::fs::read_to_string(&pid_file) {
+                return pid.trim().to_owned();
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the child closed stdout and wrote its pid");
+    assert!(alive(&pid), "the child is running before its timeout");
+
+    let updates = await_updates(&fixture, 1).await;
+    assert_eq!(updates[0].status, DvmJobStatus::TimedOut);
+
+    let killed = tokio::time::timeout(Duration::from_secs(5), async {
+        while alive(&pid) {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await;
+
+    assert!(
+        killed.is_ok(),
+        "the timed-out worker (pid {pid}) is still running after its kill request"
+    );
+
+    shutdown.begin_draining();
+    let _ = tokio::time::timeout(Duration::from_secs(5), running).await;
+}
+
 #[tokio::test]
 async fn a_result_that_cannot_be_signed_fails_the_job() {
     let fixture = build(worker(vec!["-c", "cat"], 5_000), false);
