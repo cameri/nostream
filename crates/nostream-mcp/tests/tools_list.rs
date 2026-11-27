@@ -18,10 +18,10 @@ mod common;
 
 use common::TestMcp;
 use nostream_mcp::{
-    MAX_ROWS_PER_PAGE, TOOL_DELETE_EVENT, TOOL_GET_EVENT, TOOL_INVOICES_GET, TOOL_INVOICES_LIST,
-    TOOL_LIST_EVENTS, TOOL_MAINTENANCE_LAST_RUN, TOOL_MAINTENANCE_RUN, TOOL_RELAY_STATUS,
-    TOOL_REPORTS_ACTION, TOOL_REPORTS_LIST, TOOL_SETTINGS_GET, TOOL_SETTINGS_SET, TOOL_USER_ADMIN,
-    TOOL_USER_GET,
+    MAX_ROWS_PER_PAGE, MAX_ROWS_PER_SKIP, TOOL_DELETE_EVENT, TOOL_GET_EVENT, TOOL_INVOICES_GET,
+    TOOL_INVOICES_LIST, TOOL_LIST_EVENTS, TOOL_MAINTENANCE_LAST_RUN, TOOL_MAINTENANCE_RUN,
+    TOOL_RELAY_STATUS, TOOL_REPORTS_ACTION, TOOL_REPORTS_LIST, TOOL_SETTINGS_GET,
+    TOOL_SETTINGS_SET, TOOL_USER_ADMIN, TOOL_USER_GET,
 };
 use serde_json::{Value, json};
 
@@ -145,6 +145,12 @@ async fn the_required_parameters_are_typed() {
         json!(MAX_ROWS_PER_PAGE),
         "the schema's bound is the tool's page bound"
     );
+    assert_eq!(
+        tool(TOOL_INVOICES_LIST)["inputSchema"]["properties"]["offset"]["maximum"],
+        json!(MAX_ROWS_PER_SKIP),
+        "the schema's skip bound is the tool's skip ceiling"
+    );
+    assert_eq!(MAX_ROWS_PER_SKIP, 5_000, "the ceiling D2 fixes");
 
     assert!(
         tool(TOOL_GET_EVENT)["inputSchema"]["properties"]

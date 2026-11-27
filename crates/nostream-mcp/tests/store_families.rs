@@ -16,7 +16,8 @@
 //! | `a_short_pubkey_is_refused_after_its_dispatch_line` | a prefix is refused by the length check before any store call, and its dispatch line exists |
 //! | `a_read_only_document_reads_and_is_refused_the_user_write` | the four reads answer under a document that grants nothing, the write is denied and recorded, and no row is written |
 //! | `invoices_list_is_the_pending_walk_oldest_first` | the list is the store's pending index, not a status filter: an expired row is absent and still readable by id |
-//! | `invoices_list_pages_by_offset_and_refuses_a_page_outside_the_bound` | `offset`/`limit` are the store's own page, and 0 and 501 are the one refusal |
+//! | `invoices_list_pages_by_offset_and_refuses_a_page_outside_the_bound` | `offset`/`limit` are the store's own page, 0 and 501 are the one refusal, and the skip ceiling refuses 5001 and serves 5000 |
+//! | `invoices_list_serves_the_page_at_the_offset_ceiling` | the page at the ceiling is served, and the bound is on `offset`, not on `offset + limit` |
 //! | `invoices_get_answers_the_row_and_a_miss_is_null` | the thirteen fields, and a miss as a result — an id that is 64 hex characters is no different |
 //! | `a_confirmed_invoice_still_reads_pending` | confirmation sets the paid fields and leaves the status, and the list keeps naming the row |
 //! | `reports_list_is_the_actionable_queue_newest_first` | the queue is `find_actionable`: newest first, and a report an operator allowed is not in it |
@@ -35,8 +36,8 @@ use chrono::{DateTime, Utc};
 use common::{Fixture, Grant, TestMcp, event, id_of, payload, text};
 use nostream_core::{EventId, Filter, Pubkey};
 use nostream_mcp::{
-    FORBIDDEN, TOOL_INVOICES_GET, TOOL_INVOICES_LIST, TOOL_REPORTS_LIST, TOOL_USER_ADMIN,
-    TOOL_USER_GET, audit_action,
+    FORBIDDEN, MAX_ROWS_PER_SKIP, TOOL_INVOICES_GET, TOOL_INVOICES_LIST, TOOL_REPORTS_LIST,
+    TOOL_USER_ADMIN, TOOL_USER_GET, audit_action,
 };
 use nostream_storage::repositories::{
     EventRepository, FieldUpdate, Invoice, InvoiceRepository, InvoiceStatus, InvoiceUnit,
@@ -643,6 +644,73 @@ async fn invoices_list_pages_by_offset_and_refuses_a_page_outside_the_bound() {
             "{given}"
         );
     }
+
+    let served = client
+        .call(TOOL_INVOICES_LIST, json!({ "offset": MAX_ROWS_PER_SKIP }))
+        .await;
+    assert_eq!(served.is_error, Some(false), "{}", text(&served));
+    assert!(ids(&payload(&served), "invoices").is_empty());
+
+    for given in [MAX_ROWS_PER_SKIP + 1, u64::MAX] {
+        let refused = client
+            .call(TOOL_INVOICES_LIST, json!({ "offset": given }))
+            .await;
+        assert_eq!(refused.is_error, Some(true), "{given}: {}", text(&refused));
+        assert_eq!(
+            text(&refused),
+            format!("offset: a walk skips at most {MAX_ROWS_PER_SKIP} rows, {given} was given"),
+            "{given}"
+        );
+    }
+
+    let both = client
+        .call(
+            TOOL_INVOICES_LIST,
+            json!({ "limit": 0, "offset": MAX_ROWS_PER_SKIP + 1 }),
+        )
+        .await;
+    assert_eq!(
+        text(&both),
+        "limit: a page holds between 1 and 500 rows, 0 was given"
+    );
+}
+
+#[tokio::test]
+async fn invoices_list_serves_the_page_at_the_offset_ceiling() {
+    let fixture = TestMcp::start().await;
+    let pubkey = key();
+    for index in 0..=MAX_ROWS_PER_SKIP {
+        seed_invoice(
+            &fixture,
+            &invoice(
+                &format!("inv-skip-{index:05}"),
+                &pubkey,
+                InvoiceStatus::Pending,
+                instant(1_699_999_100 + index as i64),
+            ),
+        )
+        .await;
+    }
+    let client = fixture.client().await;
+
+    let last = client
+        .call(
+            TOOL_INVOICES_LIST,
+            json!({ "offset": MAX_ROWS_PER_SKIP, "limit": 1 }),
+        )
+        .await;
+    assert_eq!(last.is_error, Some(false), "{}", text(&last));
+    assert_eq!(ids(&payload(&last), "invoices"), vec!["inv-skip-05000"]);
+
+    let below = MAX_ROWS_PER_SKIP - 1;
+    let paged = client
+        .call(TOOL_INVOICES_LIST, json!({ "offset": below, "limit": 2 }))
+        .await;
+    assert_eq!(paged.is_error, Some(false), "{}", text(&paged));
+    assert_eq!(
+        ids(&payload(&paged), "invoices"),
+        vec!["inv-skip-04999", "inv-skip-05000"]
+    );
 }
 
 #[tokio::test]
