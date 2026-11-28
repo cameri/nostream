@@ -1,4 +1,5 @@
 import { runImportEvents } from '../../import-events'
+import { escapeForTerminal } from '../utils/output'
 
 type ImportOptions = {
   file?: string
@@ -16,5 +17,15 @@ export const runImport = async (options: ImportOptions, rawArgs: string[]): Prom
     args.push('--batch-size', String(options.batchSize))
   }
 
-  return runImportEvents([...args, ...rawArgs])
+  try {
+    return await runImportEvents([...args, ...rawArgs])
+  } catch (error) {
+    // The message can quote the input path or the input file; the CLI error
+    // boundary prints it as it is.
+    if (error instanceof Error) {
+      error.message = escapeForTerminal(error.message)
+    }
+
+    throw error
+  }
 }
