@@ -10,6 +10,7 @@ import {
   EventImportStats,
 } from './services/event-import-service'
 import { createEventRepository } from './factories/event-repository-factory'
+import { escapeForTerminal } from './cli/utils/output'
 import { getMasterDbClient } from './database/client'
 
 interface CliOptions {
@@ -226,7 +227,7 @@ export const runImportEvents = async (
 
   const onLineError = ({ lineNumber, reason }: EventImportLineError) => {
     if (loggedErrors < MAX_ERROR_LOGS) {
-      console.warn(`[line ${lineNumber}] ${reason}`)
+      console.warn(`[line ${lineNumber}] ${escapeForTerminal(reason)}`)
       loggedErrors += 1
       return
     }
@@ -294,7 +295,7 @@ if (require.main === module) {
     })
     .catch((error: unknown) => {
       if (error instanceof Error) {
-        console.error(`Import failed: ${error.message}`)
+        console.error(`Import failed: ${escapeForTerminal(error.message)}`)
       } else {
         console.error('Import failed with unknown error')
       }
